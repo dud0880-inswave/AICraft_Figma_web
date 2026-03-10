@@ -1,0 +1,197 @@
+// ============================================================
+// Cluster Store — 노드 구조 시그니처 기반 자동 매핑 클러스터
+// ============================================================
+import { randomUUID, createHash } from 'crypto';
+import type { Database } from 'better-sqlite3';
+
+export interface MappingCluster {
+  id: string;
+  signature: string;
+  signatureData: SignatureData;
+  registryId: string;
+  registryName: string;
+  customAttrs: Record<string, string>;
+  sampleCount: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface SignatureData {
+  name: string;
+  type: string;
+  children?: SignatureData[];
+}
+
+export interface FigmaNodeLike {
+  name: string;
+  type: string;
+  children?: FigmaNodeLike[];
+}
+
+export interface AutoMappingSuggestion {
+  nodeId: string;
+  nodeName: string;
+  nodeType: string;
+  signature: string;
+  registryId: string;
+  registryName: string;
+  customAttrs: Record<string, string>;
+  sampleCount: number;
+}
+
+export class ClusterStore {
+  constructor(private db: Database) {}
+
+  // 노드 구조에서 시그니처 데이터 생성 (전체 자식 포함)
+  createSignatureData(node: FigmaNodeLike): SignatureData {
+    const data: SignatureData = {
+      name: node.name,
+      type: node.type,
+    };
+
+    if (node.children && node.children.length > 0) {
+      data.children = node.children.map(child => this.createSignatureData(child));
+    }
+
+    return data;
+  }
+
+  // 시그니처 데이터에서 해시 생성
+  createSignatureHash(signatureData: SignatureData): string {
+    const json = JSON.stringify(signatureData);
+    return createHash('sha256').update(json).digest('hex');
+  }
+
+  // 노드에서 직접 시그니처 해시 생성
+  createNodeSignature(node: FigmaNodeLike): string {
+    const data = this.createSignatureData(node);
+    return this.createSignatureHash(data);
+  }
+
+  // 클러스터 조회 (ID)
+  get(id: string): MappingCluster | null {
+    const row = this.db.prepare(
+      'SELECT * FROM mapping_clusters WHERE id = ?'
+    ).get(id) as RawCluster | undefined;
+    return row ? toCluster(row) : null;
+  }
+
+  // 시그니처로 클러스터 조회
+  getBySignature(signature: string): MappingCluster | null {
+    const row = this.db.prepare(
+      'SELECT * FROM mapping_clusters WHERE signature = ?'
+    ).get(signature) as RawCluster | undefined;
+    return row ? toCluster(row) : null;
+  }
+
+  // 여러 시그니처로 클러스터 일괄 조회
+  getBySignatures(signatures: string[]): MappingCluster[] {
+    if (signatures.length === 0) return [];
+
+    const placeholders = signatures.map(() => '?').join(',');
+    const rows = this.db.prepare(
+      `SELECT * FROM mapping_clusters WHERE signature IN (${placeholders})`
+    ).all(...signatures) as RawCluster[];
+
+    return rows.map(toCluster);
+  }
+
+  // 전체 클러스터 목록
+  list(): MappingCluster[] {
+    const rows = this.db.prepare(
+      'SELECT * FROM mapping_clusters ORDER BY sample_count DESC, updated_at DESC'
+    ).all() as RawCluster[];
+    return rows.map(toCluster);
+  }
+
+  // 클러스터 생성 또는 업데이트 (sample_count 증가)
+  upsert(
+    signatureData: SignatureData,
+    registryId: string,
+    registryName: string,
+    customAttrs: Record<string, string> = {}
+  ): MappingCluster {
+    const signature = this.createSignatureHash(signatureData);
+    const existing = this.getBySignature(signature);
+    const now = new Date().toISOString();
+
+    if (existing) {
+      // Update: sample_count 증가
+      this.db.prepare(`
+        UPDATE mapping_clusters SET
+          registry_id = ?,
+          registry_name = ?,
+          custom_attrs = ?,
+          sample_count = sample_count + 1,
+          updated_at = ?
+        WHERE signature = ?
+      `).run(
+        registryId,
+        registryName,
+        JSON.stringify(customAttrs),
+        now,
+        signature
+      );
+      return this.getBySignature(signature)!;
+    } else {
+      // Insert
+      const id = randomUUID();
+      this.db.prepare(`
+        INSERT INTO mapping_clusters
+          (id, signature, signature_data, registry_id, registry_name, custom_attrs, sample_count, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)
+      `).run(
+        id,
+        signature,
+        JSON.stringify(signatureData),
+        registryId,
+        registryName,
+        JSON.stringify(customAttrs),
+        now,
+        now
+      );
+      return this.getBySignature(signature)!;
+    }
+  }
+
+  // 클러스터 삭제
+  delete(id: string): boolean {
+    const result = this.db.prepare(
+      'DELETE FROM mapping_clusters WHERE id = ?'
+    ).run(id);
+    return result.changes > 0;
+  }
+
+  // 전체 클러스터 삭제
+  deleteAll(): number {
+    const result = this.db.prepare('DELETE FROM mapping_clusters').run();
+    return result.changes;
+  }
+}
+
+// ---- Row → Domain ----
+interface RawCluster {
+  id: string;
+  signature: string;
+  signature_data: string;
+  registry_id: string;
+  registry_name: string;
+  custom_attrs: string;
+  sample_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
+function toCluster(r: RawCluster): MappingCluster {
+  return {
+    id: r.id,
+    signature: r.signature,
+    signatureData: JSON.parse(r.signature_data),
+    registryId: r.registry_id,
+    registryName: r.registry_name,
+    customAttrs: JSON.parse(r.custom_attrs),
+    sampleCount: r.sample_count,
+    createdAt: r.created_at,
+    updatedAt: r.updated_at,
+  };
+}

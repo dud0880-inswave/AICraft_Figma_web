@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=Edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebSquare Preview</title>
+
+    <style>
+        body {
+            margin: 0;
+            padding: 16px;
+            background: #fff;
+        }
+        #loading {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 100px;
+            color: #666;
+            font-family: sans-serif;
+        }
+    </style>
+
+    <script type="text/javascript">
+        // WebSquare External 설정
+        window.WebSquareExternal = {
+            baseServletURI: "/",
+            baseURI: "/websquare/"
+        };
+    </script>
+
+    <!-- WebSquare Config -->
+    <script src="/websquare/config-global.js"></script>
+</head>
+<body>
+    <div id="loading">WebSquare 엔진 로딩 중...</div>
+    <div id="mf"></div>
+
+    <script>
+    // 미리보기 프레임 객체
+    window.previewFrame = {
+        ready: false
+    };
+
+    // WebSquare 엔진 초기화
+    (function() {
+        // 엔진 스크립트 로드
+        const engineScript = document.createElement('script');
+        engineScript.type = 'text/javascript';
+        engineScript.src = '/websquare/_websquare_/wba_B1365_babel_main.js';
+
+        engineScript.onload = function() {
+            if (typeof WebSquare !== 'undefined') {
+                WebSquare.configPath = '/websquare/config-global.js';
+
+                try {
+                    const promiseObj = WebSquare.startApplication();
+                    promiseObj.then(function() {
+                        document.getElementById('loading').style.display = 'none';
+                        previewFrame.ready = true;
+                        if (window.parent !== window) {
+                            window.parent.postMessage({ event: 'previewFrame.ready' }, '*');
+                        }
+                    }).catch(function() {
+                        previewFrame.ready = true;
+                        if (window.parent !== window) {
+                            window.parent.postMessage({ event: 'previewFrame.ready' }, '*');
+                        }
+                    });
+                } catch(e) {
+                    previewFrame.ready = true;
+                    if (window.parent !== window) {
+                        window.parent.postMessage({ event: 'previewFrame.ready' }, '*');
+                    }
+                }
+            }
+        };
+
+        engineScript.onerror = function() {
+            document.getElementById('loading').textContent = '엔진 로드 실패';
+        };
+
+        document.head.appendChild(engineScript);
+    })();
+
+    // XML 렌더링
+    previewFrame.render = async (xml) => {
+        try {
+            if (!WebSquare?.xmljs?.xml2json) {
+                throw new Error('WebSquare engine not ready');
+            }
+
+            const xmlToJS = await WebSquare.xmljs.xml2json(xml);
+
+            if (WebSquare.strictModeFrame?.removeFrame) {
+                WebSquare.strictModeFrame.removeFrame();
+            }
+
+            await WebSquare.jsLoader.start(xmlToJS, { spa: undefined });
+            return true;
+        } catch (e) {
+            return e;
+        }
+    };
+
+    // CSS 적용
+    previewFrame.applyCss = (cssContents) => {
+        document.querySelectorAll('style[data-custom-css]').forEach(el => el.remove());
+        if (cssContents && cssContents.length > 0) {
+            cssContents.forEach((content, index) => {
+                const styleEl = document.createElement('style');
+                styleEl.setAttribute('data-custom-css', 'custom-' + index);
+                styleEl.textContent = content;
+                document.head.appendChild(styleEl);
+            });
+        }
+    };
+
+    // postMessage 수신
+    previewFrame.receiveMessage = async (event) => {
+        if (event?.data?.event === 'previewFrame.sendXML') {
+            const xml = event.data.xml;
+            const css = event.data.css;
+            const response = {
+                event: 'previewFrame.sendXMLResponse',
+                success: false,
+                error: undefined
+            };
+
+            try {
+                const res = await previewFrame.render(xml);
+                if (res === true) {
+                    response.success = true;
+                    // 렌더링 후 CSS 적용 (WebSquare가 DOM을 조작한 후)
+                    if (css) {
+                        setTimeout(() => {
+                            previewFrame.applyCss(css);
+                        }, 50);
+                    }
+                } else {
+                    response.success = false;
+                    response.error = res?.toString() || 'Unknown error';
+                }
+            } catch (e) {
+                response.success = false;
+                response.error = e?.toString() || 'Unknown error';
+            }
+
+            event.source.postMessage(response, event.origin);
+        }
+    };
+
+    // 이벤트 리스너 등록
+    window.addEventListener('message', previewFrame.receiveMessage);
+    </script>
+</body>
+</html>

@@ -1,0 +1,460 @@
+<!DOCTYPE html>
+<html>
+	<head>
+	<meta http-equiv="expires" content="0" />
+	<meta http-equiv="pragma" content="no-cache" />
+	<meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+	<meta http-equiv="X-UA-Compatible" content="IE=Edge" />
+	<title>Source</title>
+	<style type="text/css">
+		body		{ background-color:#F6F4F1; margin-top:0pt; margin-left:0pt; margin-right:0pt }
+		#title 		{ margin-left:5pt;  padding-top:5pt; height:22pt; color:#B3550A; font-size:9pt; font-family:Gulim; line-height:14pt; visibility:visible }
+		#query 		{ margin: 5px 3px; text-align:left; visibility:visible; font-size: 12px;border: 1px solid #d7d7d7;background: #eee;padding: 5px;}
+		#query select {margin-right: 20px}
+		
+		#main 		{ overflow:auto;margin: 5px 3px; text-align:left;font-size:9pt;visibility:visible;border:4px solid #d7d7d7; font-family:monospace }
+		#sub 		{ text-align:center; padding-top:7px; visibility:visible }
+		ul			{padding-left: 20px;}
+        li			{margin: 5px 0;cursor: pointer;}
+        li .selected, input.selected {background-color: powderblue;text-decoration: underline;font-style: italic;font-weight: bold;border-radius: 4px;}
+        .frameFolder {cursor: pointer;font-weight: bold;position: relative;padding-left: 20px;}
+        .frameFolder::before {background-image:url("images/i_w2_wframe.png");position: absolute;left: 0;width:16px;height:16px;content: "";}
+        .nav {min-height:32px;display: flex;flex-direction: column;background-color: #f8f9fa;padding: 5px;border-radius: 5px;font-family: Arial, sans-serif;position: relative;}
+        .nav-path {display: flex;align-items: center;background-color: #e9ecef;padding: 8px;border-radius: 5px;font-size: 14px;position: relative;}
+		span.nav-folder {font-weight: bold;margin: 0 5px;cursor: pointer;position: relative;}
+		span.nav-folder:hover {background-color: powderblue;font-weight: bold;cursor: pointer;transition: all 0.3s ease-in-out;border-radius: 4px;text-decoration: underline;}
+	</style>
+	<script src="htmlCommon.js"></script>
+	<script>
+		try {
+		    var domain = getParameter("domain");  
+		    if(domain) {
+		        document.domain = domain;   
+		    }
+		} catch (e) {
+			opener.WebSquare.exception.printStackTrace(e);
+		}
+		
+		window.onload = function () {
+            if (doInit) {
+                setTimeout(doInit,300);
+            }
+		};
+
+		window.onresize = function() {
+			setMainHeight();
+		};
+		setMainHeight = function() {
+			var height = (document.documentElement.clientHeight - 135);   //-title, sub
+			if( height < 200 ) {
+				height = 200;
+			}
+			var navHeight = document.getElementById("nav-container").offsetHeight;
+			height = height - navHeight;
+			document.getElementById("main").style.height = height + "px";
+		}
+
+		function doInit() {
+			var titleStr = "<img src='images/bullet_info.gif' style='vertical-align:middle; margin-right:5px' />";
+			titleStr += "<b>"+opener.WebSquare.language.getMessage("E_viewCollection_title")+"</b>";
+			setMainHeight();
+			_safeInnerHTML(document.getElementById("title"), titleStr);
+			
+			var scopeStr = getParameter("scope");
+			var scopeComp = null;
+			if(scopeStr) {
+				scopeComp = opener.WebSquare.idCache[scopeStr];
+			}
+			var comp = document.getElementById( "collection");
+
+			for( var i in opener.WebSquare.DataCollection.comp ) {
+				var collections = opener.WebSquare.DataCollection.comp[i];
+				if( collections.initializeType ) {
+					if( collections.initializeType == "dataList" || collections.initializeType == "dataMap" || collections.initializeType == "linkedDataList" ) {
+						var realId = collections.id;
+						if(scopeComp != null) {
+							if(collections.scope_obj !== scopeComp ) {
+								continue;
+							}
+							if (collections.options._empty) {
+								continue;
+							}
+							realId = collections.org_id || collections.id;
+						} else if(collections.scope_obj) {
+							continue;
+						}
+						var op = new Option();
+						op.value = collections.id;
+						op.text = realId;
+						comp.options.add(op);
+					}
+				}
+			}
+			var treeBasedata = {};
+			for( var i in opener.WebSquare.idCache ) {
+				var wframeObj = opener.WebSquare.idCache[i];
+			    if (typeof wframeObj.getPluginName == 'function') {
+			        if (wframeObj.getPluginName() == "wframe") {
+			            treeBasedata[wframeObj.uuid] = wframeObj;
+			        }
+			    }
+			}
+			var treeData = buildTree(treeBasedata);
+	    	var val = ((scopeComp.parentFrame == null) ? "top" : scopeComp.org_id) + "(" + scopeComp.id + ")";
+			var treeContainer = document.getElementById("navi-tree-container");
+    		treeContainer.appendChild(renderTree(treeData,"navi-tree-container"));
+    		renderNavi(treeData,"nav-container",scopeStr);
+		}
+
+		function getCollectionData(paramObj) {
+			var collectionComp = document.getElementById( "collection" );
+			var dataType = document.getElementById( "dataType" );
+			var data;
+			
+			var scopeStr = getParameter("scope");
+			var selectedNaviSpan = document.querySelector('#navi-tree-container').querySelector('.selected');
+			if (selectedNaviSpan && selectedNaviSpan.getAttribute("data-treeid")) {
+				scopeStr = selectedNaviSpan.getAttribute("data-treeid");
+			}
+			if (paramObj && paramObj.type == "wframe" && paramObj.val) {
+				scopeStr = paramObj.val;
+			}
+			var scopeComp = null;
+			if(scopeStr) {
+				scopeComp = opener.WebSquare.idCache[scopeStr];
+			}
+
+			var isCondition1 = collectionComp.value != "all" && collectionComp.value != "";
+			var isCondition2 = (paramObj && paramObj.type == "dataCollection" && paramObj.val != "") ? true : false;
+
+			if( isCondition1 || isCondition2 ) {
+				var collectionVal = collectionComp.value;
+				if (isCondition2) {
+					collectionVal = paramObj.val;
+				}
+				if( dataType.value == "xml" || dataType.value == "xml2" ) {
+					if( opener.WebSquare.api.data[ collectionVal ].initializeType == "dataMap" ) {
+						data = opener.WebSquare.api.data[ collectionVal ].getXML();
+					} else {
+						data = opener.WebSquare.api.data[ collectionVal ].getAllXML();	
+					}
+				} else if( dataType.value == "json" ) {
+					if( opener.WebSquare.api.data[ collectionVal ].initializeType == "dataMap" ) {
+						data = opener.WebSquare.api.data[ collectionVal ].getJSON();
+					} else {
+						data = opener.WebSquare.api.data[ collectionVal ].getAllJSON();
+					}
+				} else {
+					if( opener.WebSquare.api.data[ collectionVal ].initializeType == "dataMap" ) {
+						data = opener.WebSquare.api.data[ collectionVal ].getArray();
+					} else {
+						data = opener.WebSquare.api.data[ collectionVal ].getAllArray();
+					}
+				}
+			} else {
+				var scopeFunc;
+				var opts;
+				if(scopeComp == null) {
+					scopeFunc = opener.WebSquare.api;
+					opts = {"skipWFrame" : true};
+				} else {
+					var scopeList = scopeComp.options.scopeVariable.split(",");
+					var scopeVar = scopeComp.scopeVariable[scopeList[0].trim()];
+					scopeFunc = scopeVar[scopeComp.options.scopeFunction];
+				}
+				if( dataType.value == "xml" || dataType.value == "xml2" ) {
+					data = scopeFunc.data.get( "xml", undefined, opts);
+				} else {
+					data = scopeFunc.data.get( dataType.value, undefined, opts);
+				}
+			}
+
+			var retStr = "";
+			document.getElementById("main").contentEditable="true";
+			if( dataType.value == "xml" ) {
+				retStr = opener.WebSquare.xml.indent( data );
+				document.getElementById("main").style.whiteSpace="pre";
+				if( document.getElementById("main").innerText != undefined ) {
+					document.getElementById("main").innerText =  retStr;	
+				} else {
+					document.getElementById("main").textContent =  retStr;	
+				}
+
+			} else if( dataType.value == "xml2" ) {
+				retStr = opener.WebSquare.xml.indent( data, "html" );
+				document.getElementById("main").style.whiteSpace="normal";
+				_safeInnerHTML(document.getElementById("main"),  retStr);
+			} else if( dataType.value == "json" || dataType.value == "array" ) {
+				retStr = opener.JSON.stringify( data , null, 4);
+				document.getElementById("main").style.whiteSpace="pre";
+				if( document.getElementById("main").innerText != undefined ) {
+					document.getElementById("main").innerText =  retStr;	
+				} else {
+					document.getElementById("main").textContent =  retStr;	
+				}
+			}
+		}
+		function updateDataCollection(scopeStr) {
+			var scopeComp = null;
+			if(scopeStr) {
+				scopeComp = opener.WebSquare.idCache[scopeStr];
+			}
+			var comp = document.getElementById("collection");
+			comp.options.length = 0;
+			var allOp = new Option();
+			allOp.value = "all";
+			allOp.text = "-all-";
+			comp.options.add(allOp);
+			for( var i in opener.WebSquare.DataCollection.comp ) {
+				var collections = opener.WebSquare.DataCollection.comp[i];
+				if( collections.initializeType ) {
+					//console.log('',collections.id,collections.initializeType);
+					if( collections.initializeType == "dataList" || collections.initializeType == "dataMap" || collections.initializeType == "linkedDataList" ) {
+						var realId = collections.id;
+						if(scopeComp != null) {
+							if(collections.scope_obj !== scopeComp ) {
+								continue;
+							}
+							if (collections.options._empty) {
+								continue;
+							}
+							realId = collections.org_id || collections.id;
+						} else if(collections.scope_obj) {
+							continue;
+						}
+						var op = new Option();
+						op.value = collections.id;
+						op.text = realId;
+						comp.options.add(op);
+					}
+				}
+			}
+		}
+
+	    function buildTree(data) {
+	        var tree = {};
+	        var items = {};
+
+	        for (var key in data) {
+	            //items[data[key].id] = {
+	        	items[key] = {
+	                id: data[key].id,
+	                orgId: data[key].org_id || '',
+	                parentFrame: data[key].parentFrame,
+	                children: []
+	            };
+	        }
+
+	        for (var key in items) {
+	            var parent = items[items[key].parentFrame];
+	            if (parent) {
+	                parent.children[key] = items[key];
+	            } else {
+	                tree[key] = items[key]; 
+	            }
+	        }
+	        return tree;
+	    }
+
+	    function renderTree(tree, targetContainerId) {
+	    	var scopeStr= getParameter("scope");
+	        var ul = document.createElement("ul");
+	        for (var key in tree) {
+	            var li = document.createElement("li");
+	            var liSubSpan = document.createElement("span");
+	            var comp = opener.WebSquare.util.getComponentById(tree[key].id);
+	            var isWframe = typeof comp.getPluginName == "function" && comp.getPluginName() == "wframe";
+	            var isDataCollection = comp.initializeType && (comp.initializeType == "dataList" || comp.initializeType == "dataMap" || comp.initializeType == "linkedDataList");
+	            if (isWframe) {
+	            	liSubSpan.classList.add('frameFolder');
+	            }
+	            if (isDataCollection) {
+	            	liSubSpan.classList.add('dataCollection');
+	            	liSubSpan.classList.add(comp.initializeType);
+	            }
+	            if (opener.WebSquare.idCache[scopeStr].id == tree[key].id) {
+	            	liSubSpan.classList.add('selected');
+	            }
+	            liSubSpan.textContent = ((tree[key].parentFrame == null) ? "top" : tree[key].orgId) + "(" + tree[key].id + ")";
+	            var keyStr = (isWframe) ? key : tree[key].id;
+	            liSubSpan.setAttribute("data-treeid", keyStr);
+	            if (targetContainerId == "navi-tree-container") {
+		            liSubSpan.onclick = function (event) {
+		            	event.stopPropagation();
+		            	onNodeClick(this);
+		            	document.querySelector('#'+targetContainerId).querySelector('.selected').classList.remove('selected');
+		            	this.classList.add('selected');
+		            	var paramObj = {};
+						paramObj.type = "wframe";
+						paramObj.val = this.getAttribute("data-treeid");
+						getCollectionData(paramObj);
+
+		            	if (document.querySelector('#nav-container').querySelector('.selected')) {
+		            		document.querySelector('#nav-container').querySelector('.selected').classList.remove('selected');		            		
+		            	}
+		            	var dataTreeId = this.getAttribute("data-treeid");
+		            	var selectorPathVal = '[data-spanid=\"' + dataTreeId +'\"]';
+		            	var selectedTree2 = document.querySelector('#nav-container').querySelector(selectorPathVal);
+			            if (selectedTree2) {
+			                selectedTree2.classList.add('selected');
+			            }	
+		            }
+	            }
+	            li.appendChild(liSubSpan);
+				if (Object.keys(tree[key].children).length > 0) {
+	                li.appendChild(renderTree(tree[key].children,targetContainerId));
+	            }
+	            ul.appendChild(li);
+	        }
+	        return ul;
+	    }
+	    function onNodeClick(obj) {
+	    	var scopeStr = obj.getAttribute("data-treeid");
+	    	toggleShow();
+	    	updateDataCollection(scopeStr);
+	    	//navi span update
+			var treeBasedata = {};
+			for( var i in opener.WebSquare.idCache ) {
+				var wframeObj = opener.WebSquare.idCache[i];
+			    if (typeof wframeObj.getPluginName == 'function') {
+			        if (wframeObj.getPluginName() == "wframe") {
+			            treeBasedata[wframeObj.uuid] = wframeObj;
+			        }
+			    }
+			}
+			var treeData = buildTree(treeBasedata);
+    		renderNavi(treeData,"nav-container",scopeStr);
+	    }
+	    function toggleShow(fixShow) {
+	    	var obj = document.getElementById('navi-tree-container');
+	    	var navContainer = document.getElementById('nav-container');
+	    	if (obj.style.display == 'none') {
+	    		obj.style.display='block';
+	    		var scrollY = window.scrollY || document.documentElement.scrollTop || document.body.scrollTop || 0;
+	    		obj.style.top = (opener.WebSquare.style.getAbsoluteTop(navContainer) + opener.WebSquare.style.getSize(navContainer,"height") - scrollY)+"px";
+	    	} else {
+	    		if (fixShow != true) {
+	    			obj.style.display='none';
+	    		}
+	    	}
+	    }
+		function findKeyPaths(obj, targetKey, currentPath) {
+		    let paths = [];
+		    for (const key in obj) {
+		        if (!obj.hasOwnProperty(key)) continue;
+		        let newPath = currentPath.slice(); 
+		        newPath.push(key); 
+		        if (key === targetKey) {
+		            paths.push(newPath.join('.'));
+		        }
+		        if (typeof obj[key] === 'object' && obj[key] !== null) {
+		            paths = paths.concat(findKeyPaths(obj[key], targetKey, newPath));
+		        }
+		    }
+		    return paths;
+		}
+		function removeChildrenFromPaths(paths) {
+		    var result = [];
+		    for (var i = 0; i < paths.length; i++) {
+		        var splitPath = paths[i].split('.');
+		        var filteredPath = [];
+		        for (var j = 0; j < splitPath.length; j++) {
+		            if (splitPath[j] !== 'children') {
+		                filteredPath.push(splitPath[j]);
+		            }
+		        }
+		        result.push(filteredPath.join('.'));
+		    }
+		    return result;
+		}
+	    function renderNavi(tree, targetContainerId,scopeStr) {
+	    	const result = removeChildrenFromPaths(findKeyPaths(tree, scopeStr, []));
+	    	var reultArr = [];
+	    	if (result.length > 0) {
+	    		reultArr = result[0].split(".");
+	    	}
+	    	var div = document.querySelector('.nav-path');
+	    	if (!div) {
+		        var div = document.createElement("div");
+		        div.classList.add("nav-path");
+	    	} else {
+	    		div.innerHTML = '';
+	    	}
+	    	for (i=0 ; i < reultArr.length; i++){
+	    		var span = document.createElement('span');
+	    		span.classList.add('nav-folder');
+	    		var scopeComp = opener.WebSquare.idCache[reultArr[i]];
+	    		var spanText = ((scopeComp.parentFrame == null) ? "top" : scopeComp.org_id);
+	    		span.textContent = spanText;
+	    		span.setAttribute("data-spanid",reultArr[i]);
+	    		span.onclick = function (event) {
+	            	event.stopPropagation();
+	            	var oldSpan = document.querySelector('#'+targetContainerId).querySelector('.selected');
+	            	var oldSelectedSpan = (oldSpan) ? oldSpan.getAttribute("data-spanid") : "";
+	            	var newSelectedSpan = this.getAttribute("data-spanid");
+	            	if (oldSpan) {
+	            		oldSpan.classList.remove('selected');
+	            	}
+	            	this.classList.add('selected');
+	            	var selectorPathVal = '[data-treeid=\"' + this.getAttribute("data-spanid") +'\"]';
+	            	if (oldSelectedSpan == newSelectedSpan || oldSelectedSpan =="") {
+		            	toggleShow();
+	            	} else if (oldSelectedSpan != newSelectedSpan) {
+	            		toggleShow(true);
+	            	}
+	            	var selectedTree = document.querySelector('#navi-tree-container').querySelector(selectorPathVal);
+	            	document.querySelector('#navi-tree-container').querySelector('.selected').classList.remove('selected');
+	            	selectedTree.classList.add('selected');
+	            }
+	    		div.appendChild(span);
+				if (i < reultArr.length - 1) {
+			        span.parentNode.insertBefore(document.createTextNode('>'), span.nextSibling);
+			    }
+	    	}
+	    }
+ 		document.addEventListener('scroll', function() {
+            var targetDiv = document.querySelector('#navi-tree-container');
+            if (targetDiv) {
+                targetDiv.style.display = 'none';
+            }
+        });
+		document.addEventListener('click', function(event) {
+            var targetDiv = document.querySelector('#navi-tree-container');
+            var triggerDiv = document.querySelector('.nav-folder');
+            if (targetDiv && !targetDiv.contains(event.target) && !triggerDiv.contains(event.target)) {
+                targetDiv.style.display = 'none';
+            }
+        });
+	</script>
+</head>
+<body>
+	<div id="title"></div>
+	<div id="query">
+    	<div class="nav" id="nav-container">
+    		<div class="nav-path">
+    		</div>
+    	</div>
+		<div>
+			<div>
+				<div id="navi-tree-container" style="display:none;position:fixed;min-width:200px;max-height:500px;overflow-y:auto;background-color:#ffffff;border: 1px solid #000000;z-index:99;"></div>	
+			</div>
+			<b>dataCollection :</b> 
+			<select id="collection" style="min-width:100px;">
+				<option value="all">-all-</option>
+			</select>
+			<b>Data Type : </b> 
+			<select id="dataType">
+				<option value="json">JSON</option>
+				<option value="xml">XML</option>
+				<option value="xml2">XML(Highlight)</option>				
+				<option value="array">ARRAY</option>
+			</select>
+			<button onclick="javascript:getCollectionData()">search</button>
+		</div>
+	</div>
+	<div id="main" style="height:350px"></div>
+	<div id="sub">
+		<input type="button" value=" close " onClick="self.close()"/>
+	</div>
+</body>
+</html>

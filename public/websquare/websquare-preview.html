@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=Edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebSquare Preview</title>
+
+    <!-- WebSquare CSS -->
+    <link rel="stylesheet" href="_websquare_/_stylesheet.css">
+    <link rel="stylesheet" href="_websquare_/skin/stylesheet.css">
+    <link rel="stylesheet" href="_websquare_/skin/stylesheet_ext.css">
+
+    <style>
+        html, body {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: auto;
+        }
+        #websquare_container {
+            width: 100%;
+            height: 100%;
+        }
+        .ws-loading {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100%;
+            font-family: Arial, sans-serif;
+            color: #666;
+        }
+        .ws-error {
+            padding: 20px;
+            color: #d32f2f;
+            font-family: Arial, sans-serif;
+        }
+    </style>
+
+    <!-- WebSquare Config (전역 변수) -->
+    <script src="config-global.js"></script>
+
+    <!-- WebSquare 엔진 -->
+    <script src="_websquare_/wba_B1365_babel_main.js"></script>
+</head>
+<body>
+    <div id="websquare_container">
+        <div class="ws-loading" id="loading">
+            WebSquare Engine Loading...
+        </div>
+    </div>
+
+    <script src="websquare-loader.js"></script>
+</body>
+</html>
