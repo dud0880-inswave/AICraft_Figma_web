@@ -54,10 +54,10 @@ export default function AddFileModal({
       />
 
       {/* 모달 */}
-      <div className="relative w-full max-w-md mx-4 bg-gray-800 rounded-lg shadow-xl">
+      <div className="relative w-full max-w-md mx-4 theme-bg-secondary rounded-lg shadow-xl">
         {/* 헤더 */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-700">
-          <h2 className="text-lg font-semibold text-white">새 파일 추가</h2>
+        <div className="flex items-center justify-between px-6 py-4 border-b theme-border">
+          <h2 className="text-lg font-semibold theme-text-primary">새 파일 추가</h2>
           <button
             onClick={onClose}
             className="p-1 text-gray-400 hover:text-white rounded"
@@ -111,17 +111,17 @@ export default function AddFileModal({
                 value={token}
                 onChange={(e) => setToken(e.target.value)}
                 placeholder="figd_xxxxxxxxxxxxxxxx"
-                className="mt-2 w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                className="mt-2 w-full px-4 py-2 theme-bg-tertiary border theme-border rounded-lg theme-text-primary placeholder-gray-400 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
                 required
               />
-              <p className="text-xs text-gray-500 mt-1">
+              <p className="text-xs theme-text-secondary mt-1">
                 Figma Settings → Account → Personal access tokens
               </p>
             </div>
           )}
 
           <div className="mb-6">
-            <label className="block text-sm font-medium text-gray-300 mb-2">
+            <label className="block text-sm font-medium theme-text-secondary mb-2">
               Figma File URL
             </label>
             <input
@@ -129,7 +129,7 @@ export default function AddFileModal({
               value={fileUrl}
               onChange={(e) => setFileUrl(e.target.value)}
               placeholder="https://www.figma.com/design/xxxxx/..."
-              className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+              className="w-full px-4 py-2 theme-bg-tertiary border theme-border rounded-lg theme-text-primary placeholder-gray-400 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
               autoFocus
               required
             />
@@ -139,14 +139,14 @@ export default function AddFileModal({
             <button
               type="button"
               onClick={onClose}
-              className="flex-1 py-2.5 px-4 bg-gray-700 hover:bg-gray-600 text-white font-medium rounded-lg transition-colors"
+              className="flex-1 py-2.5 px-4 theme-bg-tertiary hover:opacity-80 theme-text-primary font-medium rounded-lg transition-colors"
             >
               취소
             </button>
             <button
               type="submit"
               disabled={loading || !token || !fileUrl}
-              className="flex-1 py-2.5 px-4 bg-blue-600 hover:bg-blue-500 disabled:bg-gray-600 disabled:cursor-not-allowed text-white font-medium rounded-lg transition-colors flex items-center justify-center"
+              className="flex-1 py-2.5 px-4 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-medium rounded-lg transition-colors flex items-center justify-center"
             >
               {loading ? (
                 <>

@@ -81,7 +81,7 @@ export default function MappingEditor({ node, nodes, fileKey, onRegistryLoad, on
   const [cssList, setCssList] = useState<CssItem[]>([])
   const [componentClassMapping, setComponentClassMapping] = useState<ComponentClassMapping>({})
   const [selectedCssId, setSelectedCssId] = useState<string | null>(null)
-  const [splitRatio, setSplitRatio] = useState(0.5) // 0~1 비율로 관리
+  const [topHeight, setTopHeight] = useState<number | null>(null) // null = 콘텐츠 높이 auto
   const [isDragging, setIsDragging] = useState(false)
   const [classSearchQuery, setClassSearchQuery] = useState('')
   const [newAttrKey, setNewAttrKey] = useState('')
@@ -138,7 +138,7 @@ export default function MappingEditor({ node, nodes, fileKey, onRegistryLoad, on
   useEffect(() => {
     if (mapping?.registryId && cssList.length > 0) {
       const firstCssWithBoundClasses = cssList.find(css => {
-        const classes = componentClassMapping[css.id]?.[mapping.registryId] || []
+        const classes = componentClassMapping[css.id]?.[mapping.registryId!] || []
         return classes.length > 0
       })
       if (firstCssWithBoundClasses) {
@@ -208,11 +208,6 @@ export default function MappingEditor({ node, nodes, fileKey, onRegistryLoad, on
     const targetNodes = nodes.length > 0 ? nodes : (node ? [node] : [])
     if (targetNodes.length === 0) return
 
-    const currentClasses = (mapping.customAttrs?.class || '').split(' ').filter(Boolean)
-    const newClasses = currentClasses.includes(className)
-      ? currentClasses.filter(c => c !== className)
-      : [...currentClasses, className]
-
     setSaving(true)
     try {
       let lastMapping: NodeMapping | null = null
@@ -263,11 +258,6 @@ export default function MappingEditor({ node, nodes, fileKey, onRegistryLoad, on
 
     setSaving(true)
     try {
-      const newCustomAttrs = {
-        ...mapping.customAttrs,
-        [newAttrKey.trim()]: newAttrValue
-      }
-
       let lastMapping: NodeMapping | null = null
       for (const n of targetNodes) {
         const nodeMapping = await fetchMapping(fileKey, n.id)
@@ -389,9 +379,9 @@ export default function MappingEditor({ node, nodes, fileKey, onRegistryLoad, on
       if (!splitContainerRef.current) return
       const rect = splitContainerRef.current.getBoundingClientRect()
       const relativeY = e.clientY - rect.top
-      const ratio = relativeY / rect.height
-      // 최소 20%, 최대 80%
-      setSplitRatio(Math.max(0.2, Math.min(0.8, ratio)))
+      const minH = rect.height * 0.2
+      const maxH = rect.height * 0.8
+      setTopHeight(Math.max(minH, Math.min(maxH, relativeY)))
     }
 
     const handleMouseUp = () => {
@@ -413,8 +403,8 @@ export default function MappingEditor({ node, nodes, fileKey, onRegistryLoad, on
 
   if (!node && nodes.length === 0) {
     return (
-      <div className="h-full bg-gray-800 p-4">
-        <p className="text-gray-500 text-sm">노드를 선택하면 컴포넌트를 매핑할 수 있습니다</p>
+      <div className="h-full theme-bg-secondary p-4">
+        <p className="theme-text-secondary text-sm">노드를 선택하면 컴포넌트를 매핑할 수 있습니다</p>
       </div>
     )
   }
@@ -423,20 +413,20 @@ export default function MappingEditor({ node, nodes, fileKey, onRegistryLoad, on
   const displayNode = node || nodes[0]
   if (!displayNode) {
     return (
-      <div className="h-full bg-gray-800 p-4">
-        <p className="text-gray-500 text-sm">노드를 선택하면 컴포넌트를 매핑할 수 있습니다</p>
+      <div className="h-full theme-bg-secondary p-4">
+        <p className="theme-text-secondary text-sm">노드를 선택하면 컴포넌트를 매핑할 수 있습니다</p>
       </div>
     )
   }
 
   return (
-    <div className="h-full bg-gray-800 flex flex-col">
+    <div className="h-full theme-bg-secondary flex flex-col">
       {/* 노드 정보 */}
-      <div className="px-4 py-3 border-b border-gray-700 flex-shrink-0">
-        <h2 className="text-sm font-medium text-white truncate" title={displayNode.name}>
+      <div className="px-4 py-3 border-b theme-border flex-shrink-0">
+        <h2 className="text-sm font-medium theme-text-primary truncate" title={displayNode.name}>
           {nodes.length > 1 ? `${nodes.length}개 노드 선택됨` : displayNode.name}
         </h2>
-        <p className="text-xs text-gray-500 mt-0.5">
+        <p className="text-xs theme-text-secondary mt-0.5">
           {nodes.length > 1
             ? `일괄 적용 모드`
             : `${displayNode.type} · ${displayNode.id}`}
@@ -444,7 +434,7 @@ export default function MappingEditor({ node, nodes, fileKey, onRegistryLoad, on
       </div>
 
       {/* 현재 매핑 상태 */}
-      <div className="px-4 py-3 border-b border-gray-700 flex-shrink-0">
+      <div className="px-4 py-3 border-b theme-border flex-shrink-0">
         <div className="flex items-center justify-between mb-2">
           <span className="text-xs text-gray-400">변환 컴포넌트</span>
           {mapping && (
@@ -461,13 +451,13 @@ export default function MappingEditor({ node, nodes, fileKey, onRegistryLoad, on
         {loading ? (
           <div className="text-sm text-gray-500">로딩...</div>
         ) : mapping ? (
-          <div className="bg-blue-900/30 border border-blue-700/50 rounded-lg p-3">
-            <span className="text-blue-400 font-mono text-sm">{mapping.registryName}</span>
+          <div className="mapped-component-box border rounded-lg p-3">
+            <span className="text-blue-500 font-mono text-sm">{mapping.registryName}</span>
           </div>
         ) : (
-          <div className="bg-gray-700/50 border border-gray-600 rounded-lg p-3 text-center">
-            <p className="text-sm text-gray-400">매핑되지 않음</p>
-            <p className="text-xs text-gray-500 mt-1">아래에서 컴포넌트를 선택하세요</p>
+          <div className="theme-bg-tertiary border theme-border rounded-lg p-3 text-center">
+            <p className="text-sm theme-text-secondary">매핑되지 않음</p>
+            <p className="text-xs theme-text-secondary mt-1">아래에서 컴포넌트를 선택하세요</p>
           </div>
         )}
       </div>
@@ -475,7 +465,7 @@ export default function MappingEditor({ node, nodes, fileKey, onRegistryLoad, on
       {/* 스플리터 영역 */}
       <div className="flex-1 flex flex-col min-h-0" ref={splitContainerRef}>
         {/* 상단: 컴포넌트 선택 */}
-        <div className="overflow-auto" style={{ flex: `0 0 ${splitRatio * 100}%` }}>
+        <div className="overflow-auto" style={{ height: topHeight ?? 'auto', flexShrink: 0 }}>
           <div className="px-4 py-3">
             <div className="text-xs text-gray-400 mb-2">컴포넌트 선택</div>
             <div ref={dropdownRef} className="relative">
@@ -489,7 +479,7 @@ export default function MappingEditor({ node, nodes, fileKey, onRegistryLoad, on
                 }}
                 onFocus={() => setDropdownOpen(true)}
                 disabled={saving}
-                className="w-full px-3 py-2 text-sm bg-gray-700 border border-gray-600 rounded text-white placeholder-gray-400 focus:outline-none focus:border-blue-500"
+                className="w-full px-3 py-2 text-sm theme-bg-tertiary border theme-border rounded theme-text-primary placeholder-[var(--text-muted)] focus:outline-none focus:border-blue-500"
               />
               <button
                 type="button"
@@ -502,7 +492,7 @@ export default function MappingEditor({ node, nodes, fileKey, onRegistryLoad, on
               </button>
 
               {dropdownOpen && (
-                <div className="absolute z-10 w-full mt-1 bg-gray-700 border border-gray-600 rounded shadow-lg max-h-48 overflow-auto">
+                <div className="absolute z-10 w-full mt-1 theme-bg-secondary border theme-border rounded shadow-lg max-h-48 overflow-auto">
                   {filteredRegistry.length > 0 ? (
                     filteredRegistry.map((item) => (
                       <button
@@ -513,8 +503,8 @@ export default function MappingEditor({ node, nodes, fileKey, onRegistryLoad, on
                           setSearchQuery('')
                           setDropdownOpen(false)
                         }}
-                        className={`w-full px-3 py-2 text-left text-sm hover:bg-gray-600 ${
-                          mapping?.registryId === item.id ? 'bg-blue-900/50 text-blue-400' : 'text-white'
+                        className={`w-full px-3 py-2 text-left text-sm theme-bg-hover ${
+                          mapping?.registryId === item.id ? 'bg-blue-900/50 text-blue-400' : 'theme-text-primary'
                         }`}
                       >
                         {item.name}
@@ -529,7 +519,7 @@ export default function MappingEditor({ node, nodes, fileKey, onRegistryLoad, on
 
             {/* 속성 추가 영역 */}
             {mapping && (
-              <div className="mt-3 p-3 bg-gray-700/50 border border-gray-600 rounded-lg">
+              <div className="mt-3 p-3 theme-bg-tertiary border theme-border rounded-lg">
                 <div className="text-xs text-gray-400 mb-2">커스텀 속성</div>
 
                 {/* 추가된 속성 목록 */}
@@ -537,9 +527,9 @@ export default function MappingEditor({ node, nodes, fileKey, onRegistryLoad, on
                   .filter(([key]) => key !== 'class')
                   .map(([key, value]) => (
                     <div key={key} className="flex items-center gap-2 mb-2">
-                      <span className="text-xs text-blue-400 font-mono bg-gray-800 px-2 py-1 rounded">{key}</span>
+                      <span className="text-xs theme-text-attr-key font-mono theme-bg-primary px-2 py-1 rounded">{key}</span>
                       <span className="text-xs text-gray-400">=</span>
-                      <span className="text-xs text-green-400 font-mono bg-gray-800 px-2 py-1 rounded flex-1 truncate">"{value}"</span>
+                      <span className="text-xs theme-text-attr-value font-mono theme-bg-primary px-2 py-1 rounded flex-1 truncate">"{value}"</span>
                       <button
                         onClick={() => handleRemoveAttribute(key)}
                         disabled={saving}
@@ -560,14 +550,14 @@ export default function MappingEditor({ node, nodes, fileKey, onRegistryLoad, on
                     placeholder="key"
                     value={newAttrKey}
                     onChange={(e) => setNewAttrKey(e.target.value)}
-                    className="flex-1 px-2 py-1 text-xs bg-gray-800 border border-gray-600 rounded text-white placeholder-gray-500 focus:outline-none focus:border-blue-500 font-mono"
+                    className="flex-1 px-2 py-1 text-xs theme-bg-primary border theme-border rounded theme-text-primary placeholder-[var(--text-muted)] focus:outline-none focus:border-blue-500 font-mono"
                   />
                   <input
                     type="text"
                     placeholder="value"
                     value={newAttrValue}
                     onChange={(e) => setNewAttrValue(e.target.value)}
-                    className="flex-1 px-2 py-1 text-xs bg-gray-800 border border-gray-600 rounded text-white placeholder-gray-500 focus:outline-none focus:border-blue-500 font-mono"
+                    className="flex-1 px-2 py-1 text-xs theme-bg-primary border theme-border rounded theme-text-primary placeholder-[var(--text-muted)] focus:outline-none focus:border-blue-500 font-mono"
                   />
                   <button
                     onClick={handleAddAttribute}
@@ -633,7 +623,7 @@ ${itemsCode}
 </${tagName}>`
 
                 return (
-                  <pre className="mt-3 p-3 bg-gray-900 border border-gray-600 rounded text-sm font-mono text-green-400 overflow-x-auto whitespace-pre">
+                  <pre className="mt-3 p-3 theme-bg-primary border theme-border rounded text-sm font-mono theme-text-code-green overflow-x-auto whitespace-pre">
                     {code}
                   </pre>
                 )
@@ -656,7 +646,7 @@ ${itemsCode}
 </xf:group>`
 
                 return (
-                  <pre className="mt-3 p-3 bg-gray-900 border border-gray-600 rounded text-sm font-mono text-green-400 overflow-x-auto whitespace-pre">
+                  <pre className="mt-3 p-3 theme-bg-primary border theme-border rounded text-sm font-mono theme-text-code-green overflow-x-auto whitespace-pre">
                     {code}
                   </pre>
                 )
@@ -670,7 +660,7 @@ ${itemsCode}
 </xf:group>`
 
                 return (
-                  <pre className="mt-3 p-3 bg-gray-900 border border-gray-600 rounded text-sm font-mono text-green-400 overflow-x-auto whitespace-pre">
+                  <pre className="mt-3 p-3 theme-bg-primary border theme-border rounded text-sm font-mono theme-text-code-green overflow-x-auto whitespace-pre">
                     {code}
                   </pre>
                 )
@@ -687,7 +677,7 @@ ${itemsCode}
 </xf:group>`
 
                 return (
-                  <pre className="mt-3 p-3 bg-gray-900 border border-gray-600 rounded text-sm font-mono text-green-400 overflow-x-auto whitespace-pre">
+                  <pre className="mt-3 p-3 theme-bg-primary border theme-border rounded text-sm font-mono theme-text-code-green overflow-x-auto whitespace-pre">
                     {code}
                   </pre>
                 )
@@ -701,7 +691,7 @@ ${itemsCode}
 </xf:group>`
 
                 return (
-                  <pre className="mt-3 p-3 bg-gray-900 border border-gray-600 rounded text-sm font-mono text-green-400 overflow-x-auto whitespace-pre">
+                  <pre className="mt-3 p-3 theme-bg-primary border theme-border rounded text-sm font-mono theme-text-code-green overflow-x-auto whitespace-pre">
                     {code}
                   </pre>
                 )
@@ -756,7 +746,7 @@ ${bodyCols}
                         <span className="text-gray-500 text-sm">텍스트 없음 (기본 3컬럼)</span>
                       )}
                     </div>
-                    <pre className="p-3 bg-gray-900 border border-gray-600 rounded text-sm font-mono text-green-400 overflow-x-auto whitespace-pre">
+                    <pre className="p-3 theme-bg-primary border theme-border rounded text-sm font-mono theme-text-code-green overflow-x-auto whitespace-pre">
                       {code}
                     </pre>
                   </div>
@@ -769,7 +759,7 @@ ${bodyCols}
                 : `<${tagName}/>`
 
               return (
-                <pre className="mt-3 p-3 bg-gray-900 border border-gray-600 rounded text-sm font-mono text-green-400 overflow-x-auto">
+                <pre className="mt-3 p-3 theme-bg-primary border theme-border rounded text-sm font-mono theme-text-code-green overflow-x-auto">
                   {code}
                 </pre>
               )
@@ -779,17 +769,17 @@ ${bodyCols}
 
         {/* 스플리터 핸들 */}
         <div
-          className={`h-1.5 bg-gray-700 hover:bg-blue-500 cursor-row-resize flex items-center justify-center transition-colors select-none ${isDragging ? 'bg-blue-500' : ''}`}
+          className={`h-1.5 theme-bg-tertiary hover:bg-blue-500 cursor-row-resize flex items-center justify-center transition-colors select-none ${isDragging ? 'bg-blue-500' : ''}`}
           onMouseDown={(e) => {
             e.preventDefault()
             setIsDragging(true)
           }}
         >
-          <div className="w-10 h-0.5 bg-gray-500 rounded" />
+          <div className="w-10 h-0.5 bg-gray-400 rounded" />
         </div>
 
         {/* 하단: CSS 클래스 선택 */}
-        <div className="overflow-auto" style={{ flex: `0 0 ${(1 - splitRatio) * 100}%` }}>
+        <div className="overflow-auto" style={{ flex: '1 1 0', minHeight: 0 }}>
           {mapping && cssList.length > 0 ? (
             <div className="px-4 py-3 h-full flex flex-col">
               <div className="flex items-center justify-between mb-2 flex-shrink-0">
@@ -801,7 +791,7 @@ ${bodyCols}
                     placeholder="클래스 검색..."
                     value={classSearchQuery}
                     onChange={(e) => setClassSearchQuery(e.target.value)}
-                    className="w-32 px-2 py-1 text-xs bg-gray-700 border border-gray-600 rounded text-white placeholder-gray-500 focus:outline-none focus:border-blue-500"
+                    className="w-32 px-2 py-1 text-xs theme-bg-tertiary border theme-border rounded theme-text-primary placeholder-[var(--text-muted)] focus:outline-none focus:border-blue-500"
                   />
                   {classSearchQuery && (
                     <button
@@ -817,9 +807,9 @@ ${bodyCols}
               </div>
 
               {/* CSS 파일 탭 */}
-              <div className="flex gap-1 mb-2 border-b border-gray-600 overflow-x-auto flex-shrink-0">
+              <div className="flex gap-1 mb-2 border-b theme-border overflow-x-auto flex-shrink-0">
                 {cssList.map(css => {
-                  const boundCount = (componentClassMapping[css.id]?.[mapping.registryId] || []).length
+                  const boundCount = (componentClassMapping[css.id]?.[mapping.registryId!] || []).length
                   const totalCount = css.classNames?.length || 0
                   const isActive = selectedCssId === css.id
                   return (
@@ -832,7 +822,7 @@ ${bodyCols}
                       className={`px-2 py-1 text-xs whitespace-nowrap border-b-2 transition-colors ${
                         isActive
                           ? 'border-blue-500 text-blue-400'
-                          : 'border-transparent text-gray-400 hover:text-gray-300'
+                          : 'border-transparent theme-text-secondary hover:opacity-80'
                       }`}
                     >
                       {css.name}
@@ -860,8 +850,8 @@ ${bodyCols}
                             isSelected
                               ? 'bg-blue-600 text-white'
                               : isBound
-                                ? 'bg-green-900/50 text-green-400 border border-green-700 hover:bg-green-900'
-                                : 'bg-gray-700 text-gray-400 hover:bg-gray-600 hover:text-gray-300'
+                                ? 'bound-class-btn'
+                                : 'theme-bg-tertiary theme-text-secondary hover:opacity-80'
                           }`}
                           title={isBound ? '컴포넌트에 바인딩된 클래스' : '바인딩되지 않은 클래스'}
                         >
@@ -878,13 +868,13 @@ ${bodyCols}
               </div>
 
               {selectedClasses.length > 0 && (
-                <div className="mt-2 text-xs text-gray-500">
+                <div className="mt-2 text-xs theme-text-secondary">
                   선택됨: {selectedClasses.join(', ')}
                 </div>
               )}
             </div>
           ) : (
-            <div className="px-4 py-3 text-xs text-gray-500">
+            <div className="px-4 py-3 text-xs theme-text-secondary">
               {!mapping ? '컴포넌트를 먼저 선택하세요' : 'CSS 파일이 없습니다'}
             </div>
           )}

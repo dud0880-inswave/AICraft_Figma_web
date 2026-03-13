@@ -68,12 +68,12 @@ export default function AutoMappingSuggestionModal({
       />
 
       {/* 모달 */}
-      <div className="relative w-full max-w-2xl mx-4 bg-gray-800 rounded-lg shadow-xl max-h-[80vh] flex flex-col">
+      <div className="relative w-full max-w-2xl mx-4 theme-bg-secondary rounded-lg shadow-xl max-h-[80vh] flex flex-col">
         {/* 헤더 */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-700">
+        <div className="flex items-center justify-between px-6 py-4 border-b theme-border">
           <div>
-            <h2 className="text-lg font-semibold text-white">자동 매핑 제안</h2>
-            <p className="text-sm text-gray-400 mt-1">
+            <h2 className="text-lg font-semibold theme-text-primary">자동 매핑 제안</h2>
+            <p className="text-sm theme-text-secondary mt-1">
               이전에 매핑한 노드와 동일한 구조의 노드를 발견했습니다
             </p>
           </div>
@@ -90,7 +90,7 @@ export default function AutoMappingSuggestionModal({
         {/* 목록 */}
         <div className="flex-1 overflow-auto p-4">
           {/* 전체 선택 */}
-          <div className="flex items-center gap-3 pb-3 mb-3 border-b border-gray-700">
+          <div className="flex items-center gap-3 pb-3 mb-3 border-b theme-border">
             <label className="flex items-center gap-2 cursor-pointer">
               <input
                 type="checkbox"
@@ -99,7 +99,7 @@ export default function AutoMappingSuggestionModal({
                   if (el) el.indeterminate = someSelected
                 }}
                 onChange={toggleAll}
-                className="w-4 h-4 rounded border-gray-600 bg-gray-700 text-blue-500 focus:ring-blue-500 focus:ring-offset-gray-800"
+                className="w-4 h-4 rounded theme-border theme-bg-tertiary text-blue-500 focus:ring-blue-500"
               />
               <span className="text-sm text-gray-300">
                 전체 선택 ({selectedIds.size}/{suggestions.length})
@@ -115,21 +115,21 @@ export default function AutoMappingSuggestionModal({
                 className={`flex items-center gap-3 p-3 rounded-lg cursor-pointer transition-colors ${
                   selectedIds.has(suggestion.nodeId)
                     ? 'bg-blue-900/30 border border-blue-500/50'
-                    : 'bg-gray-700/50 border border-gray-600 hover:bg-gray-700'
+                    : 'theme-bg-tertiary border theme-border hover:opacity-80'
                 }`}
               >
                 <input
                   type="checkbox"
                   checked={selectedIds.has(suggestion.nodeId)}
                   onChange={() => toggleSelection(suggestion.nodeId)}
-                  className="w-4 h-4 rounded border-gray-600 bg-gray-700 text-blue-500 focus:ring-blue-500 focus:ring-offset-gray-800"
+                  className="w-4 h-4 rounded theme-border theme-bg-tertiary text-blue-500 focus:ring-blue-500"
                 />
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2">
-                    <span className="text-white font-medium truncate">
+                    <span className="theme-text-primary font-medium truncate">
                       {suggestion.nodeName}
                     </span>
-                    <span className="text-xs px-1.5 py-0.5 bg-gray-600 text-gray-300 rounded">
+                    <span className="text-xs px-1.5 py-0.5 theme-bg-secondary theme-text-secondary rounded">
                       {suggestion.nodeType}
                     </span>
                   </div>
@@ -148,11 +148,11 @@ export default function AutoMappingSuggestionModal({
         </div>
 
         {/* 푸터 */}
-        <div className="flex gap-3 px-6 py-4 border-t border-gray-700">
+        <div className="flex gap-3 px-6 py-4 border-t theme-border">
           <button
             type="button"
             onClick={onClose}
-            className="flex-1 py-2.5 px-4 bg-gray-700 hover:bg-gray-600 text-white font-medium rounded-lg transition-colors"
+            className="flex-1 py-2.5 px-4 theme-bg-tertiary hover:opacity-80 theme-text-primary font-medium rounded-lg transition-colors"
           >
             건너뛰기
           </button>
@@ -160,7 +160,7 @@ export default function AutoMappingSuggestionModal({
             type="button"
             onClick={handleApply}
             disabled={loading || selectedIds.size === 0}
-            className="flex-1 py-2.5 px-4 bg-blue-600 hover:bg-blue-500 disabled:bg-gray-600 disabled:cursor-not-allowed text-white font-medium rounded-lg transition-colors flex items-center justify-center"
+            className="flex-1 py-2.5 px-4 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-medium rounded-lg transition-colors flex items-center justify-center"
           >
             {loading ? (
               <>

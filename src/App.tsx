@@ -61,9 +61,9 @@ export default function App() {
 
   // 패널 너비 상태
   const [leftPanelWidth, setLeftPanelWidth] = useState(288)  // 기본 w-72 (18rem = 288px)
-  const [rightPanelWidth, setRightPanelWidth] = useState(320)  // 기본 w-80 (20rem = 320px)
-  const [codeEditorWidth, setCodeEditorWidth] = useState(400)  // 코드 에디터 너비
-  const [codeEditorVisible, setCodeEditorVisible] = useState(false)  // 코드 에디터 표시 여부
+  const [rightPanelWidth, setRightPanelWidth] = useState(600)  // 기본 maxWidth
+  const [codeEditorWidth, setCodeEditorWidth] = useState(800)  // 기본 maxWidth
+  const [codeEditorVisible, setCodeEditorVisible] = useState(true)  // 기본 표시
   const [registry, setRegistry] = useState<RegistryItem[]>([])  // 레지스트리 데이터
   const [convertTrigger, setConvertTrigger] = useState(0)  // 변환 트리거
   const [mappedNodeIds, setMappedNodeIds] = useState<Set<string>>(new Set())  // 매핑된 노드 ID
@@ -78,7 +78,7 @@ export default function App() {
 
   // 왼쪽 패널 리사이즈
   const handleLeftResize = useCallback((delta: number) => {
-    setLeftPanelWidth(prev => Math.max(200, Math.min(600, prev + delta)))
+    setLeftPanelWidth(prev => Math.max(320, Math.min(600, prev + delta)))
   }, [])
 
   // 오른쪽 패널 리사이즈
@@ -735,9 +735,9 @@ export default function App() {
 
   // 메인 UI
   return (
-    <div className="h-screen flex flex-col bg-gray-900">
+    <div className="h-screen flex flex-col theme-bg-primary">
       {/* 헤더 */}
-      <header className="flex items-center justify-between px-4 py-2 bg-gray-800 border-b border-gray-700">
+      <header className="flex items-center justify-between px-4 py-2 theme-bg-secondary border-b theme-border">
         <div className="flex items-center gap-3">
           <svg width="24" height="24" viewBox="0 0 32 32" fill="none">
             <path d="M10.667 32C13.612 32 16 29.612 16 26.667V21.333H10.667C7.722 21.333 5.333 23.722 5.333 26.667C5.333 29.612 7.722 32 10.667 32Z" fill="#0ACF83"/>
@@ -746,9 +746,9 @@ export default function App() {
             <path d="M16 0H21.333C24.278 0 26.667 2.388 26.667 5.333C26.667 8.278 24.278 10.667 21.333 10.667H16V0Z" fill="#FF7262"/>
             <path d="M26.667 16C26.667 18.945 24.278 21.333 21.333 21.333C18.388 21.333 16 18.945 16 16C16 13.055 18.388 10.667 21.333 10.667C24.278 10.667 26.667 13.055 26.667 16Z" fill="#1ABCFE"/>
           </svg>
-          <h1 className="text-lg font-semibold text-white">{state.file.name}</h1>
+          <h1 className="text-lg font-semibold theme-text-primary">{state.file.name}</h1>
           {state.targetNodeId && displayRootNode && (
-            <span className="text-sm text-blue-400 bg-blue-900/30 px-2 py-0.5 rounded">
+            <span className="text-sm text-blue-500 mapped-component-box border px-2 py-0.5 rounded">
               {displayRootNode.name}
             </span>
           )}
@@ -756,7 +756,7 @@ export default function App() {
         <div className="flex items-center gap-2">
           <button
             onClick={handleReset}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-gray-400 hover:text-white hover:bg-gray-700 rounded"
+            className="flex items-center gap-1.5 px-3 py-1.5 text-sm theme-text-secondary theme-text-hover theme-bg-hover-strong rounded"
             title="대시보드로 이동"
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -766,7 +766,7 @@ export default function App() {
           </button>
           <button
             onClick={() => setShowSettings(true)}
-            className="p-2 text-gray-400 hover:text-white hover:bg-gray-700 rounded"
+            className="p-2 theme-text-secondary theme-text-hover theme-bg-hover-strong rounded"
             title="설정"
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -790,7 +790,7 @@ export default function App() {
       <div ref={containerRef} className="flex-1 flex overflow-hidden">
         {/* 좌측: 노드 트리 */}
         <div
-          className="flex-shrink-0 border-r border-gray-700 overflow-hidden"
+          className="flex-shrink-0 border-r theme-border overflow-hidden theme-bg-secondary"
           style={{ width: leftPanelWidth }}
         >
           {displayRootNode && (
@@ -827,7 +827,7 @@ export default function App() {
         <Splitter direction="horizontal" onResize={handleRightResize} />
 
         {/* 우측: 매핑 편집기 + 코드 에디터 */}
-        <div className="flex-shrink-0 flex border-l border-gray-700 overflow-hidden relative">
+        <div className="flex-shrink-0 flex border-l theme-border overflow-hidden relative">
           {/* 매핑 편집기 */}
           <div
             className="flex-shrink-0 overflow-hidden"
@@ -850,7 +850,7 @@ export default function App() {
           {/* 코드 에디터 */}
           {codeEditorVisible ? (
             <div
-              className="flex-shrink-0 overflow-hidden border-l border-gray-700"
+              className="flex-shrink-0 overflow-hidden border-l theme-border"
               style={{ width: codeEditorWidth }}
             >
               <ConvertedCodeEditor

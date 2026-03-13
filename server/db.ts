@@ -60,6 +60,7 @@ function runMigrations(db: Database.Database): void {
     { name: '002_registry', sql: SQL_REGISTRY },
     { name: '003_node_mappings', sql: SQL_NODE_MAPPINGS },
     { name: '004_mapping_clusters', sql: SQL_MAPPING_CLUSTERS },
+    { name: '005_default_mapping_rules', sql: SQL_DEFAULT_MAPPING_RULES },
   ];
 
   const applied = db.prepare('SELECT name FROM migrations').all() as { name: string }[];
@@ -129,4 +130,15 @@ const SQL_MAPPING_CLUSTERS = `
     updated_at      TEXT NOT NULL
   );
   CREATE INDEX IF NOT EXISTS idx_mapping_clusters_signature ON mapping_clusters(signature);
+`;
+
+const SQL_DEFAULT_MAPPING_RULES = `
+  CREATE TABLE IF NOT EXISTS default_mapping_rules (
+    id          TEXT PRIMARY KEY,
+    registry_id TEXT NOT NULL,
+    keyword     TEXT NOT NULL UNIQUE,
+    created_at  TEXT NOT NULL,
+    updated_at  TEXT NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS idx_default_mapping_rules_registry ON default_mapping_rules(registry_id);
 `;

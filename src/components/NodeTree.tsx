@@ -376,10 +376,10 @@ export default function NodeTree({
   }
 
   return (
-    <div className="h-full flex flex-col bg-gray-800">
+    <div className="h-full flex flex-col theme-bg-secondary">
       {/* 헤더 */}
-      <div className="flex items-center justify-between px-4 py-2 border-b border-gray-700">
-        <h2 className="text-sm font-medium text-gray-300">
+      <div className="flex items-center justify-between px-4 py-2 border-b theme-border">
+        <h2 className="text-sm font-medium theme-text-secondary">
           노드 트리
           {selectedNodeIds.length > 0 && (
             <span className="ml-2 text-xs text-blue-400">({selectedNodeIds.length}개 선택)</span>
@@ -389,7 +389,7 @@ export default function NodeTree({
           {selectedNodeIds.length >= 1 && (
             <button
               onClick={onGroupNodes}
-              className="px-2 py-1 text-xs bg-blue-600 hover:bg-blue-500 text-white rounded"
+              className="px-2 py-1 text-xs bg-blue-600 hover:bg-blue-500 text-white rounded whitespace-nowrap"
               title="선택한 노드 그룹화"
             >
               그룹화
@@ -403,7 +403,7 @@ export default function NodeTree({
               return (
                 <button
                   onClick={onUngroupNodes}
-                  className="px-2 py-1 text-xs bg-orange-600 hover:bg-orange-500 text-white rounded"
+                  className="px-2 py-1 text-xs bg-orange-600 hover:bg-orange-500 text-white rounded whitespace-nowrap"
                   title="그룹 해제"
                 >
                   그룹해제
@@ -430,9 +430,9 @@ export default function NodeTree({
       </div>
 
       {/* 검색 영역 */}
-      <div className="px-3 py-2 border-b border-gray-700">
+      <div className="px-3 py-2 border-b theme-border">
         <div className="relative">
-          <svg className="absolute left-2 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <svg className="absolute left-2 top-1/2 -translate-y-1/2 w-4 h-4 theme-text-secondary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
           </svg>
           <input
@@ -440,7 +440,7 @@ export default function NodeTree({
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="노드 검색..."
-            className="w-full pl-8 pr-8 py-1.5 bg-gray-900 border border-gray-600 rounded text-sm text-white placeholder-gray-500 focus:outline-none focus:border-blue-500"
+            className="w-full pl-8 pr-8 py-1.5 theme-bg-tertiary border theme-border rounded text-sm theme-text-primary placeholder-gray-500 focus:outline-none focus:border-blue-500"
           />
           {searchQuery && (
             <button

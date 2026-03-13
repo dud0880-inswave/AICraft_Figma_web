@@ -52,9 +52,9 @@ export default function Dashboard({ onSelectFile, onAddNewFile, onOpenSettings }
   }
 
   return (
-    <div className="min-h-screen bg-gray-900">
+    <div className="min-h-screen theme-bg-primary">
       {/* 헤더 */}
-      <header className="bg-gray-800 border-b border-gray-700">
+      <header className="theme-bg-secondary border-b theme-border">
         <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
@@ -64,11 +64,11 @@ export default function Dashboard({ onSelectFile, onAddNewFile, onOpenSettings }
               <path d="M16 0H21.333C24.278 0 26.667 2.388 26.667 5.333C26.667 8.278 24.278 10.667 21.333 10.667H16V0Z" fill="#FF7262"/>
               <path d="M26.667 16C26.667 18.945 24.278 21.333 21.333 21.333C18.388 21.333 16 18.945 16 16C16 13.055 18.388 10.667 21.333 10.667C24.278 10.667 26.667 13.055 26.667 16Z" fill="#1ABCFE"/>
             </svg>
-            <h1 className="text-xl font-bold text-white">Figma Analyzer</h1>
+            <h1 className="text-xl font-bold theme-text-primary">Figma Analyzer</h1>
           </div>
           <button
             onClick={onOpenSettings}
-            className="p-2 text-gray-400 hover:text-white hover:bg-gray-700 rounded"
+            className="p-2 theme-text-secondary hover:theme-text-primary hover:bg-gray-700 dark:hover:bg-gray-700 light:hover:bg-gray-200 rounded"
             title="설정"
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -83,7 +83,7 @@ export default function Dashboard({ onSelectFile, onAddNewFile, onOpenSettings }
       <main className="max-w-7xl mx-auto px-6 py-8">
         {/* 타이틀 + 새 파일 버튼 */}
         <div className="flex items-center justify-between mb-6">
-          <h2 className="text-lg font-semibold text-white">내 프로젝트</h2>
+          <h2 className="text-lg font-semibold theme-text-primary">내 프로젝트</h2>
           <button
             onClick={onAddNewFile}
             className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium rounded-lg transition-colors"
@@ -102,12 +102,12 @@ export default function Dashboard({ onSelectFile, onAddNewFile, onOpenSettings }
           </div>
         ) : files.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-20 text-center">
-            <div className="w-16 h-16 mb-4 rounded-full bg-gray-800 flex items-center justify-center">
-              <svg className="w-8 h-8 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <div className="w-16 h-16 mb-4 rounded-full theme-bg-secondary flex items-center justify-center">
+              <svg className="w-8 h-8 theme-text-secondary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 13h6m-3-3v6m5 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
               </svg>
             </div>
-            <p className="text-gray-400 mb-2">아직 추가된 파일이 없습니다</p>
+            <p className="theme-text-secondary mb-2">아직 추가된 파일이 없습니다</p>
             <p className="text-gray-500 text-sm mb-4">Figma 파일을 추가하여 컴포넌트를 매핑해보세요</p>
             <button
               onClick={onAddNewFile}
@@ -122,10 +122,10 @@ export default function Dashboard({ onSelectFile, onAddNewFile, onOpenSettings }
               <div
                 key={file.id}
                 onClick={() => onSelectFile(file.fileKey, file.nodeId)}
-                className="group bg-gray-800 border border-gray-700 rounded-lg overflow-hidden cursor-pointer hover:border-blue-500 transition-colors"
+                className="group theme-bg-secondary border theme-border rounded-lg overflow-hidden cursor-pointer hover:border-blue-500 transition-colors"
               >
                 {/* 썸네일 영역 */}
-                <div className="aspect-video bg-gray-900 flex items-center justify-center relative">
+                <div className="aspect-video theme-bg-tertiary flex items-center justify-center relative">
                   {file.thumbnailUrl ? (
                     <img
                       src={file.thumbnailUrl}
@@ -133,7 +133,7 @@ export default function Dashboard({ onSelectFile, onAddNewFile, onOpenSettings }
                       className="w-full h-full object-cover"
                     />
                   ) : (
-                    <svg className="w-12 h-12 text-gray-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg className="w-12 h-12 theme-text-secondary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
                     </svg>
                   )}
@@ -165,10 +165,10 @@ export default function Dashboard({ onSelectFile, onAddNewFile, onOpenSettings }
                 </div>
                 {/* 파일 정보 */}
                 <div className="p-3">
-                  <h3 className="text-sm font-medium text-white truncate" title={file.name}>
+                  <h3 className="text-sm font-medium theme-text-primary truncate" title={file.name}>
                     {file.name}
                   </h3>
-                  <p className="text-xs text-gray-500 mt-1">
+                  <p className="text-xs theme-text-secondary mt-1">
                     {formatDate(file.lastOpenedAt)}
                   </p>
                 </div>

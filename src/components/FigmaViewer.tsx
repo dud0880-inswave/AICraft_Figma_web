@@ -149,30 +149,30 @@ export default function FigmaViewer({
   }
 
   return (
-    <div className="h-full flex flex-col bg-gray-900">
+    <div className="h-full flex flex-col theme-bg-primary">
       {/* 툴바 */}
-      <div className="flex items-center justify-between px-4 py-2 border-b border-gray-700 bg-gray-800">
+      <div className="flex items-center justify-between px-4 py-2 border-b theme-border theme-bg-secondary">
         <div className="flex items-center gap-2">
           <button
             onClick={handleZoomOut}
-            className="px-2 py-1 text-sm bg-gray-700 hover:bg-gray-600 rounded"
+            className="px-2 py-1 text-sm theme-bg-tertiary hover:opacity-80 rounded theme-text-primary"
             title="축소"
           >
             −
           </button>
-          <span className="text-sm text-gray-300 w-16 text-center">
+          <span className="text-sm theme-text-secondary w-16 text-center">
             {Math.round(scale * 100)}%
           </span>
           <button
             onClick={handleZoomIn}
-            className="px-2 py-1 text-sm bg-gray-700 hover:bg-gray-600 rounded"
+            className="px-2 py-1 text-sm theme-bg-tertiary hover:opacity-80 rounded theme-text-primary"
             title="확대"
           >
             +
           </button>
           <button
             onClick={handleZoomFit}
-            className="px-2 py-1 text-sm bg-gray-700 hover:bg-gray-600 rounded ml-2"
+            className="px-2 py-1 text-sm theme-bg-tertiary hover:opacity-80 rounded ml-2 theme-text-primary"
             title="화면에 맞추기"
           >
             맞추기
@@ -180,10 +180,10 @@ export default function FigmaViewer({
         </div>
 
         {selectedNodes.length > 0 && (
-          <div className="text-sm text-gray-400">
-            선택: <span className="text-white">{selectedNodes.length}개</span>
+          <div className="text-sm theme-text-secondary">
+            선택: <span className="theme-text-primary">{selectedNodes.length}개</span>
             {selectedNodes.length === 1 && (
-              <span className="text-gray-500 ml-2">({selectedNodes[0].name})</span>
+              <span className="theme-text-secondary ml-2">({selectedNodes[0].name})</span>
             )}
           </div>
         )}
@@ -193,6 +193,7 @@ export default function FigmaViewer({
       <div
         ref={containerRef}
         className="flex-1 overflow-hidden relative cursor-grab active:cursor-grabbing"
+        style={{ backgroundColor: '#f5f5f5' }}
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
@@ -205,12 +206,12 @@ export default function FigmaViewer({
                 <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                 <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
               </svg>
-              <p className="text-gray-400">이미지 로딩 중...</p>
+              <p className="theme-text-secondary">이미지 로딩 중...</p>
             </div>
           </div>
         ) : !imageUrl ? (
           <div className="absolute inset-0 flex items-center justify-center">
-            <p className="text-gray-500">페이지를 선택하세요</p>
+            <p className="theme-text-secondary">페이지를 선택하세요</p>
           </div>
         ) : (
           <div

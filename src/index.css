@@ -6,11 +6,44 @@
   box-sizing: border-box;
 }
 
+/* 다크 테마 (기본) */
+:root.dark {
+  --bg-primary: #1e1e1e;
+  --bg-secondary: #2d2d2d;
+  --bg-tertiary: #374151;
+  --bg-hover: rgba(255, 255, 255, 0.1);
+  --bg-hover-strong: rgba(255, 255, 255, 0.2);
+  --text-primary: #ffffff;
+  --text-secondary: #9ca3af;
+  --text-muted: #6b7280;
+  --border-color: #374151;
+  --scrollbar-track: #2d2d2d;
+  --scrollbar-thumb: #555;
+  --scrollbar-thumb-hover: #666;
+}
+
+/* 라이트 테마 */
+:root.light {
+  --bg-primary: #ffffff;
+  --bg-secondary: #f3f4f6;
+  --bg-tertiary: #e5e7eb;
+  --bg-hover: rgba(0, 0, 0, 0.05);
+  --bg-hover-strong: rgba(0, 0, 0, 0.1);
+  --text-primary: #111827;
+  --text-secondary: #4b5563;
+  --text-muted: #9ca3af;
+  --border-color: #d1d5db;
+  --scrollbar-track: #e5e7eb;
+  --scrollbar-thumb: #9ca3af;
+  --scrollbar-thumb-hover: #6b7280;
+}
+
 body {
   margin: 0;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
-  background-color: #1e1e1e;
-  color: #ffffff;
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+  transition: background-color 0.2s, color 0.2s;
 }
 
 /* 스크롤바 스타일 */
@@ -20,16 +53,16 @@ body {
 }
 
 ::-webkit-scrollbar-track {
-  background: #2d2d2d;
+  background: var(--scrollbar-track);
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #555;
+  background: var(--scrollbar-thumb);
   border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #666;
+  background: var(--scrollbar-thumb-hover);
 }
 
 /* 트리 노드 스타일 */
@@ -41,7 +74,7 @@ body {
 }
 
 .tree-node:hover {
-  background-color: rgba(255, 255, 255, 0.1);
+  background-color: var(--bg-hover);
 }
 
 .tree-node.selected {
@@ -55,4 +88,74 @@ body {
   background-color: rgba(24, 119, 242, 0.2);
   pointer-events: none;
   transition: all 0.15s ease-out;
+}
+
+/* 테마 유틸리티 클래스 */
+.theme-bg-primary {
+  background-color: var(--bg-primary);
+}
+
+.theme-bg-secondary {
+  background-color: var(--bg-secondary);
+}
+
+.theme-bg-tertiary {
+  background-color: var(--bg-tertiary);
+}
+
+.theme-bg-hover:hover {
+  background-color: var(--bg-hover);
+}
+
+.theme-bg-hover-strong:hover {
+  background-color: var(--bg-hover-strong);
+}
+
+.theme-text-primary {
+  color: var(--text-primary);
+}
+
+.theme-text-secondary {
+  color: var(--text-secondary);
+}
+
+.theme-border {
+  border-color: var(--border-color);
+}
+
+/* MappingEditor - 코드/속성 텍스트 색상 */
+.theme-text-code-green { color: #4ade80; }
+:root.light .theme-text-code-green { color: #111827; }
+
+.theme-text-attr-key { color: #60a5fa; }
+:root.light .theme-text-attr-key { color: #2563eb; }
+
+.theme-text-attr-value { color: #4ade80; }
+:root.light .theme-text-attr-value { color: #059669; }
+
+/* MappingEditor - 바인딩된 클래스 버튼 */
+.bound-class-btn {
+  background-color: rgba(20, 83, 45, 0.5);
+  color: #4ade80;
+  border: 1px solid rgba(21, 128, 61, 0.7);
+}
+.bound-class-btn:hover { background-color: rgba(20, 83, 45, 0.7); }
+:root.light .bound-class-btn {
+  background-color: #dcfce7;
+  color: #16a34a;
+  border-color: #86efac;
+}
+:root.light .bound-class-btn:hover { background-color: #bbf7d0; }
+
+/* 호버 시 텍스트 색상 테마 적용 */
+.theme-text-hover:hover { color: var(--text-primary); }
+
+/* 매핑된 컴포넌트 박스 */
+.mapped-component-box {
+  background-color: rgba(30, 58, 138, 0.3);
+  border-color: rgba(29, 78, 216, 0.5);
+}
+:root.light .mapped-component-box {
+  background-color: #eff6ff;
+  border-color: #93c5fd;
 }

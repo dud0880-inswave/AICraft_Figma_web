@@ -2,12 +2,15 @@
 // Figma Viewer Backend Server
 // ============================================================
 import { createServer, IncomingMessage, ServerResponse } from 'http';
+import { writeFileSync, existsSync, mkdirSync } from 'fs';
+import { join, dirname } from 'path';
 import { initDb, closeDb, getDb } from './db.js';
 import { RegistryStore } from './registry-store.js';
 import { MappingStore } from './mapping-store.js';
 import { FigmaFilesStore } from './figma-files-store.js';
 import { FigmaFileDataStore } from './figma-file-data-store.js';
 import { ClusterStore, type FigmaNodeLike, type AutoMappingSuggestion } from './cluster-store.js';
+import { DefaultMappingRulesStore } from './default-mapping-rules-store.js';
 
 const PORT = 5181;
 
@@ -20,6 +23,7 @@ const mappingStore = new MappingStore(getDb());
 const figmaFilesStore = new FigmaFilesStore(getDb());
 const figmaFileDataStore = new FigmaFileDataStore(getDb());
 const clusterStore = new ClusterStore(getDb());
+const defaultMappingRulesStore = new DefaultMappingRulesStore(getDb());
 console.log('[Server] Stores created.');
 
 // ============================================================
@@ -344,6 +348,98 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
       }
 
       return json(res, { success: true, appliedCount });
+    }
+
+    // ---- Default Mapping Rules API ----
+
+    // 전체 목록 (그룹화)
+    if (path === '/api/default-mapping-rules' && req.method === 'GET') {
+      const grouped = url.searchParams.get('grouped') === 'true';
+      if (grouped) {
+        return json(res, defaultMappingRulesStore.listGrouped());
+      }
+      return json(res, defaultMappingRulesStore.list());
+    }
+
+    // 추가
+    if (path === '/api/default-mapping-rules' && req.method === 'POST') {
+      const body = await parseBody(req);
+      const { registryId, keyword } = body;
+      if (!registryId || !keyword) return badRequest(res, 'registryId and keyword required');
+      try {
+        const rule = defaultMappingRulesStore.create({ registryId, keyword });
+        return json(res, rule, 201);
+      } catch (err: any) {
+        if (err.message?.includes('UNIQUE constraint')) {
+          return json(res, { error: '이미 존재하는 키워드입니다' }, 400);
+        }
+        throw err;
+      }
+    }
+
+    // 수정
+    if (path.startsWith('/api/default-mapping-rules/') && req.method === 'PUT') {
+      const id = path.replace('/api/default-mapping-rules/', '');
+      const body = await parseBody(req);
+      const rule = defaultMappingRulesStore.update(id, body);
+      if (!rule) return notFound(res);
+      return json(res, rule);
+    }
+
+    // 삭제
+    if (path.startsWith('/api/default-mapping-rules/') && req.method === 'DELETE') {
+      const id = path.replace('/api/default-mapping-rules/', '');
+      const deleted = defaultMappingRulesStore.delete(id);
+      if (!deleted) return notFound(res);
+      return json(res, { success: true });
+    }
+
+    // 노드 이름으로 매칭
+    if (path === '/api/default-mapping-rules/match' && req.method === 'POST') {
+      const body = await parseBody(req);
+      const { nodeName } = body;
+      if (!nodeName) return badRequest(res, 'nodeName required');
+      const result = defaultMappingRulesStore.match(nodeName);
+      return json(res, result ?? null);
+    }
+
+    // ---- XML Export API ----
+    if (path === '/api/export-xml' && req.method === 'POST') {
+      const body = await parseBody(req);
+      const { xml, filename, exportPath } = body as {
+        xml: string;
+        filename: string;
+        exportPath?: string;
+      };
+
+      if (!xml || !filename) {
+        return badRequest(res, 'xml and filename required');
+      }
+
+      // exportPath가 없으면 에러
+      if (!exportPath) {
+        return badRequest(res, 'exportPath required. Set it in Settings.');
+      }
+
+      try {
+        // 경로가 없으면 생성
+        if (!existsSync(exportPath)) {
+          mkdirSync(exportPath, { recursive: true });
+        }
+
+        // 파일명 정리 (확장자 추가)
+        const cleanFilename = filename.endsWith('.xml') ? filename : `${filename}.xml`;
+        const fullPath = join(exportPath, cleanFilename);
+
+        // 파일 저장
+        writeFileSync(fullPath, xml, 'utf-8');
+        console.log(`[Server] XML saved to: ${fullPath}`);
+
+        return json(res, { success: true, path: fullPath });
+      } catch (err) {
+        console.error('[Server] Failed to save XML:', err);
+        return json(res, { error: `Failed to save: ${String(err)}` }, 500);
+      }
     }
 
     // ---- Health ----

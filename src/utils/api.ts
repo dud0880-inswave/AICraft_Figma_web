@@ -283,3 +283,22 @@ export async function applyAutoMappingSuggestions(
   if (!res.ok) throw new Error('Failed to apply auto mapping suggestions');
   return res.json();
 }
+
+// ---- XML Export API ----
+
+export async function exportXml(
+  xml: string,
+  filename: string,
+  exportPath: string
+): Promise<{ success: boolean; path: string }> {
+  const res = await fetch(`${API_BASE}/export-xml`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ xml, filename, exportPath }),
+  });
+  if (!res.ok) {
+    const err = await res.json();
+    throw new Error(err.error || 'Failed to export XML');
+  }
+  return res.json();
+}

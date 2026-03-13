@@ -8,7 +8,7 @@ interface PageTabsProps {
 
 export default function PageTabs({ pages, currentPageId, onSelectPage }: PageTabsProps) {
   return (
-    <div className="flex items-center gap-1 px-2 py-1 bg-gray-800 border-b border-gray-700 overflow-x-auto">
+    <div className="flex items-center gap-1 px-2 py-1 theme-bg-secondary border-b theme-border overflow-x-auto">
       {pages.map((page) => (
         <button
           key={page.id}
@@ -16,8 +16,8 @@ export default function PageTabs({ pages, currentPageId, onSelectPage }: PageTab
           className={`
             px-3 py-1.5 text-sm rounded-t whitespace-nowrap transition-colors
             ${currentPageId === page.id
-              ? 'bg-gray-700 text-white'
-              : 'text-gray-400 hover:text-white hover:bg-gray-700/50'
+              ? 'theme-bg-tertiary theme-text-primary'
+              : 'theme-text-secondary hover:theme-text-primary hover:bg-gray-700/50 dark:hover:bg-gray-700/50'
             }
           `}
         >

@@ -42,8 +42,8 @@ export default function Splitter({ direction, onResize }: SplitterProps) {
     <div
       className={`
         ${direction === 'horizontal' ? 'w-1 cursor-col-resize' : 'h-1 cursor-row-resize'}
-        bg-gray-700 hover:bg-blue-500 transition-colors flex-shrink-0
-        ${isDragging ? 'bg-blue-500' : ''}
+        theme-border hover:bg-blue-500 transition-colors flex-shrink-0
+        ${isDragging ? 'bg-blue-500' : 'theme-bg-tertiary'}
       `}
       onMouseDown={handleMouseDown}
     />

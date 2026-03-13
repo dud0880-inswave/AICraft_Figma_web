@@ -1,8 +1,54 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import type { FigmaNode } from '../types/figma'
+
+function formatXml(xml: string): string {
+  const INDENT = '    '
+
+  // CDATA 섹션 보존
+  const cdatas: string[] = []
+  const sanitized = xml.replace(/<!\[CDATA\[[\s\S]*?\]\]>/g, (m) => {
+    cdatas.push(m)
+    return `__CDATA_${cdatas.length - 1}__`
+  })
+
+  // 태그 단위로 분리
+  const tokens = sanitized
+    .replace(/>\s*</g, '>\n<')
+    .split('\n')
+    .map(s => s.trim())
+    .filter(Boolean)
+
+  let level = 0
+  const lines: string[] = []
+
+  for (const token of tokens) {
+    if (/^<\//.test(token)) {
+      // 닫는 태그
+      level = Math.max(0, level - 1)
+      lines.push(INDENT.repeat(level) + token)
+    } else if (/^<[?!]/.test(token) || /\/>$/.test(token)) {
+      // 선언 또는 자기닫힘 태그
+      lines.push(INDENT.repeat(level) + token)
+    } else if (/^<[^/]/.test(token)) {
+      // 여는 태그 + 인라인 닫힘 여부 확인
+      const hasInlineClose = /<\/[^>]+>$/.test(token)
+      lines.push(INDENT.repeat(level) + token)
+      if (!hasInlineClose) level++
+    } else {
+      // 텍스트 또는 CDATA 플레이스홀더
+      lines.push(INDENT.repeat(level) + token)
+    }
+  }
+
+  let result = lines.join('\n')
+  cdatas.forEach((cdata, i) => {
+    result = result.replace(`__CDATA_${i}__`, cdata)
+  })
+  return result
+}
 import type { RegistryItem } from '../utils/api'
-import { fetchMappings, updateFigmaFileCompleted, generateClusters } from '../utils/api'
-import { loadSavedCssList } from './SettingsModal'
+import { fetchMappings, updateFigmaFileCompleted, generateClusters, exportXml } from '../utils/api'
+import { loadSavedCssList, loadXmlExportPath } from './SettingsModal'
 
 interface ConvertedCodeEditorProps {
   fileKey: string | null
@@ -144,6 +190,8 @@ export default function ConvertedCodeEditor({
   const [previewLoading, setPreviewLoading] = useState(false)
   const [iframeReady, setIframeReady] = useState(false)
   const [completing, setCompleting] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [saveMessage, setSaveMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
   const iframeRef = useRef<HTMLIFrameElement>(null)
 
   // 완료 처리
@@ -163,6 +211,34 @@ export default function ConvertedCodeEditor({
       console.error('Failed to mark as complete:', e)
     } finally {
       setCompleting(false)
+    }
+  }
+
+  // XML 저장 처리
+  const handleSaveXml = async () => {
+    if (!convertedCode || !rootNode) return
+
+    const exportPath = loadXmlExportPath()
+    if (!exportPath) {
+      setSaveMessage({ type: 'error', text: '설정에서 XML Export 경로를 지정해주세요' })
+      setTimeout(() => setSaveMessage(null), 3000)
+      return
+    }
+
+    setSaving(true)
+    setSaveMessage(null)
+    try {
+      // 파일명 생성: 노드 이름 기반
+      const filename = rootNode.name.replace(/[<>:"/\\|?*]/g, '_')
+      const result = await exportXml(convertedCode, filename, exportPath)
+      setSaveMessage({ type: 'success', text: `저장 완료: ${result.path}` })
+      setTimeout(() => setSaveMessage(null), 3000)
+    } catch (e) {
+      console.error('Failed to save XML:', e)
+      setSaveMessage({ type: 'error', text: e instanceof Error ? e.message : '저장 실패' })
+      setTimeout(() => setSaveMessage(null), 3000)
+    } finally {
+      setSaving(false)
     }
   }
 
@@ -433,8 +509,7 @@ ${indentStr}</w2:gridView>`
           // th 특수 처리
           if (regItemNameLower === 'th') {
             // 기본값 설정 후 mergedProps로 덮어쓰기
-            const thProps = { style: '', class: 'w2tb_th', ...mergedProps }
-            delete thProps.tagname
+            const { tagname: _thTag, ...thProps } = { style: '', class: 'w2tb_th', ...mergedProps } as Record<string, string>
             const thPropsStr = Object.entries(thProps).map(([k, v]) => `${k}="${v}"`).join(' ')
             const innerContent = childrenCode ? `\n${childrenCode}\n${indentStr}` : ''
             return `${indentStr}<xf:group tagname="th" ${thPropsStr}>
@@ -446,8 +521,7 @@ ${indentStr}    </w2:attributes>${innerContent}</xf:group>`
           // td 특수 처리
           if (regItemNameLower === 'td') {
             // 기본값 설정 후 mergedProps로 덮어쓰기
-            const tdProps = { style: '', class: 'w2tb_td', ...mergedProps }
-            delete tdProps.tagname
+            const { tagname: _tdTag, ...tdProps } = { style: '', class: 'w2tb_td', ...mergedProps } as Record<string, string>
             const tdPropsStr = Object.entries(tdProps).map(([k, v]) => `${k}="${v}"`).join(' ')
             const innerContent = childrenCode ? `\n${childrenCode}\n${indentStr}` : ''
             return `${indentStr}<xf:group tagname="td" ${tdPropsStr}>${innerContent}</xf:group>`
@@ -507,7 +581,7 @@ ${innerCode}
     </body>
 </html>`
 
-      setConvertedCode(result)
+      setConvertedCode(formatXml(result))
     } catch {
       // 변환 실패
     } finally {
@@ -520,7 +594,7 @@ ${innerCode}
     return (
       <button
         onClick={onToggle}
-        className="absolute right-0 top-1/2 -translate-y-1/2 bg-gray-700 hover:bg-gray-600 text-white px-1 py-4 rounded-l text-xs"
+        className="absolute right-0 top-1/2 -translate-y-1/2 theme-bg-tertiary hover:opacity-80 theme-text-primary px-1 py-4 rounded-l text-xs"
         title="변환 결과 열기"
       >
         &lt;
@@ -529,23 +603,36 @@ ${innerCode}
   }
 
   return (
-    <div className="h-full bg-gray-800 flex flex-col">
+    <div className="h-full theme-bg-secondary flex flex-col relative">
+      {/* 토스트 메시지 */}
+      {saveMessage && (
+        <div className={`absolute top-4 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-lg shadow-lg text-sm font-medium transition-all ${
+          saveMessage.type === 'success'
+            ? 'bg-green-600 text-white'
+            : 'bg-red-600 text-white'
+        }`}>
+          {saveMessage.type === 'success' && (
+            <span className="mr-2">✓</span>
+          )}
+          {saveMessage.text}
+        </div>
+      )}
       {/* 헤더 */}
-      <div className="flex items-center justify-between px-4 py-2 border-b border-gray-700">
+      <div className="flex items-center justify-between px-4 py-2 border-b theme-border">
         <div className="flex items-center gap-4">
-          <h2 className="text-sm font-medium text-gray-300">
+          <h2 className="text-sm font-medium theme-text-secondary">
             변환 결과
-            {converting && <span className="ml-2 text-xs text-gray-500">변환 중...</span>}
+            {converting && <span className="ml-2 text-xs theme-text-secondary">변환 중...</span>}
           </h2>
           {/* 탭 버튼 */}
           {convertedCode && (
-            <div className="flex bg-gray-700 rounded">
+            <div className="flex theme-bg-tertiary rounded">
               <button
                 onClick={() => setActiveTab('code')}
                 className={`px-3 py-1 text-xs rounded-l transition ${
                   activeTab === 'code'
                     ? 'bg-blue-600 text-white'
-                    : 'text-gray-400 hover:text-white'
+                    : 'theme-text-secondary theme-text-hover'
                 }`}
               >
                 코드
@@ -555,7 +642,7 @@ ${innerCode}
                 className={`px-3 py-1 text-xs rounded-r transition ${
                   activeTab === 'preview'
                     ? 'bg-green-600 text-white'
-                    : 'text-gray-400 hover:text-white'
+                    : 'theme-text-secondary theme-text-hover'
                 }`}
               >
                 미리보기
@@ -566,7 +653,7 @@ ${innerCode}
         </div>
         <button
           onClick={onToggle}
-          className="p-1 text-gray-400 hover:text-white text-xs"
+          className="p-1 theme-text-secondary theme-text-hover text-xs"
           title="닫기"
         >
           &gt;
@@ -580,7 +667,7 @@ ${innerCode}
             {/* 코드 탭 */}
             {activeTab === 'code' && (
               <div className="h-full flex flex-col p-4">
-                <div className="flex justify-end mb-2">
+                <div className="flex justify-end gap-3 mb-2">
                   <button
                     onClick={() => {
                       navigator.clipboard.writeText(convertedCode)
@@ -590,7 +677,7 @@ ${innerCode}
                     복사
                   </button>
                 </div>
-                <pre className="flex-1 p-3 bg-gray-900 border border-gray-600 rounded text-sm font-mono text-green-400 overflow-auto whitespace-pre">
+                <pre className="flex-1 p-3 theme-bg-primary border theme-border rounded text-sm font-mono theme-text-code-green overflow-auto whitespace-pre">
                   {convertedCode}
                 </pre>
               </div>
@@ -599,7 +686,7 @@ ${innerCode}
             {/* 미리보기 탭 */}
             {activeTab === 'preview' && (
               <div className="h-full flex flex-col">
-                <div className="flex justify-between items-center px-4 py-2 border-b border-gray-700">
+                <div className="flex justify-between items-center px-4 py-2 border-b theme-border">
                   <span className="text-xs text-gray-500">
                     {previewLoading ? '렌더링 중...' : iframeReady ? '준비됨' : '엔진 로딩...'}
                   </span>
@@ -637,13 +724,20 @@ ${innerCode}
         )}
       </div>
 
-      {/* 하단 완료 버튼 */}
+      {/* 하단 버튼 영역 */}
       {convertedCode && (
-        <div className="flex justify-end px-4 py-2 border-t border-gray-700">
+        <div className="flex justify-end gap-2 px-4 py-2 border-t theme-border">
+          <button
+            onClick={handleSaveXml}
+            disabled={saving}
+            className="px-4 py-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-sm font-medium rounded"
+          >
+            {saving ? '저장 중...' : '저장'}
+          </button>
           <button
             onClick={handleComplete}
             disabled={completing}
-            className="px-4 py-2 bg-green-600 hover:bg-green-500 disabled:bg-gray-600 text-white text-sm font-medium rounded"
+            className="px-4 py-2 bg-green-600 hover:bg-green-500 disabled:opacity-50 text-white text-sm font-medium rounded"
           >
             {completing ? '처리 중...' : '완료'}
           </button>
