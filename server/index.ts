@@ -403,6 +403,109 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
       return json(res, result ?? null);
     }
 
+    // Default Rule 제안 (노드 배열 → 매칭 결과 반환, 적용 없음)
+    if (path === '/api/default-mapping-rules/suggest' && req.method === 'POST') {
+      const body = await parseBody(req);
+      const { nodes } = body as {
+        nodes: Array<{ id: string; name: string; type: string; children?: unknown[] }>;
+      };
+      if (!nodes || !Array.isArray(nodes)) return badRequest(res, 'nodes array required');
+
+      type NodeLike = { id: string; name: string; type: string; children?: NodeLike[] };
+
+      const suggestions: Array<{
+        nodeId: string; nodeName: string; nodeType: string;
+        signature: string; registryId: string; registryName: string;
+        customAttrs: Record<string, string>; sampleCount: number; matchedKeyword: string;
+      }> = [];
+
+      const processNode = (node: NodeLike) => {
+        const match = defaultMappingRulesStore.match(node.name);
+        if (match) {
+          const registry = getDb().prepare('SELECT name FROM registry WHERE id = ?').get(match.registryId) as { name: string } | undefined;
+          if (registry) {
+            suggestions.push({
+              nodeId: node.id, nodeName: node.name, nodeType: node.type,
+              signature: '', registryId: match.registryId, registryName: registry.name,
+              customAttrs: {}, sampleCount: 0, matchedKeyword: match.matchedKeyword,
+            });
+          }
+        }
+        if (node.children) {
+          for (const child of node.children) processNode(child as NodeLike);
+        }
+      };
+
+      for (const node of nodes) processNode(node as NodeLike);
+      return json(res, { suggestions });
+    }
+
+    // ---- Mapping Rules Export / Import ----
+    if (path === '/api/mapping-rules/export' && req.method === 'GET') {
+      const defaultRules = defaultMappingRulesStore.listGrouped().flatMap(g =>
+        g.keywords.map(kw => ({ registryName: g.registryName, keyword: kw }))
+      );
+      const clusters = clusterStore.list().map(c => ({
+        signature: c.signature,
+        registryName: c.registryName,
+        customAttrs: c.customAttrs,
+        sampleCount: c.sampleCount,
+      }));
+      return json(res, {
+        version: 1,
+        exportedAt: new Date().toISOString(),
+        defaultMappingRules: defaultRules,
+        customMappingRules: clusters,
+      });
+    }
+
+    if (path === '/api/mapping-rules/import' && req.method === 'POST') {
+      const body = await parseBody(req);
+      const { defaultMappingRules = [], customMappingRules = [] } = body as {
+        version?: number;
+        defaultMappingRules?: Array<{ registryName: string; keyword: string }>;
+        customMappingRules?: Array<{ signature: string; registryName: string; customAttrs?: Record<string, string>; sampleCount?: number }>;
+      };
+
+      let defaultAdded = 0;
+      let clusterUpdated = 0;
+
+      // defaultMappingRules: keyword 중복이면 skip
+      for (const rule of defaultMappingRules) {
+        const registry = getDb().prepare('SELECT id FROM registry WHERE name = ?').get(rule.registryName) as { id: string } | undefined;
+        if (!registry) continue;
+        try {
+          defaultMappingRulesStore.create({ registryId: registry.id, keyword: rule.keyword });
+          defaultAdded++;
+        } catch {
+          // UNIQUE 제약 위반 (중복) → skip
+        }
+      }
+
+      // customMappingRules: signature 기준 upsert (registryName, customAttrs 덮어씀)
+      for (const rule of customMappingRules) {
+        const registry = getDb().prepare('SELECT id, name FROM registry WHERE name = ?').get(rule.registryName) as { id: string; name: string } | undefined;
+        if (!registry) continue;
+        const existing = clusterStore.getBySignature(rule.signature);
+        if (existing) {
+          getDb().prepare(`
+            UPDATE mapping_clusters SET registry_id = ?, registry_name = ?, custom_attrs = ?, updated_at = ? WHERE signature = ?
+          `).run(registry.id, registry.name, JSON.stringify(rule.customAttrs ?? {}), new Date().toISOString(), rule.signature);
+        } else {
+          // 새 클러스터: signatureData 없이 삽입 (signature만 있으면 매칭 동작)
+          const { randomUUID } = await import('crypto');
+          const now = new Date().toISOString();
+          getDb().prepare(`
+            INSERT INTO mapping_clusters (id, signature, signature_data, registry_id, registry_name, custom_attrs, sample_count, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+          `).run(randomUUID(), rule.signature, '{}', registry.id, registry.name, JSON.stringify(rule.customAttrs ?? {}), rule.sampleCount ?? 1, now, now);
+        }
+        clusterUpdated++;
+      }
+
+      return json(res, { success: true, defaultAdded, clusterUpdated });
+    }
+
     // ---- XML Export API ----
     if (path === '/api/export-xml' && req.method === 'POST') {
       const body = await parseBody(req);

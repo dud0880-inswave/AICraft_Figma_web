@@ -225,6 +225,8 @@ export interface AutoMappingSuggestion {
   registryName: string;
   customAttrs: Record<string, string>;
   sampleCount: number;
+  source?: 'cluster' | 'default';
+  matchedKeyword?: string;
 }
 
 export interface FigmaNodeForSignature {
@@ -264,6 +266,19 @@ export async function fetchAutoMappingSuggestions(
   return data.suggestions;
 }
 
+export async function fetchDefaultRuleSuggestions(
+  nodes: FigmaNodeForSignature[]
+): Promise<AutoMappingSuggestion[]> {
+  const res = await fetch(`${API_BASE}/default-mapping-rules/suggest`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ nodes }),
+  });
+  if (!res.ok) throw new Error('Failed to fetch default rule suggestions');
+  const data = await res.json();
+  return data.suggestions.map((s: AutoMappingSuggestion) => ({ ...s, source: 'default' as const }));
+}
+
 export async function applyAutoMappingSuggestions(
   fileKey: string,
   suggestions: Array<{
@@ -281,6 +296,31 @@ export async function applyAutoMappingSuggestions(
     body: JSON.stringify({ fileKey, suggestions }),
   });
   if (!res.ok) throw new Error('Failed to apply auto mapping suggestions');
+  return res.json();
+}
+
+// ---- Mapping Rules Export / Import ----
+
+export interface MappingRulesJson {
+  version: number;
+  exportedAt: string;
+  defaultMappingRules: Array<{ registryName: string; keyword: string }>;
+  customMappingRules: Array<{ signature: string; registryName: string; customAttrs: Record<string, string>; sampleCount: number }>;
+}
+
+export async function exportMappingRules(): Promise<MappingRulesJson> {
+  const res = await fetch(`${API_BASE}/mapping-rules/export`);
+  if (!res.ok) throw new Error('Failed to export mapping rules');
+  return res.json();
+}
+
+export async function importMappingRules(data: MappingRulesJson): Promise<{ defaultAdded: number; clusterUpdated: number }> {
+  const res = await fetch(`${API_BASE}/mapping-rules/import`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) throw new Error('Failed to import mapping rules');
   return res.json();
 }
 

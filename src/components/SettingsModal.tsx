@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
-import { fetchRegistry, createRegistryItem, updateRegistryItem, deleteRegistryItem } from '../utils/api'
-import type { RegistryItem } from '../utils/api'
+import { fetchRegistry, createRegistryItem, updateRegistryItem, deleteRegistryItem, exportMappingRules, importMappingRules } from '../utils/api'
+import type { RegistryItem, MappingRulesJson } from '../utils/api'
 import { useTheme, type Theme } from '../contexts/ThemeContext'
 
 interface SettingsModalProps {
@@ -10,7 +10,7 @@ interface SettingsModalProps {
   onSaveToken: (token: string) => void
 }
 
-type TabType = 'basic' | 'components' | 'css'
+type TabType = 'basic' | 'components' | 'css' | 'mappingRules'
 
 const STORAGE_KEY = 'figma-viewer-token'
 const CSS_STORAGE_KEY = 'figma-viewer-css-list'
@@ -1056,6 +1056,90 @@ function CssTab() {
   )
 }
 
+// ---- 매핑룰 탭 ----
+function MappingRulesTab() {
+  const [status, setStatus] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
+  const [loading, setLoading] = useState(false)
+
+  const handleExport = async () => {
+    try {
+      setLoading(true)
+      const data = await exportMappingRules()
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `mapping-rules-${new Date().toISOString().slice(0, 10)}.json`
+      a.click()
+      URL.revokeObjectURL(url)
+      setStatus({ type: 'success', text: '다운로드 완료' })
+    } catch {
+      setStatus({ type: 'error', text: '내보내기 실패' })
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleImport = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    const reader = new FileReader()
+    reader.onload = async (ev) => {
+      try {
+        setLoading(true)
+        const data = JSON.parse(ev.target?.result as string) as MappingRulesJson
+        if (data.version !== 1) throw new Error('지원하지 않는 버전')
+        const result = await importMappingRules(data)
+        setStatus({ type: 'success', text: `가져오기 완료 — 기본규칙 ${result.defaultAdded}개 추가, 커스텀룰 ${result.clusterUpdated}개 적용` })
+      } catch (err) {
+        setStatus({ type: 'error', text: err instanceof Error ? err.message : '가져오기 실패' })
+      } finally {
+        setLoading(false)
+        e.target.value = ''
+      }
+    }
+    reader.readAsText(file)
+  }
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h3 className="text-sm font-medium theme-text-primary mb-1">매핑룰 내보내기</h3>
+        <p className="text-xs theme-text-secondary mb-3">기본 매핑 규칙과 커스텀 매핑 규칙을 JSON 파일로 저장합니다.</p>
+        <button
+          onClick={handleExport}
+          disabled={loading}
+          className="px-4 py-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-sm rounded"
+        >
+          {loading ? '처리 중...' : '다운로드'}
+        </button>
+      </div>
+
+      <div className="border-t theme-border pt-6">
+        <h3 className="text-sm font-medium theme-text-primary mb-1">매핑룰 가져오기</h3>
+        <p className="text-xs theme-text-secondary mb-3">JSON 파일을 불러와 규칙을 적용합니다. 기본규칙은 중복 키워드를 건너뛰고, 커스텀룰은 시그니처 기준으로 덮어씁니다.</p>
+        <label className="px-4 py-2 bg-green-600 hover:bg-green-500 text-white text-sm rounded cursor-pointer inline-block">
+          파일 선택
+          <input
+            type="file"
+            accept=".json"
+            className="hidden"
+
+            onChange={handleImport}
+            disabled={loading}
+          />
+        </label>
+      </div>
+
+      {status && (
+        <div className={`text-sm px-3 py-2 rounded ${status.type === 'success' ? 'bg-green-900/30 text-green-400' : 'bg-red-900/30 text-red-400'}`}>
+          {status.text}
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function SettingsModal({ isOpen, onClose, token, onSaveToken }: SettingsModalProps) {
   const [activeTab, setActiveTab] = useState<TabType>('basic')
 
@@ -1072,6 +1156,7 @@ export default function SettingsModal({ isOpen, onClose, token, onSaveToken }: S
     { id: 'basic', label: '기본' },
     { id: 'components', label: '컴포넌트' },
     { id: 'css', label: 'CSS' },
+    { id: 'mappingRules', label: '매핑룰' },
   ]
 
   return (
@@ -1121,6 +1206,7 @@ export default function SettingsModal({ isOpen, onClose, token, onSaveToken }: S
           )}
           {activeTab === 'components' && <ComponentsTab />}
           {activeTab === 'css' && <CssTab />}
+          {activeTab === 'mappingRules' && <MappingRulesTab />}
         </div>
       </div>
     </div>

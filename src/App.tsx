@@ -1,7 +1,7 @@
 import { useState, useCallback, useEffect, useRef } from 'react'
 import type { FigmaFile, FigmaNode, BoundingBox } from './types/figma'
 import type { RegistryItem, AutoMappingSuggestion, FigmaNodeForSignature } from './utils/api'
-import { saveFigmaFile, touchFigmaFile, fetchMappings, fetchFigmaFileData, saveFigmaFileData, saveMapping, fetchAutoMappingSuggestions, applyAutoMappingSuggestions } from './utils/api'
+import { saveFigmaFile, touchFigmaFile, fetchMappings, fetchFigmaFileData, saveFigmaFileData, saveMapping, fetchAutoMappingSuggestions, fetchDefaultRuleSuggestions, applyAutoMappingSuggestions } from './utils/api'
 import { parseFigmaUrl, fetchFigmaFile, fetchNodeImages } from './utils/figma-api'
 import { findNodeById, calculatePageBounds, groupNodes, ungroupNode, reorderNodes } from './utils/tree-utils'
 import Dashboard from './components/Dashboard'
@@ -138,7 +138,6 @@ export default function App() {
       console.log('[DEBUG] 자동 매핑 제안 확인 시작', { displayRoot: !!displayRoot, hasChildren: !!displayRoot?.children })
       if (displayRoot && displayRoot.children) {
         try {
-          // 노드를 시그니처용 형태로 변환 (전체 자식 포함)
           const convertNode = (node: FigmaNode): FigmaNodeForSignature => ({
             id: node.id,
             name: node.name,
@@ -147,13 +146,22 @@ export default function App() {
           })
 
           const nodesForSignature = displayRoot.children.map(c => convertNode(c))
-          console.log('[DEBUG] 시그니처용 노드 수:', nodesForSignature.length)
 
-          const suggestions = await fetchAutoMappingSuggestions(nodesForSignature, [])
-          console.log('[DEBUG] 자동 매핑 제안 결과:', suggestions.length, suggestions)
+          // 클러스터 제안 + default rule 제안 병렬 조회
+          const [clusterSuggestions, defaultSuggestions] = await Promise.all([
+            fetchAutoMappingSuggestions(nodesForSignature, []).then(s => s.map(s => ({ ...s, source: 'cluster' as const }))),
+            fetchDefaultRuleSuggestions(nodesForSignature),
+          ])
 
-          if (suggestions.length > 0) {
-            setAutoMappingSuggestions(suggestions)
+          // 병합: 같은 nodeId는 클러스터가 우선
+          const clusterNodeIds = new Set(clusterSuggestions.map(s => s.nodeId))
+          const merged = [
+            ...clusterSuggestions,
+            ...defaultSuggestions.filter(s => !clusterNodeIds.has(s.nodeId)),
+          ]
+
+          if (merged.length > 0) {
+            setAutoMappingSuggestions(merged)
             setPendingFileKey(fileKey)
             setPendingNodeId(nodeId)
             setShowAutoMappingModal(true)

@@ -74,7 +74,7 @@ export default function AutoMappingSuggestionModal({
           <div>
             <h2 className="text-lg font-semibold theme-text-primary">자동 매핑 제안</h2>
             <p className="text-sm theme-text-secondary mt-1">
-              이전에 매핑한 노드와 동일한 구조의 노드를 발견했습니다
+              클러스터 및 기본 규칙으로 매칭된 노드 목록입니다
             </p>
           </div>
           <button
@@ -132,14 +132,21 @@ export default function AutoMappingSuggestionModal({
                     <span className="text-xs px-1.5 py-0.5 theme-bg-secondary theme-text-secondary rounded">
                       {suggestion.nodeType}
                     </span>
+                    {suggestion.source === 'cluster' ? (
+                      <span className="text-xs px-1.5 py-0.5 bg-purple-900/50 text-purple-300 rounded">클러스터</span>
+                    ) : (
+                      <span className="text-xs px-1.5 py-0.5 bg-green-900/50 text-green-300 rounded">기본규칙</span>
+                    )}
                   </div>
                   <div className="flex items-center gap-2 mt-1">
                     <span className="text-sm text-blue-400">
                       {suggestion.registryName}
                     </span>
-                    <span className="text-xs text-gray-500">
-                      ({suggestion.sampleCount}회 매핑됨)
-                    </span>
+                    {suggestion.source === 'cluster' ? (
+                      <span className="text-xs text-gray-500">({suggestion.sampleCount}회 매핑됨)</span>
+                    ) : (
+                      <span className="text-xs text-gray-500">(키워드: {suggestion.matchedKeyword})</span>
+                    )}
                   </div>
                 </div>
               </label>

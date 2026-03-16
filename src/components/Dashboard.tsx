@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import type { FigmaFileRecord } from '../utils/api'
-import { fetchFigmaFiles, deleteFigmaFile } from '../utils/api'
+import { fetchFigmaFiles, deleteFigmaFile, generateClusters } from '../utils/api'
 
 interface DashboardProps {
   onSelectFile: (fileKey: string, nodeId: string | null) => void
@@ -35,6 +35,7 @@ export default function Dashboard({ onSelectFile, onAddNewFile, onOpenSettings }
     try {
       await deleteFigmaFile(fileKey, nodeId)
       setFiles(files.filter(f => !(f.fileKey === fileKey && f.nodeId === nodeId)))
+      generateClusters().catch(() => {})
     } catch (err) {
       console.error('Failed to delete file:', err)
     }
