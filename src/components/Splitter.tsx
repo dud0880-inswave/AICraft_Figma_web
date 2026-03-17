@@ -18,6 +18,11 @@ export default function Splitter({ direction, onResize }: SplitterProps) {
   useEffect(() => {
     if (!isDragging) return
 
+    // iframe 이벤트 가로채기 방지용 전체 오버레이
+    const overlay = document.createElement('div')
+    overlay.style.cssText = 'position:fixed;inset:0;z-index:9999;cursor:' + (direction === 'horizontal' ? 'col-resize' : 'row-resize')
+    document.body.appendChild(overlay)
+
     const handleMouseMove = (e: MouseEvent) => {
       const currentPos = direction === 'horizontal' ? e.clientX : e.clientY
       const delta = currentPos - lastPos.current
@@ -35,6 +40,7 @@ export default function Splitter({ direction, onResize }: SplitterProps) {
     return () => {
       document.removeEventListener('mousemove', handleMouseMove)
       document.removeEventListener('mouseup', handleMouseUp)
+      document.body.removeChild(overlay)
     }
   }, [isDragging, direction, onResize])
 

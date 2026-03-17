@@ -135,7 +135,6 @@ export default function App() {
       setDashboardKey((k) => k + 1) // 대시보드 새로고침
 
       // 자동 매핑 제안 확인
-      console.log('[DEBUG] 자동 매핑 제안 확인 시작', { displayRoot: !!displayRoot, hasChildren: !!displayRoot?.children })
       if (displayRoot && displayRoot.children) {
         try {
           const convertNode = (node: FigmaNode): FigmaNodeForSignature => ({
@@ -182,24 +181,14 @@ export default function App() {
   // 이미지 로드 (노드 또는 페이지)
   useEffect(() => {
     const nodeIdToLoad = state.targetNodeId || state.currentPageId
-    console.log('[DEBUG] 이미지 로드 useEffect:', {
-      nodeIdToLoad,
-      fileKey: state.fileKey,
-      hasToken: !!state.token,
-      alreadyLoaded: nodeIdToLoad ? !!state.nodeImages[nodeIdToLoad] : false
-    })
-
     if (!nodeIdToLoad || !state.fileKey || !state.token) {
-      console.log('[DEBUG] 이미지 로드 스킵 - 필수 값 없음')
       return
     }
     if (state.nodeImages[nodeIdToLoad]) {
-      console.log('[DEBUG] 이미지 로드 스킵 - 이미 로드됨')
       return
     }
 
     const loadImage = async () => {
-      console.log('[DEBUG] 이미지 로드 시작:', nodeIdToLoad)
       setState((s) => ({ ...s, imageLoading: true }))
 
       try {
@@ -211,17 +200,14 @@ export default function App() {
           2 // scale 2x for better quality
         )
 
-        console.log('[DEBUG] 이미지 로드 결과:', result)
         const imageUrl = result.images[nodeIdToLoad]
         if (imageUrl) {
-          console.log('[DEBUG] 이미지 URL 획득:', imageUrl.substring(0, 50) + '...')
           setState((s) => ({
             ...s,
             nodeImages: { ...s.nodeImages, [nodeIdToLoad]: imageUrl },
             imageLoading: false,
           }))
         } else {
-          console.log('[DEBUG] 이미지 URL 없음')
           setState((s) => ({ ...s, imageLoading: false }))
         }
       } catch (err) {
@@ -342,36 +328,28 @@ export default function App() {
 
       const pages = file.document.children || []
 
-      console.log('[DEBUG] 파일 로드:', { fileKey, nodeId, pagesCount: pages.length })
-
       let targetPageId = pages[0]?.id || null
       let targetNodeId: string | null = null
 
       // nodeId가 있으면 해당 노드 찾기
       if (nodeId) {
-        console.log('[DEBUG] nodeId로 노드 찾기 시작:', nodeId)
         for (const page of pages) {
           const node = findNodeById(page, nodeId)
           if (node) {
-            console.log('[DEBUG] 노드 찾음:', { pageId: page.id, nodeName: node.name })
             targetPageId = page.id
             targetNodeId = nodeId
             break
           }
         }
-        if (!targetNodeId) {
-          console.log('[DEBUG] 노드를 찾지 못함! nodeId:', nodeId)
-        }
       }
 
       // 바운딩 박스 계산
-      // Figma 이미지 렌더링은 absoluteRenderBounds 기준 (그림자, 블러 등 효과 포함)
+      // absoluteRenderBounds 우선: Figma 이미지 API는 effects 포함 render bounds 기준으로 이미지 생성
       const nodeBounds: Record<string, BoundingBox> = {}
       if (targetNodeId && targetPageId) {
         const page = pages.find(p => p.id === targetPageId)
         if (page) {
           const targetNode = findNodeById(page, targetNodeId)
-          // absoluteRenderBounds 우선 사용 (이미지 렌더링과 일치)
           const bounds = targetNode?.absoluteRenderBounds || targetNode?.absoluteBoundingBox
           if (bounds) {
             nodeBounds[targetNodeId] = bounds
@@ -803,7 +781,7 @@ export default function App() {
         >
           {displayRootNode && (
             <NodeTree
-              nodes={displayRootNode.children || []}
+              nodes={state.targetNodeId ? [displayRootNode] : (displayRootNode.children || [])}
               selectedNodeIds={state.selectedNodeIds}
               mappedNodeIds={mappedNodeIds}
               onSelectNode={handleSelectNode}
@@ -856,11 +834,8 @@ export default function App() {
           )}
 
           {/* 코드 에디터 */}
-          {codeEditorVisible ? (
-            <div
-              className="flex-shrink-0 overflow-hidden border-l theme-border"
-              style={{ width: codeEditorWidth }}
-            >
+          {(() => {
+            const editor = (
               <ConvertedCodeEditor
                 fileKey={state.fileKey}
                 nodeId={state.targetNodeId}
@@ -874,22 +849,13 @@ export default function App() {
                   handleReset()
                 }}
               />
-            </div>
-          ) : (
-            <ConvertedCodeEditor
-              fileKey={state.fileKey}
-              nodeId={state.targetNodeId}
-              rootNode={displayRootNode}
-              registry={registry}
-              visible={codeEditorVisible}
-              onToggle={() => setCodeEditorVisible(v => !v)}
-              convertTrigger={convertTrigger}
-              onComplete={() => {
-                setDashboardKey(k => k + 1)
-                handleReset()
-              }}
-            />
-          )}
+            )
+            return codeEditorVisible ? (
+              <div className="flex-shrink-0 overflow-hidden border-l theme-border" style={{ width: codeEditorWidth }}>
+                {editor}
+              </div>
+            ) : editor
+          })()}
         </div>
       </div>
 

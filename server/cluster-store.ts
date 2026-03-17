@@ -12,6 +12,7 @@ export interface MappingCluster {
   registryName: string;
   customAttrs: Record<string, string>;
   sampleCount: number;
+  source: 'generated' | 'imported';
   createdAt: string;
   updatedAt: string;
 }
@@ -104,7 +105,7 @@ export class ClusterStore {
     return rows.map(toCluster);
   }
 
-  // 클러스터 생성 또는 업데이트 (sample_count 증가)
+  // 클러스터 생성 또는 업데이트 (sample_count 증가) — source: 'generated'
   upsert(
     signatureData: SignatureData,
     registryId: string,
@@ -116,13 +117,13 @@ export class ClusterStore {
     const now = new Date().toISOString();
 
     if (existing) {
-      // Update: sample_count 증가
       this.db.prepare(`
         UPDATE mapping_clusters SET
           registry_id = ?,
           registry_name = ?,
           custom_attrs = ?,
           sample_count = sample_count + 1,
+          source = 'generated',
           updated_at = ?
         WHERE signature = ?
       `).run(
@@ -134,12 +135,11 @@ export class ClusterStore {
       );
       return this.getBySignature(signature)!;
     } else {
-      // Insert
       const id = randomUUID();
       this.db.prepare(`
         INSERT INTO mapping_clusters
-          (id, signature, signature_data, registry_id, registry_name, custom_attrs, sample_count, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)
+          (id, signature, signature_data, registry_id, registry_name, custom_attrs, sample_count, source, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, 1, 'generated', ?, ?)
       `).run(
         id,
         signature,
@@ -162,6 +162,12 @@ export class ClusterStore {
     return result.changes > 0;
   }
 
+  // generated 클러스터만 삭제 (imported는 유지)
+  deleteGenerated(): number {
+    const result = this.db.prepare("DELETE FROM mapping_clusters WHERE source = 'generated'").run();
+    return result.changes;
+  }
+
   // 전체 클러스터 삭제
   deleteAll(): number {
     const result = this.db.prepare('DELETE FROM mapping_clusters').run();
@@ -178,6 +184,7 @@ interface RawCluster {
   registry_name: string;
   custom_attrs: string;
   sample_count: number;
+  source: 'generated' | 'imported';
   created_at: string;
   updated_at: string;
 }
@@ -191,6 +198,7 @@ function toCluster(r: RawCluster): MappingCluster {
     registryName: r.registry_name,
     customAttrs: JSON.parse(r.custom_attrs),
     sampleCount: r.sample_count,
+    source: r.source ?? 'generated',
     createdAt: r.created_at,
     updatedAt: r.updated_at,
   };

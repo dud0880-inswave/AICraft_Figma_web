@@ -46,6 +46,8 @@ function formatXml(xml: string): string {
   })
   return result
 }
+
+
 import type { RegistryItem } from '../utils/api'
 import { fetchMappings, updateFigmaFileCompleted, generateClusters, exportXml } from '../utils/api'
 import { loadSavedCssList, loadXmlExportPath } from './SettingsModal'
@@ -189,6 +191,7 @@ export default function ConvertedCodeEditor({
   const [previewError, setPreviewError] = useState<string | null>(null)
   const [previewLoading, setPreviewLoading] = useState(false)
   const [iframeReady, setIframeReady] = useState(false)
+  const [previewZoom, setPreviewZoom] = useState(1)
   const [completing, setCompleting] = useState(false)
   const [saving, setSaving] = useState(false)
   const [saveMessage, setSaveMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
@@ -279,17 +282,11 @@ export default function ConvertedCodeEditor({
   useEffect(() => {
     if (activeTab === 'preview' && convertedCode && iframeReady && iframeRef.current?.contentWindow) {
       const timer = setTimeout(() => {
-        // 설정에서 CSS 목록 가져오기
         const cssList = loadSavedCssList()
         const cssContents = cssList.map(item => item.content)
 
-        // iframe에 XML과 CSS 전달
         iframeRef.current?.contentWindow?.postMessage(
-          {
-            event: 'previewFrame.sendXML',
-            xml: convertedCode,
-            css: cssContents
-          },
+          { event: 'previewFrame.sendXML', xml: convertedCode, css: cssContents },
           '*'
         )
       }, 100)
@@ -321,13 +318,8 @@ export default function ConvertedCodeEditor({
     const cssList = loadSavedCssList()
     const cssContents = cssList.map(item => item.content)
 
-    // iframe에 XML과 CSS 전달
     iframeRef.current.contentWindow.postMessage(
-      {
-        event: 'previewFrame.sendXML',
-        xml: convertedCode,
-        css: cssContents
-      },
+      { event: 'previewFrame.sendXML', xml: convertedCode, css: cssContents },
       '*'
     )
   }, [convertedCode, iframeReady])
@@ -358,15 +350,21 @@ export default function ConvertedCodeEditor({
         // 매핑된 노드인 경우
         if (regItem) {
           const { tagName, properties } = regItem
-          console.log('[DEBUG] 컴포넌트 속성:', { name: regItem.name, tagName, properties })
           const mergedProps = { ...properties }
           const regItemNameLower = regItem.name.toLowerCase()
+          const figmaAttr = ''  // 더 이상 XML에 포함하지 않음
 
           // 커스텀 속성 병합 (class 포함 모든 속성)
           if (nodeMapping?.customAttrs) {
             Object.entries(nodeMapping.customAttrs).forEach(([key, value]) => {
               mergedProps[key] = value
             })
+          }
+
+          // registry 기본 properties.id는 같은 타입 노드 전체에 공유되므로 제거
+          // customAttrs에 명시된 경우만 id 사용
+          if (!nodeMapping?.customAttrs?.id) {
+            delete mergedProps.id
           }
 
           // textbox 특수 처리 - label 속성으로 텍스트 설정 (하위 노드까지 탐색)
@@ -404,7 +402,7 @@ ${indentStr}            <xf:value><![CDATA[${t}]]></xf:value>
 ${indentStr}        </xf:item>`
             ).join('\n')
 
-            return `${indentStr}<${tagName} ${propsStr}>
+            return `${indentStr}<${tagName} ${propsStr}${figmaAttr}>
 ${indentStr}    <xf:choices>
 ${itemsCode}
 ${indentStr}    </xf:choices>
@@ -423,7 +421,7 @@ ${indentStr}            <xf:value><![CDATA[${t}]]></xf:value>
 ${indentStr}        </xf:item>`
             ).join('\n')
 
-            return `${indentStr}<${tagName} ${propsStr}>
+            return `${indentStr}<${tagName} ${propsStr}${figmaAttr}>
 ${indentStr}    <xf:choices>
 ${itemsCode}
 ${indentStr}    </xf:choices>
@@ -432,9 +430,7 @@ ${indentStr}</${tagName}>`
 
           // table 특수 처리
           if (regItemNameLower === 'table') {
-            // 기본값 설정 후 mergedProps로 덮어쓰기
-            const tableProps = { class: 'w2tb', style: 'width:100%;', id: '', ...mergedProps }
-            const tablePropsStr = Object.entries(tableProps)
+            const tablePropsStr = Object.entries(mergedProps)
               .filter(([k]) => k !== 'tagname') // tagname은 제외
               .map(([k, v]) => `${k}="${v}"`).join(' ')
             const innerContent = childrenCode ? `\n${childrenCode}\n${indentStr}` : ''
@@ -448,7 +444,7 @@ ${indentStr}</${tagName}>`
                 ).join('\n') + '\n' + indentStr + '    '
               : ''
 
-            return `${indentStr}<xf:group tagname="table" ${tablePropsStr}>
+            return `${indentStr}<xf:group tagname="table" ${tablePropsStr}${figmaAttr}>
 ${indentStr}    <w2:attributes>
 ${indentStr}        <w2:summary></w2:summary>
 ${indentStr}    </w2:attributes>
@@ -459,9 +455,7 @@ ${indentStr}</xf:group>`
           // gridView 특수 처리
           if (regItemNameLower === 'gridview') {
             const topTexts = collectTopLevelTexts(n)
-            // 기본값 설정 후 mergedProps로 덮어쓰기
-            const gridProps = { id: '', style: 'height:153px;', ...mergedProps }
-            const gridPropsStr = Object.entries(gridProps).map(([k, v]) => `${k}="${v}"`).join(' ')
+            const gridPropsStr = Object.entries(mergedProps).map(([k, v]) => `${k}="${v}"`).join(' ')
 
             // header columns 생성
             const headerCols = topTexts.length > 0
@@ -477,7 +471,7 @@ ${indentStr}            <w2:column id="column2" width="70" displayMode="label" v
 ${indentStr}            <w2:column id="gBodyColumn1" width="70" inputType="text"></w2:column>
 ${indentStr}            <w2:column id="gBodyColumn2" width="70" inputType="text"></w2:column>`
 
-            return `${indentStr}<w2:gridView ${gridPropsStr}>
+            return `${indentStr}<w2:gridView ${gridPropsStr}${figmaAttr}>
 ${indentStr}    <w2:caption id="caption1" style="" value="this is a grid caption."></w2:caption>
 ${indentStr}    <w2:header id="" style="">
 ${indentStr}        <w2:row>
@@ -501,18 +495,17 @@ ${indentStr}</w2:gridView>`
               ? ' ' + Object.entries(trProps).map(([k, v]) => `${k}="${v}"`).join(' ')
               : ''
             if (childrenCode) {
-              return `${indentStr}<xf:group tagname="tr"${trPropsStr}>\n${childrenCode}\n${indentStr}</xf:group>`
+              return `${indentStr}<xf:group tagname="tr"${trPropsStr}${figmaAttr}>\n${childrenCode}\n${indentStr}</xf:group>`
             }
-            return `${indentStr}<xf:group tagname="tr"${trPropsStr}></xf:group>`
+            return `${indentStr}<xf:group tagname="tr"${trPropsStr}${figmaAttr}></xf:group>`
           }
 
           // th 특수 처리
           if (regItemNameLower === 'th') {
-            // 기본값 설정 후 mergedProps로 덮어쓰기
-            const { tagname: _thTag, ...thProps } = { style: '', class: 'w2tb_th', ...mergedProps } as Record<string, string>
+            const { tagname: _thTag, ...thProps } = mergedProps as Record<string, string>
             const thPropsStr = Object.entries(thProps).map(([k, v]) => `${k}="${v}"`).join(' ')
             const innerContent = childrenCode ? `\n${childrenCode}\n${indentStr}` : ''
-            return `${indentStr}<xf:group tagname="th" ${thPropsStr}>
+            return `${indentStr}<xf:group tagname="th" ${thPropsStr}${figmaAttr}>
 ${indentStr}    <w2:attributes>
 ${indentStr}        <w2:scope>row</w2:scope>
 ${indentStr}    </w2:attributes>${innerContent}</xf:group>`
@@ -520,11 +513,10 @@ ${indentStr}    </w2:attributes>${innerContent}</xf:group>`
 
           // td 특수 처리
           if (regItemNameLower === 'td') {
-            // 기본값 설정 후 mergedProps로 덮어쓰기
-            const { tagname: _tdTag, ...tdProps } = { style: '', class: 'w2tb_td', ...mergedProps } as Record<string, string>
+            const { tagname: _tdTag, ...tdProps } = mergedProps as Record<string, string>
             const tdPropsStr = Object.entries(tdProps).map(([k, v]) => `${k}="${v}"`).join(' ')
             const innerContent = childrenCode ? `\n${childrenCode}\n${indentStr}` : ''
-            return `${indentStr}<xf:group tagname="td" ${tdPropsStr}>${innerContent}</xf:group>`
+            return `${indentStr}<xf:group tagname="td" ${tdPropsStr}${figmaAttr}>${innerContent}</xf:group>`
           }
 
           const propsStr = Object.entries(mergedProps).map(([k, v]) => `${k}="${v}"`).join(' ')
@@ -532,12 +524,12 @@ ${indentStr}    </w2:attributes>${innerContent}</xf:group>`
           // 자식 코드가 있으면 중첩 구조로
           if (childrenCode) {
             return propsStr
-              ? `${indentStr}<${tagName} ${propsStr}>\n${childrenCode}\n${indentStr}</${tagName}>`
-              : `${indentStr}<${tagName}>\n${childrenCode}\n${indentStr}</${tagName}>`
+              ? `${indentStr}<${tagName} ${propsStr}${figmaAttr}>\n${childrenCode}\n${indentStr}</${tagName}>`
+              : `${indentStr}<${tagName}${figmaAttr}>\n${childrenCode}\n${indentStr}</${tagName}>`
           } else {
             return propsStr
-              ? `${indentStr}<${tagName} ${propsStr}></${tagName}>`
-              : `${indentStr}<${tagName}/>`
+              ? `${indentStr}<${tagName} ${propsStr}${figmaAttr}></${tagName}>`
+              : `${indentStr}<${tagName}${figmaAttr}/>`
           }
         }
 
@@ -690,15 +682,31 @@ ${innerCode}
                   <span className="text-xs text-gray-500">
                     {previewLoading ? '렌더링 중...' : iframeReady ? '준비됨' : '엔진 로딩...'}
                   </span>
-                  <button
-                    onClick={renderPreview}
-                    disabled={!iframeReady || previewLoading}
-                    className="text-xs text-blue-400 hover:text-blue-300 disabled:text-gray-600"
-                  >
-                    새로고침
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => setPreviewZoom(z => Math.max(0.25, +(z - 0.25).toFixed(2)))}
+                      className="text-xs text-gray-400 hover:text-gray-200 w-5 h-5 flex items-center justify-center"
+                    >−</button>
+                    <span className="text-xs text-gray-400 w-10 text-center">{Math.round(previewZoom * 100)}%</span>
+                    <button
+                      onClick={() => setPreviewZoom(z => Math.min(3, +(z + 0.25).toFixed(2)))}
+                      className="text-xs text-gray-400 hover:text-gray-200 w-5 h-5 flex items-center justify-center"
+                    >+</button>
+                    <button
+                      onClick={() => setPreviewZoom(1)}
+                      className="text-xs text-gray-400 hover:text-gray-200"
+                    >100%</button>
+                    <button
+                      onClick={renderPreview}
+                      disabled={!iframeReady || previewLoading}
+                      className="text-xs text-blue-400 hover:text-blue-300 disabled:text-gray-600"
+                    >
+                      새로고침
+                    </button>
+                  </div>
                 </div>
-                <div className="flex-1 relative">
+                {/* iframe은 항상 패널을 꽉 채움. 1/zoom 크기로 키운 뒤 scale(zoom) 적용 */}
+                <div className="flex-1 relative overflow-hidden">
                   {previewError && (
                     <div className="absolute top-0 left-0 right-0 p-2 bg-red-900/80 text-red-200 text-xs z-10">
                       {previewError}
@@ -708,7 +716,14 @@ ${innerCode}
                     ref={iframeRef}
                     src="/websquare/preview.html"
                     onLoad={handleIframeLoad}
-                    className="w-full h-full border-0 bg-white"
+                    style={{
+                      display: 'block',
+                      border: 'none',
+                      width: `${100 / previewZoom}%`,
+                      height: `${100 / previewZoom}%`,
+                      transform: `scale(${previewZoom})`,
+                      transformOrigin: 'top left',
+                    }}
                     title="WebSquare Preview"
                   />
                 </div>

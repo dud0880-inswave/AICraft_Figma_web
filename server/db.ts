@@ -61,6 +61,7 @@ function runMigrations(db: Database.Database): void {
     { name: '003_node_mappings', sql: SQL_NODE_MAPPINGS },
     { name: '004_mapping_clusters', sql: SQL_MAPPING_CLUSTERS },
     { name: '005_default_mapping_rules', sql: SQL_DEFAULT_MAPPING_RULES },
+    { name: '006_mapping_clusters_source', sql: SQL_MAPPING_CLUSTERS_SOURCE },
   ];
 
   const applied = db.prepare('SELECT name FROM migrations').all() as { name: string }[];
@@ -130,6 +131,10 @@ const SQL_MAPPING_CLUSTERS = `
     updated_at      TEXT NOT NULL
   );
   CREATE INDEX IF NOT EXISTS idx_mapping_clusters_signature ON mapping_clusters(signature);
+`;
+
+const SQL_MAPPING_CLUSTERS_SOURCE = `
+  ALTER TABLE mapping_clusters ADD COLUMN source TEXT NOT NULL DEFAULT 'generated';
 `;
 
 const SQL_DEFAULT_MAPPING_RULES = `

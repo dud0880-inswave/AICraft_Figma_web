@@ -2,8 +2,9 @@
 // Figma Viewer Backend Server
 // ============================================================
 import { createServer, IncomingMessage, ServerResponse } from 'http';
+import { randomUUID } from 'crypto';
 import { writeFileSync, existsSync, mkdirSync } from 'fs';
-import { join, dirname } from 'path';
+import { join } from 'path';
 import { initDb, closeDb, getDb } from './db.js';
 import { RegistryStore } from './registry-store.js';
 import { MappingStore } from './mapping-store.js';
@@ -204,6 +205,11 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
       const completedFiles = fileKey
         ? files.filter(f => f.fileKey === fileKey && f.nodeId === nodeId && f.completed)
         : files.filter(f => f.completed);
+
+      // 전체 재생성 시 generated 클러스터 초기화 (imported는 유지)
+      if (!fileKey) {
+        clusterStore.deleteGenerated();
+      }
 
       let createdCount = 0;
 
@@ -447,6 +453,7 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
       );
       const clusters = clusterStore.list().map(c => ({
         signature: c.signature,
+        // signatureData: c.signatureData,  // TODO: 테스트 후 제거
         registryName: c.registryName,
         customAttrs: c.customAttrs,
         sampleCount: c.sampleCount,
@@ -489,15 +496,14 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
         const existing = clusterStore.getBySignature(rule.signature);
         if (existing) {
           getDb().prepare(`
-            UPDATE mapping_clusters SET registry_id = ?, registry_name = ?, custom_attrs = ?, updated_at = ? WHERE signature = ?
+            UPDATE mapping_clusters SET registry_id = ?, registry_name = ?, custom_attrs = ?, source = 'imported', updated_at = ? WHERE signature = ?
           `).run(registry.id, registry.name, JSON.stringify(rule.customAttrs ?? {}), new Date().toISOString(), rule.signature);
         } else {
           // 새 클러스터: signatureData 없이 삽입 (signature만 있으면 매칭 동작)
-          const { randomUUID } = await import('crypto');
           const now = new Date().toISOString();
           getDb().prepare(`
-            INSERT INTO mapping_clusters (id, signature, signature_data, registry_id, registry_name, custom_attrs, sample_count, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO mapping_clusters (id, signature, signature_data, registry_id, registry_name, custom_attrs, sample_count, source, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, 'imported', ?, ?)
           `).run(randomUUID(), rule.signature, '{}', registry.id, registry.name, JSON.stringify(rule.customAttrs ?? {}), rule.sampleCount ?? 1, now, now);
         }
         clusterUpdated++;
