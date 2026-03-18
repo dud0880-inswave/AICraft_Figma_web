@@ -102,6 +102,14 @@ export class MappingStore {
     ).run(fileKey, nodeId);
     return result.changes > 0;
   }
+
+  // 파일 기준 매핑 전체 삭제
+  deleteByFileKey(fileKey: string): number {
+    const result = this.db.prepare(
+      'DELETE FROM node_mappings WHERE figma_file_key = ?'
+    ).run(fileKey);
+    return result.changes;
+  }
 }
 
 // ---- Row → Domain ----

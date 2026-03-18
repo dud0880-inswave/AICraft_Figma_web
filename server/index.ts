@@ -142,6 +142,24 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
       const nodeId = url.searchParams.get('nodeId');
       if (!fileKey) return badRequest(res, 'fileKey required');
       figmaFilesStore.delete(fileKey, nodeId || null);
+      // 관련 매핑 및 파일 데이터 삭제
+      mappingStore.deleteByFileKey(fileKey);
+      figmaFileDataStore.deleteByFileKey(fileKey);
+      // 파일 삭제 후 클러스터 재생성 (삭제된 파일의 클러스터 정리)
+      clusterStore.deleteGenerated();
+      const remainingFiles = figmaFilesStore.list().filter(f => f.completed);
+      for (const file of remainingFiles) {
+        const mappings = mappingStore.listByFile(file.fileKey);
+        const mappedMappings = mappings.filter(m => m.status === 'mapped' && m.registryId);
+        const fileData = figmaFileDataStore.get(file.fileKey, file.nodeId);
+        if (!fileData) continue;
+        const document = JSON.parse(fileData.data);
+        for (const mapping of mappedMappings) {
+          const node = findNodeInDocument(document, mapping.figmaNodeId);
+          if (!node) continue;
+          clusterStore.upsert(clusterStore.createSignatureData(node), mapping.registryId!, mapping.registryName || '', mapping.customAttrs);
+        }
+      }
       return json(res, { success: true });
     }
 
@@ -197,19 +215,10 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
 
     // 완료된 파일들에서 클러스터 생성
     if (path === '/api/clusters/generate' && req.method === 'POST') {
-      const body = await parseBody(req);
-      const { fileKey, nodeId } = body;
-
-      // 특정 파일 또는 모든 완료된 파일에서 클러스터 생성
+      // generated 클러스터 초기화 후 모든 완료된 파일 기준으로 재생성 (imported는 유지)
+      clusterStore.deleteGenerated();
       const files = figmaFilesStore.list();
-      const completedFiles = fileKey
-        ? files.filter(f => f.fileKey === fileKey && f.nodeId === nodeId && f.completed)
-        : files.filter(f => f.completed);
-
-      // 전체 재생성 시 generated 클러스터 초기화 (imported는 유지)
-      if (!fileKey) {
-        clusterStore.deleteGenerated();
-      }
+      const completedFiles = files.filter(f => f.completed);
 
       let createdCount = 0;
 
@@ -453,7 +462,7 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
       );
       const clusters = clusterStore.list().map(c => ({
         signature: c.signature,
-        // signatureData: c.signatureData,  // TODO: 테스트 후 제거
+        signatureData: c.signatureData,  // TODO: 테스트 후 제거
         registryName: c.registryName,
         customAttrs: c.customAttrs,
         sampleCount: c.sampleCount,

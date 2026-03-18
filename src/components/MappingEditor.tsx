@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import type { FigmaNode } from '../types/figma'
 import type { RegistryItem, NodeMapping } from '../utils/api'
 import { fetchRegistry, fetchMapping, saveMapping, deleteMapping } from '../utils/api'
@@ -76,6 +76,7 @@ export default function MappingEditor({ node, nodes, fileKey, onRegistryLoad, on
   const [mapping, setMapping] = useState<NodeMapping | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
   const [dropdownOpen, setDropdownOpen] = useState(false)
+  const [highlightedIndex, setHighlightedIndex] = useState(-1)
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
   const [cssList, setCssList] = useState<CssItem[]>([])
@@ -355,10 +356,18 @@ export default function MappingEditor({ node, nodes, fileKey, onRegistryLoad, on
     item.name.toLowerCase().includes(searchQuery.toLowerCase())
   )
 
-  // CSS 클래스 검색 필터링
-  const filteredClasses = classSearchQuery
-    ? allClassesInCss.filter(cls => cls.toLowerCase().includes(classSearchQuery.toLowerCase()))
-    : allClassesInCss
+  // CSS 클래스 검색 필터링 (선택된 클래스 최상단)
+  const filteredClasses = useMemo(() => {
+    const base = classSearchQuery
+      ? allClassesInCss.filter(cls => cls.toLowerCase().includes(classSearchQuery.toLowerCase()))
+      : allClassesInCss
+    const selected = new Set(selectedClasses)
+    return [...base].sort((a: string, b: string) => {
+      const aSelected = selected.has(a) ? 0 : 1
+      const bSelected = selected.has(b) ? 0 : 1
+      return aSelected - bSelected
+    })
+  }, [allClassesInCss, classSearchQuery, selectedClasses])
 
   // 드롭다운 외부 클릭 시 닫기
   useEffect(() => {
@@ -401,71 +410,64 @@ export default function MappingEditor({ node, nodes, fileKey, onRegistryLoad, on
     }
   }, [isDragging])
 
-  if (!node && nodes.length === 0) {
-    return (
-      <div className="h-full theme-bg-secondary p-4">
-        <p className="theme-text-secondary text-sm">노드를 선택하면 컴포넌트를 매핑할 수 있습니다</p>
-      </div>
-    )
-  }
-
   // 다중 선택 시 node가 null이면 첫 번째 노드 사용
-  const displayNode = node || nodes[0]
-  if (!displayNode) {
-    return (
-      <div className="h-full theme-bg-secondary p-4">
-        <p className="theme-text-secondary text-sm">노드를 선택하면 컴포넌트를 매핑할 수 있습니다</p>
-      </div>
-    )
-  }
+  const displayNode = node || nodes[0] || null
 
   return (
     <div className="h-full theme-bg-secondary flex flex-col">
       {/* 노드 정보 */}
       <div className="px-4 py-3 border-b theme-border flex-shrink-0">
-        <h2 className="text-sm font-medium theme-text-primary truncate" title={displayNode.name}>
-          {nodes.length > 1 ? `${nodes.length}개 노드 선택됨` : displayNode.name}
-        </h2>
-        <p className="text-xs theme-text-secondary mt-0.5">
-          {nodes.length > 1
-            ? `일괄 적용 모드`
-            : `${displayNode.type} · ${displayNode.id}`}
-        </p>
+        {displayNode ? (
+          <>
+            <h2 className="text-sm font-medium theme-text-primary truncate" title={displayNode.name}>
+              {nodes.length > 1 ? `${nodes.length}개 노드 선택됨` : displayNode.name}
+            </h2>
+            <p className="text-xs theme-text-secondary mt-0.5">
+              {nodes.length > 1
+                ? `일괄 적용 모드`
+                : `${displayNode.type} · ${displayNode.id}`}
+            </p>
+          </>
+        ) : (
+          <p className="text-sm theme-text-secondary">노드를 선택하면 컴포넌트를 매핑할 수 있습니다</p>
+        )}
       </div>
 
       {/* 현재 매핑 상태 */}
-      <div className="px-4 py-3 border-b theme-border flex-shrink-0">
-        <div className="flex items-center justify-between mb-2">
-          <span className="text-xs text-gray-400">변환 컴포넌트</span>
-          {mapping && (
-            <button
-              onClick={handleClearMapping}
-              disabled={saving}
-              className="text-xs text-red-400 hover:text-red-300"
-            >
-              해제
-            </button>
+      {displayNode && (
+        <div className="px-4 py-3 border-b theme-border flex-shrink-0">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-xs text-gray-400">변환 컴포넌트</span>
+            {mapping && (
+              <button
+                onClick={handleClearMapping}
+                disabled={saving}
+                className="text-xs text-red-400 hover:text-red-300"
+              >
+                해제
+              </button>
+            )}
+          </div>
+
+          {loading ? (
+            <div className="text-sm text-gray-500">로딩...</div>
+          ) : mapping ? (
+            <div className="mapped-component-box border rounded-lg p-3">
+              <span className="text-blue-500 font-mono text-sm">{mapping.registryName}</span>
+            </div>
+          ) : (
+            <div className="theme-bg-tertiary border theme-border rounded-lg p-3 text-center">
+              <p className="text-sm theme-text-secondary">매핑되지 않음</p>
+              <p className="text-xs theme-text-secondary mt-1">아래에서 컴포넌트를 선택하세요</p>
+            </div>
           )}
         </div>
-
-        {loading ? (
-          <div className="text-sm text-gray-500">로딩...</div>
-        ) : mapping ? (
-          <div className="mapped-component-box border rounded-lg p-3">
-            <span className="text-blue-500 font-mono text-sm">{mapping.registryName}</span>
-          </div>
-        ) : (
-          <div className="theme-bg-tertiary border theme-border rounded-lg p-3 text-center">
-            <p className="text-sm theme-text-secondary">매핑되지 않음</p>
-            <p className="text-xs theme-text-secondary mt-1">아래에서 컴포넌트를 선택하세요</p>
-          </div>
-        )}
-      </div>
+      )}
 
       {/* 스플리터 영역 */}
       <div className="flex-1 flex flex-col min-h-0" ref={splitContainerRef}>
         {/* 상단: 컴포넌트 선택 */}
-        <div className="overflow-auto" style={{ height: topHeight ?? 'auto', flexShrink: 0 }}>
+        <div className="overflow-auto" style={{ height: topHeight ?? 'auto', flexShrink: 0, minHeight: 278 }}>
           <div className="px-4 py-3">
             <div className="text-xs text-gray-400 mb-2">컴포넌트 선택</div>
             <div ref={dropdownRef} className="relative">
@@ -476,8 +478,28 @@ export default function MappingEditor({ node, nodes, fileKey, onRegistryLoad, on
                 onChange={(e) => {
                   setSearchQuery(e.target.value)
                   setDropdownOpen(true)
+                  setHighlightedIndex(-1)
                 }}
                 onFocus={() => setDropdownOpen(true)}
+                onKeyDown={(e) => {
+                  if (!dropdownOpen || filteredRegistry.length === 0) return
+                  if (e.key === 'ArrowDown') {
+                    e.preventDefault()
+                    setHighlightedIndex(i => Math.min(i + 1, filteredRegistry.length - 1))
+                  } else if (e.key === 'ArrowUp') {
+                    e.preventDefault()
+                    setHighlightedIndex(i => Math.max(i - 1, 0))
+                  } else if (e.key === 'Enter' && highlightedIndex >= 0) {
+                    e.preventDefault()
+                    handleSelectComponent(filteredRegistry[highlightedIndex])
+                    setSearchQuery('')
+                    setDropdownOpen(false)
+                    setHighlightedIndex(-1)
+                  } else if (e.key === 'Escape') {
+                    setDropdownOpen(false)
+                    setHighlightedIndex(-1)
+                  }
+                }}
                 disabled={saving}
                 className="w-full px-3 py-2 text-sm theme-bg-tertiary border theme-border rounded theme-text-primary placeholder-[var(--text-muted)] focus:outline-none focus:border-blue-500"
               />
@@ -494,7 +516,7 @@ export default function MappingEditor({ node, nodes, fileKey, onRegistryLoad, on
               {dropdownOpen && (
                 <div className="absolute z-10 w-full mt-1 theme-bg-secondary border theme-border rounded shadow-lg max-h-48 overflow-auto">
                   {filteredRegistry.length > 0 ? (
-                    filteredRegistry.map((item) => (
+                    filteredRegistry.map((item, idx) => (
                       <button
                         key={item.id}
                         type="button"
@@ -502,8 +524,11 @@ export default function MappingEditor({ node, nodes, fileKey, onRegistryLoad, on
                           handleSelectComponent(item)
                           setSearchQuery('')
                           setDropdownOpen(false)
+                          setHighlightedIndex(-1)
                         }}
+                        onMouseEnter={() => setHighlightedIndex(idx)}
                         className={`w-full px-3 py-2 text-left text-sm theme-bg-hover ${
+                          idx === highlightedIndex ? 'bg-blue-800/60 text-blue-300' :
                           mapping?.registryId === item.id ? 'bg-blue-900/50 text-blue-400' : 'theme-text-primary'
                         }`}
                       >

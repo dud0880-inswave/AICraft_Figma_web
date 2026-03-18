@@ -233,6 +233,7 @@ export interface FigmaNodeForSignature {
   id: string;
   name: string;
   type: string;
+  componentProperties?: Record<string, { value: string; type: string }>;
   children?: FigmaNodeForSignature[];
 }
 

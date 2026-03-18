@@ -31,6 +31,7 @@ export interface FigmaNode {
   characters?: string
   style?: TypeStyle
   componentId?: string
+  componentProperties?: Record<string, { value: string; type: string }>
 }
 
 export interface BoundingBox {

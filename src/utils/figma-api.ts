@@ -42,8 +42,11 @@ export function parseFigmaUrl(url: string): ParsedFigmaUrl | null {
   return { fileKey, nodeId }
 }
 
-export async function fetchFigmaFile(fileKey: string, token: string): Promise<FigmaFile> {
-  const response = await fetch(`${FIGMA_API_BASE}/v1/files/${fileKey}`, {
+export async function fetchFigmaFile(fileKey: string, token: string, nodeId?: string | null): Promise<FigmaFile> {
+  const url = nodeId
+    ? `${FIGMA_API_BASE}/v1/files/${fileKey}?ids=${encodeURIComponent(nodeId)}`
+    : `${FIGMA_API_BASE}/v1/files/${fileKey}`
+  const response = await fetch(url, {
     headers: {
       'X-Figma-Token': token,
     },

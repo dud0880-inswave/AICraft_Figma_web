@@ -103,7 +103,17 @@ export default function App() {
     setState((s) => ({ ...s, loading: true, error: null, token }))
 
     try {
-      const file = await fetchFigmaFile(fileKey, token)
+      const file = await fetchFigmaFile(fileKey, token, nodeId)
+
+      // [DEBUG] Figma API 응답 JSON 저장
+      // const debugBlob = new Blob([JSON.stringify(file, null, 2)], { type: 'application/json' })
+      // const debugUrl = URL.createObjectURL(debugBlob)
+      // const debugLink = document.createElement('a')
+      // debugLink.href = debugUrl
+      // debugLink.download = `figma-debug-${fileKey}-${nodeId || 'full'}.json`
+      // debugLink.click()
+      // URL.revokeObjectURL(debugUrl)
+
       const pages = file.document.children || []
       let displayRoot: FigmaNode | null = null
 
@@ -141,10 +151,13 @@ export default function App() {
             id: node.id,
             name: node.name,
             type: node.type,
+            ...(node.componentProperties && { componentProperties: node.componentProperties }),
             children: node.children?.map(c => convertNode(c)),
           })
 
-          const nodesForSignature = displayRoot.children.map(c => convertNode(c))
+          const nodesForSignature = state.targetNodeId
+            ? [convertNode(displayRoot)]
+            : displayRoot.children.map(c => convertNode(c))
 
           // 클러스터 제안 + default rule 제안 병렬 조회
           const [clusterSuggestions, defaultSuggestions] = await Promise.all([
@@ -313,7 +326,7 @@ export default function App() {
 
     try {
       // Figma에서 원본 파일 가져오기
-      let file = await fetchFigmaFile(fileKey, state.token)
+      let file = await fetchFigmaFile(fileKey, state.token, nodeId)
 
       // 저장된 수정 데이터가 있으면 적용
       try {
@@ -397,6 +410,46 @@ export default function App() {
   const handleSaveToken = useCallback((token: string) => {
     setState((s) => ({ ...s, token }))
   }, [])
+
+  // 에디터 화면에서 자동 매핑 버튼 클릭
+  const handleAutoMappingFromEditor = useCallback(async () => {
+    if (!state.fileKey || !state.file) return
+    const currentPage = state.file.document.children?.find((p: FigmaNode) => p.id === state.currentPageId) || null
+    const root = state.targetNodeId && currentPage
+      ? findNodeById(currentPage, state.targetNodeId)
+      : currentPage
+    if (!root) return
+    setAutoMappingLoading(true)
+    try {
+      const convertNode = (node: FigmaNode): FigmaNodeForSignature => ({
+        id: node.id,
+        name: node.name,
+        type: node.type,
+        ...(node.componentProperties && { componentProperties: node.componentProperties }),
+        children: node.children?.map(c => convertNode(c)),
+      })
+      const nodesForSignature = state.targetNodeId
+        ? [convertNode(root)]
+        : (root.children || []).map(c => convertNode(c))
+      const [clusterSuggestions, defaultSuggestions] = await Promise.all([
+        fetchAutoMappingSuggestions(nodesForSignature, []).then(s => s.map(s => ({ ...s, source: 'cluster' as const }))),
+        fetchDefaultRuleSuggestions(nodesForSignature),
+      ])
+      const clusterNodeIds = new Set(clusterSuggestions.map(s => s.nodeId))
+      const merged = [
+        ...clusterSuggestions,
+        ...defaultSuggestions.filter(s => !clusterNodeIds.has(s.nodeId)),
+      ]
+      setPendingFileKey(state.fileKey)
+      setPendingNodeId(state.targetNodeId)
+      setAutoMappingSuggestions(merged)
+      setShowAutoMappingModal(true)
+    } catch (e) {
+      console.error('Failed to fetch auto mapping suggestions:', e)
+    } finally {
+      setAutoMappingLoading(false)
+    }
+  }, [state.fileKey, state.file, state.currentPageId, state.targetNodeId])
 
   // 자동 매핑 적용 후 에디터로 이동
   const handleApplyAutoMapping = useCallback(async (selectedSuggestions: AutoMappingSuggestion[]) => {
@@ -740,6 +793,14 @@ export default function App() {
           )}
         </div>
         <div className="flex items-center gap-2">
+          <button
+            onClick={handleAutoMappingFromEditor}
+            disabled={autoMappingLoading}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-blue-400 hover:text-blue-300 theme-bg-hover-strong rounded disabled:opacity-50"
+            title="자동 매핑 제안"
+          >
+            {autoMappingLoading ? '분석 중...' : '자동 매핑'}
+          </button>
           <button
             onClick={handleReset}
             className="flex items-center gap-1.5 px-3 py-1.5 text-sm theme-text-secondary theme-text-hover theme-bg-hover-strong rounded"

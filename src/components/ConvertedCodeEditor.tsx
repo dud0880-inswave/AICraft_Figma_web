@@ -336,6 +336,9 @@ export default function ConvertedCodeEditor({
 
       // 트리 순회하며 계층 구조로 코드 생성
       const traverse = (n: FigmaNode, depth: number): string => {
+        // hidden 요소는 XML에서 제외
+        if (n.visible === false) return ''
+
         const indentStr = '    '.repeat(depth)
         const nodeMapping = mappingMap.get(n.id)
         const regItem = nodeMapping?.registryId
@@ -385,9 +388,32 @@ export default function ConvertedCodeEditor({
             const text = n.characters || findTextInChildren(n)
             if (text) mergedProps.label = text
           }
+          if (regItemNameLower === 'anchor') {
+            const text = n.characters || findTextInChildren(n)
+            if (text) mergedProps.label = text
+          }
           if (regItemNameLower === 'input') {
             const text = n.characters || findTextInChildren(n)
             if (text) mergedProps.placeholder = text
+          }
+
+          // select / multiselect 특수 처리
+          if (regItemNameLower === 'select' || regItemNameLower === 'multiselect') {
+            const texts = collectAllTexts(n)
+            const propsStr = Object.entries(mergedProps).map(([k, v]) => `${k}="${v}"`).join(' ')
+            const items = texts.length > 0 ? texts : ['new row']
+            const itemsCode = items.map(t =>
+`${indentStr}        <xf:item>
+${indentStr}            <xf:label><![CDATA[${t}]]></xf:label>
+${indentStr}            <xf:value></xf:value>
+${indentStr}        </xf:item>`
+            ).join('\n')
+
+            return `${indentStr}<${tagName} ${propsStr}${figmaAttr}>
+${indentStr}    <xf:choices>
+${itemsCode}
+${indentStr}    </xf:choices>
+${indentStr}</${tagName}>`
           }
 
           // checkbox 특수 처리
@@ -537,9 +563,7 @@ ${indentStr}    </w2:attributes>${innerContent}</xf:group>`
         return childrenCode
       }
 
-      const rawCode = rootNode.children
-        ? rootNode.children.map(child => traverse(child, 0)).filter(Boolean).join('\n')
-        : ''
+      const rawCode = traverse(rootNode, 0) || ''
 
       // 들여쓰기 추가 (12칸 = 3탭)
       const innerCode = rawCode

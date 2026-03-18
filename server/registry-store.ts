@@ -59,21 +59,13 @@ export class RegistryStore {
     const existingMap = new Map(existing.map(r => [r.name, r]));
 
     const insert = this.db.prepare('INSERT INTO registry (id, name, tagName, properties) VALUES (?, ?, ?, ?)');
-    const update = this.db.prepare('UPDATE registry SET tagName = ?, properties = ? WHERE name = ?');
 
+    // 신규 항목만 추가 — 기존 항목은 사용자 수정값 유지
     const tx = this.db.transaction(() => {
       for (const comp of COMPONENTS) {
-        const propsJson = JSON.stringify(comp.properties);
-        const ex = existingMap.get(comp.name);
-
-        if (!ex) {
-          // 새로 추가
-          insert.run(randomUUID(), comp.name, comp.tagName, propsJson);
+        if (!existingMap.has(comp.name)) {
+          insert.run(randomUUID(), comp.name, comp.tagName, JSON.stringify(comp.properties));
           console.log(`[Registry] 추가: ${comp.name}`);
-        } else if (ex.tagName !== comp.tagName || ex.properties !== propsJson) {
-          // 업데이트
-          update.run(comp.tagName, propsJson, comp.name);
-          console.log(`[Registry] 업데이트: ${comp.name}`);
         }
       }
     });

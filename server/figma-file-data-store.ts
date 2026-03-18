@@ -79,4 +79,9 @@ export class FigmaFileDataStore {
       this.db.prepare('DELETE FROM figma_file_data WHERE fileKey = ? AND nodeId IS NULL').run(fileKey);
     }
   }
+
+  deleteByFileKey(fileKey: string): number {
+    const result = this.db.prepare('DELETE FROM figma_file_data WHERE fileKey = ?').run(fileKey);
+    return result.changes;
+  }
 }

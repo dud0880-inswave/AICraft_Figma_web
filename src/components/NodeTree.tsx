@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo } from 'react'
+import { useState, useCallback, useMemo, useEffect, useRef } from 'react'
 import type { FigmaNode } from '../types/figma'
 import { getNodeIcon } from '../utils/tree-utils'
 
@@ -6,7 +6,7 @@ interface NodeTreeProps {
   nodes: FigmaNode[]
   selectedNodeIds: string[]
   mappedNodeIds: Set<string>
-  onSelectNode: (node: FigmaNode, ctrlKey: boolean) => void
+  onSelectNode: (node: FigmaNode, ctrlKey: boolean, shiftKey?: boolean) => void
   onSelectNodeIds?: (nodeIds: string[]) => void
   onHoverNode: (node: FigmaNode | null) => void
   onGroupNodes: () => void
@@ -64,7 +64,7 @@ interface TreeItemProps {
   searchQuery: string
   matchingIds: Set<string>
   onToggle: (id: string) => void
-  onSelect: (node: FigmaNode, ctrlKey: boolean) => void
+  onSelect: (node: FigmaNode, ctrlKey: boolean, shiftKey?: boolean) => void
   onHover: (node: FigmaNode | null) => void
   onDragStart: (e: React.DragEvent, node: FigmaNode, parentId: string | null, index: number) => void
   onDragOver: (e: React.DragEvent, node: FigmaNode, parentId: string | null, index: number) => void
@@ -170,6 +170,7 @@ function TreeItem({
   return (
     <div>
       <div
+        data-node-id={node.id}
         className={`tree-node flex items-center ${isSelected ? 'selected' : ''} ${!isVisible ? 'opacity-40' : ''} ${isDragging ? 'opacity-50' : ''}`}
         style={{
           paddingLeft: `${depth * 16 + 8}px`,
@@ -179,7 +180,7 @@ function TreeItem({
           marginBottom: dropTarget === 'after' ? '-2px' : '0',
         }}
         draggable
-        onClick={(e) => onSelect(node, e.ctrlKey || e.metaKey)}
+        onClick={(e) => onSelect(node, e.ctrlKey || e.metaKey, e.shiftKey)}
         onMouseEnter={() => onHover(node)}
         onMouseLeave={() => onHover(null)}
         onDragStart={(e) => onDragStart(e, node, parentId, index)}
@@ -303,13 +304,17 @@ export default function NodeTree({
   })
   const [dragState, setDragState] = useState<DragState | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
+  const [showParents, setShowParents] = useState(true)
 
   // 검색어에 매칭되는 노드 ID 계산
-  const { matchingIds, directMatchingIds } = useMemo(() => {
-    if (!searchQuery.trim()) return { matchingIds: new Set<string>(), directMatchingIds: new Set<string>() }
+  const { allMatchingIds, directMatchingIds } = useMemo(() => {
+    if (!searchQuery.trim()) return { allMatchingIds: new Set<string>(), directMatchingIds: new Set<string>() }
     const result = collectMatchingNodeIds(nodes, searchQuery.trim())
-    return { matchingIds: result.all, directMatchingIds: result.direct }
+    return { allMatchingIds: result.all, directMatchingIds: result.direct }
   }, [nodes, searchQuery])
+
+  // showParents에 따라 트리에 표시할 노드 결정
+  const matchingIds = showParents ? allMatchingIds : directMatchingIds
 
   // 검색 결과 전체 선택
   const handleSelectAllSearchResults = useCallback(() => {
@@ -375,8 +380,96 @@ export default function NodeTree({
     setDragState(null)
   }
 
+  // 현재 보이는 노드를 flat 리스트로 수집
+  const flatVisibleNodes = useMemo(() => {
+    const result: FigmaNode[] = []
+    if (searchQuery && !showParents) {
+      // 상위항목 미표시: 전체 재귀 탐색 후 직접 매칭만
+      function collectAll(nodeList: FigmaNode[]) {
+        for (const node of nodeList) {
+          if (directMatchingIds.has(node.id)) result.push(node)
+          if (node.children) collectAll(node.children)
+        }
+      }
+      collectAll(nodes)
+    } else {
+      function collect(nodeList: FigmaNode[]) {
+        for (const node of nodeList) {
+          if (searchQuery && !matchingIds.has(node.id)) continue
+          result.push(node)
+          if (node.children && (expandedIds.has(node.id) || searchQuery)) {
+            collect(node.children)
+          }
+        }
+      }
+      collect(nodes)
+    }
+    return result
+  }, [nodes, expandedIds, searchQuery, matchingIds, showParents, directMatchingIds])
+
+  const treeRef = useRef<HTMLDivElement>(null)
+
+  // Shift 클릭 범위 선택 처리
+  const handleNodeSelect = useCallback((node: FigmaNode, ctrlKey: boolean, shiftKey?: boolean) => {
+    if (shiftKey && onSelectNodeIds && selectedNodeIds.length > 0) {
+      const lastId = selectedNodeIds[selectedNodeIds.length - 1]
+      const lastIndex = flatVisibleNodes.findIndex(n => n.id === lastId)
+      const currentIndex = flatVisibleNodes.findIndex(n => n.id === node.id)
+      if (lastIndex >= 0 && currentIndex >= 0) {
+        const start = Math.min(lastIndex, currentIndex)
+        const end = Math.max(lastIndex, currentIndex)
+        const rangeIds = flatVisibleNodes.slice(start, end + 1).map(n => n.id)
+        // 기존 선택에 합치기
+        const merged = new Set([...selectedNodeIds, ...rangeIds])
+        onSelectNodeIds(Array.from(merged))
+        return
+      }
+    }
+    onSelectNode(node, ctrlKey)
+  }, [flatVisibleNodes, selectedNodeIds, onSelectNode, onSelectNodeIds])
+
+  const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
+    if (!flatVisibleNodes.length) return
+    const currentId = selectedNodeIds[selectedNodeIds.length - 1]
+    const currentIndex = currentId ? flatVisibleNodes.findIndex(n => n.id === currentId) : -1
+
+    if (e.key === 'ArrowDown') {
+      e.preventDefault()
+      const nextIndex = Math.min(currentIndex + 1, flatVisibleNodes.length - 1)
+      handleNodeSelect(flatVisibleNodes[nextIndex], false, e.shiftKey)
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault()
+      const prevIndex = Math.max(currentIndex - 1, 0)
+      handleNodeSelect(flatVisibleNodes[prevIndex], false, e.shiftKey)
+    } else if (e.key === 'ArrowRight') {
+      e.preventDefault()
+      if (currentId) {
+        const node = flatVisibleNodes[currentIndex]
+        if (node?.children?.length && !expandedIds.has(node.id)) {
+          handleToggle(node.id)
+        }
+      }
+    } else if (e.key === 'ArrowLeft') {
+      e.preventDefault()
+      if (currentId) {
+        const node = flatVisibleNodes[currentIndex]
+        if (node?.children?.length && expandedIds.has(node.id)) {
+          handleToggle(node.id)
+        }
+      }
+    }
+  }, [flatVisibleNodes, selectedNodeIds, expandedIds, onSelectNode, handleToggle])
+
+  // 선택 변경 시 해당 노드가 보이도록 스크롤
+  useEffect(() => {
+    const currentId = selectedNodeIds[selectedNodeIds.length - 1]
+    if (!currentId || !treeRef.current) return
+    const el = treeRef.current.querySelector(`[data-node-id="${currentId}"]`)
+    if (el) el.scrollIntoView({ block: 'nearest' })
+  }, [selectedNodeIds])
+
   return (
-    <div className="h-full flex flex-col theme-bg-secondary">
+    <div className="h-full flex flex-col theme-bg-secondary" onKeyDown={handleKeyDown} tabIndex={0} style={{ outline: 'none' }}>
       {/* 헤더 */}
       <div className="flex items-center justify-between px-4 py-2 border-b theme-border">
         <h2 className="text-sm font-medium theme-text-secondary">
@@ -455,9 +548,20 @@ export default function NodeTree({
         </div>
         {searchQuery && (
           <div className="mt-1 flex items-center justify-between">
-            <span className="text-xs text-gray-500">
-              {directMatchingIds.size}개 노드 발견
-            </span>
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-gray-500">
+                {directMatchingIds.size}개 발견
+              </span>
+              <label className="flex items-center gap-1 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={showParents}
+                  onChange={(e) => setShowParents(e.target.checked)}
+                  className="w-3 h-3 rounded"
+                />
+                <span className="text-xs text-gray-500">상위항목</span>
+              </label>
+            </div>
             {directMatchingIds.size > 0 && onSelectNodeIds && (
               <button
                 onClick={handleSelectAllSearchResults}
@@ -471,29 +575,57 @@ export default function NodeTree({
       </div>
 
       {/* 트리 */}
-      <div className="flex-1 overflow-auto py-2">
-        {nodes.map((node, index) => (
-          <TreeItem
-            key={node.id}
-            node={node}
-            depth={0}
-            index={index}
-            parentId={null}
-            selectedNodeIds={selectedNodeIds}
-            mappedNodeIds={mappedNodeIds}
-            expandedIds={expandedIds}
-            dragState={dragState}
-            searchQuery={searchQuery}
-            matchingIds={matchingIds}
-            onToggle={handleToggle}
-            onSelect={onSelectNode}
-            onHover={onHoverNode}
-            onDragStart={handleDragStart}
-            onDragOver={handleDragOver}
-            onDragEnd={handleDragEnd}
-            onDrop={handleDrop}
-          />
-        ))}
+      <div ref={treeRef} className="flex-1 overflow-auto py-2">
+        {searchQuery && !showParents ? (
+          // 상위항목 미표시: 매칭 노드만 flat 렌더링
+          flatVisibleNodes
+            .filter(n => directMatchingIds.has(n.id))
+            .map((node, index) => (
+              <TreeItem
+                key={node.id}
+                node={node}
+                depth={0}
+                index={index}
+                parentId={null}
+                selectedNodeIds={selectedNodeIds}
+                mappedNodeIds={mappedNodeIds}
+                expandedIds={expandedIds}
+                dragState={dragState}
+                searchQuery=""
+                matchingIds={matchingIds}
+                onToggle={handleToggle}
+                onSelect={handleNodeSelect}
+                onHover={onHoverNode}
+                onDragStart={handleDragStart}
+                onDragOver={handleDragOver}
+                onDragEnd={handleDragEnd}
+                onDrop={handleDrop}
+              />
+            ))
+        ) : (
+          nodes.map((node, index) => (
+            <TreeItem
+              key={node.id}
+              node={node}
+              depth={0}
+              index={index}
+              parentId={null}
+              selectedNodeIds={selectedNodeIds}
+              mappedNodeIds={mappedNodeIds}
+              expandedIds={expandedIds}
+              dragState={dragState}
+              searchQuery={searchQuery}
+              matchingIds={matchingIds}
+              onToggle={handleToggle}
+              onSelect={handleNodeSelect}
+              onHover={onHoverNode}
+              onDragStart={handleDragStart}
+              onDragOver={handleDragOver}
+              onDragEnd={handleDragEnd}
+              onDrop={handleDrop}
+            />
+          ))
+        )}
       </div>
     </div>
   )

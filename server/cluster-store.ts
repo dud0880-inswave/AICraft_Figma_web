@@ -20,12 +20,14 @@ export interface MappingCluster {
 export interface SignatureData {
   name: string;
   type: string;
+  componentProperties?: Record<string, { value: string; type: string }>;
   children?: SignatureData[];
 }
 
 export interface FigmaNodeLike {
   name: string;
   type: string;
+  componentProperties?: Record<string, { value: string; type: string }>;
   children?: FigmaNodeLike[];
 }
 
@@ -49,6 +51,11 @@ export class ClusterStore {
       name: node.name,
       type: node.type,
     };
+
+    // componentProperties 포함 (인스턴스 variant 정보 등)
+    if (node.componentProperties && Object.keys(node.componentProperties).length > 0) {
+      (data as Record<string, unknown>).componentProperties = node.componentProperties;
+    }
 
     if (node.children && node.children.length > 0) {
       data.children = node.children.map(child => this.createSignatureData(child));

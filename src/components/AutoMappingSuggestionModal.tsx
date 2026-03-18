@@ -20,6 +20,10 @@ export default function AutoMappingSuggestionModal({
     () => new Set(suggestions.map(s => s.nodeId))
   )
 
+  // 소스별 분류
+  const clusterIds = useMemo(() => suggestions.filter(s => s.source === 'cluster').map(s => s.nodeId), [suggestions])
+  const defaultRuleIds = useMemo(() => suggestions.filter(s => s.source !== 'cluster').map(s => s.nodeId), [suggestions])
+
   // 전체 선택 상태
   const allSelected = useMemo(() => {
     return suggestions.length > 0 && selectedIds.size === suggestions.length
@@ -28,6 +32,10 @@ export default function AutoMappingSuggestionModal({
   const someSelected = useMemo(() => {
     return selectedIds.size > 0 && selectedIds.size < suggestions.length
   }, [suggestions, selectedIds])
+
+  // 소스별 선택 상태
+  const clusterAllSelected = useMemo(() => clusterIds.length > 0 && clusterIds.every(id => selectedIds.has(id)), [clusterIds, selectedIds])
+  const defaultRuleAllSelected = useMemo(() => defaultRuleIds.length > 0 && defaultRuleIds.every(id => selectedIds.has(id)), [defaultRuleIds, selectedIds])
 
   // 체크박스 토글
   const toggleSelection = (nodeId: string) => {
@@ -49,6 +57,19 @@ export default function AutoMappingSuggestionModal({
     } else {
       setSelectedIds(new Set(suggestions.map(s => s.nodeId)))
     }
+  }
+
+  // 소스별 선택/해제
+  const toggleBySource = (ids: string[], allSelected: boolean) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev)
+      if (allSelected) {
+        ids.forEach(id => next.delete(id))
+      } else {
+        ids.forEach(id => next.add(id))
+      }
+      return next
+    })
   }
 
   // 적용
@@ -90,7 +111,7 @@ export default function AutoMappingSuggestionModal({
         {/* 목록 */}
         <div className="flex-1 overflow-auto p-4">
           {/* 전체 선택 */}
-          <div className="flex items-center gap-3 pb-3 mb-3 border-b theme-border">
+          <div className="flex items-center gap-3 pb-3 mb-3 border-b theme-border flex-wrap">
             <label className="flex items-center gap-2 cursor-pointer">
               <input
                 type="checkbox"
@@ -102,9 +123,35 @@ export default function AutoMappingSuggestionModal({
                 className="w-4 h-4 rounded theme-border theme-bg-tertiary text-blue-500 focus:ring-blue-500"
               />
               <span className="text-sm text-gray-300">
-                전체 선택 ({selectedIds.size}/{suggestions.length})
+                전체 ({selectedIds.size}/{suggestions.length})
               </span>
             </label>
+            {clusterIds.length > 0 && (
+              <button
+                type="button"
+                onClick={() => toggleBySource(clusterIds, clusterAllSelected)}
+                className={`text-xs px-2 py-1 rounded transition-colors ${
+                  clusterAllSelected
+                    ? 'bg-purple-600 text-white'
+                    : 'bg-purple-900/30 text-purple-300 hover:bg-purple-900/50'
+                }`}
+              >
+                클러스터 {clusterAllSelected ? '해제' : '전체선택'} ({clusterIds.filter(id => selectedIds.has(id)).length}/{clusterIds.length})
+              </button>
+            )}
+            {defaultRuleIds.length > 0 && (
+              <button
+                type="button"
+                onClick={() => toggleBySource(defaultRuleIds, defaultRuleAllSelected)}
+                className={`text-xs px-2 py-1 rounded transition-colors ${
+                  defaultRuleAllSelected
+                    ? 'bg-green-600 text-white'
+                    : 'bg-green-900/30 text-green-300 hover:bg-green-900/50'
+                }`}
+              >
+                기본규칙 {defaultRuleAllSelected ? '해제' : '전체선택'} ({defaultRuleIds.filter(id => selectedIds.has(id)).length}/{defaultRuleIds.length})
+              </button>
+            )}
           </div>
 
           {/* 제안 목록 */}
