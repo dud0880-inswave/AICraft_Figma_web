@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { fetchRegistry, createRegistryItem, updateRegistryItem, deleteRegistryItem, exportMappingRules, importMappingRules } from '../utils/api'
 import type { RegistryItem, MappingRulesJson } from '../utils/api'
-import { useTheme, type Theme } from '../contexts/ThemeContext'
+import { useTheme } from '../contexts/ThemeContext'
 
 interface SettingsModalProps {
   isOpen: boolean
@@ -118,27 +118,6 @@ export function loadComponentClassMapping(): ComponentClassMapping {
 // 컴포넌트-클래스 매핑 저장
 export function saveComponentClassMapping(mapping: ComponentClassMapping): void {
   localStorage.setItem(CSS_CLASS_MAPPING_KEY, JSON.stringify(mapping))
-}
-
-// 특정 컴포넌트의 사용 가능한 클래스 가져오기 (모든 CSS에서 합침)
-export function getClassesForComponent(componentId: string): string[] {
-  const mapping = loadComponentClassMapping()
-  const allClasses: string[] = []
-  for (const cssId in mapping) {
-    const componentMapping = mapping[cssId]?.[componentId] || []
-    allClasses.push(...componentMapping)
-  }
-  return [...new Set(allClasses)]  // 중복 제거
-}
-
-// 모든 CSS에서 추출한 클래스 목록 가져오기
-export function getAllCssClasses(): string[] {
-  const cssList = loadSavedCssList()
-  const allClasses = new Set<string>()
-  cssList.forEach(item => {
-    item.classNames?.forEach(cls => allClasses.add(cls))
-  })
-  return Array.from(allClasses).sort()
 }
 
 export function loadSavedToken(): string {
@@ -584,7 +563,7 @@ function CssTab() {
   useEffect(() => {
     setCssList(loadSavedCssList())
     setComponentClassMapping(loadComponentClassMapping())
-    fetchRegistry().then(setRegistry).catch(() => {})
+    fetchRegistry().then(setRegistry).catch((e) => console.error('Failed to fetch registry:', e))
   }, [])
 
   // 매핑 모드 진입 시 첫 번째 CSS 파일 자동 선택

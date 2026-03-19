@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import type { FigmaNode } from '../types/figma'
+import { findTextInChildren, collectAllTexts, collectTopLevelTexts } from '../utils/text-utils'
 
 function formatXml(xml: string): string {
   const INDENT = '    '
@@ -49,7 +50,7 @@ function formatXml(xml: string): string {
 
 
 import type { RegistryItem } from '../utils/api'
-import { fetchMappings, updateFigmaFileCompleted, generateClusters, exportXml } from '../utils/api'
+import { fetchMappings, updateFigmaFileCompleted, generateClusters, exportXml, saveFigmaFileData } from '../utils/api'
 import { loadSavedCssList, loadXmlExportPath } from './SettingsModal'
 
 interface ConvertedCodeEditorProps {
@@ -59,65 +60,9 @@ interface ConvertedCodeEditorProps {
   registry: RegistryItem[]
   visible: boolean
   onToggle: () => void
+  document: object | null  // 전체 document 구조 (클러스터 생성용)
   convertTrigger: number  // 이 값이 변경되면 자동 변환
   onComplete?: () => void  // 완료 후 콜백
-}
-
-// 하위 노드에서 텍스트 찾기 (첫 번째만)
-function findTextInChildren(node: FigmaNode | null): string | null {
-  if (!node?.children) return null
-
-  for (const child of node.children) {
-    if (child.characters) {
-      return child.characters
-    }
-    const found = findTextInChildren(child)
-    if (found) return found
-  }
-
-  return null
-}
-
-// 하위 노드에서 모든 텍스트 수집
-function collectAllTexts(node: FigmaNode | null): string[] {
-  const texts: string[] = []
-
-  function traverse(n: FigmaNode) {
-    if (n.characters) {
-      texts.push(n.characters)
-    }
-    if (n.children) {
-      for (const child of n.children) {
-        traverse(child)
-      }
-    }
-  }
-
-  if (node) traverse(node)
-  return texts
-}
-
-// 최상단 레벨의 텍스트들만 수집 (첫 번째 행)
-function collectTopLevelTexts(node: FigmaNode | null): string[] {
-  if (!node?.children) return []
-
-  const texts: string[] = []
-  const firstRow = node.children[0]
-  if (firstRow) {
-    function collectTextsFromNode(n: FigmaNode) {
-      if (n.characters) {
-        texts.push(n.characters)
-      }
-      if (n.children) {
-        for (const child of n.children) {
-          collectTextsFromNode(child)
-        }
-      }
-    }
-    collectTextsFromNode(firstRow)
-  }
-
-  return texts
 }
 
 // 테이블 내 tr당 th/td 최대 개수 카운트
@@ -179,6 +124,7 @@ export default function ConvertedCodeEditor({
   fileKey,
   nodeId,
   rootNode,
+  document,
   registry,
   visible,
   onToggle,
@@ -203,8 +149,11 @@ export default function ConvertedCodeEditor({
     setCompleting(true)
     try {
       await updateFigmaFileCompleted(fileKey, nodeId, true)
-      // 클러스터 생성 (자동 매핑용)
+      // 현재 document 저장 후 클러스터 생성
       try {
+        if (document) {
+          await saveFigmaFileData(fileKey, nodeId, document)
+        }
         await generateClusters(fileKey, nodeId)
       } catch (e) {
         console.error('Failed to generate clusters:', e)
@@ -294,11 +243,6 @@ export default function ConvertedCodeEditor({
     }
   }, [activeTab, convertedCode, iframeReady])
 
-  // iframe 로드 시 ready 상태 리셋
-  const handleIframeLoad = useCallback(() => {
-    // iframe이 로드되면 ready 메시지를 기다림
-  }, [])
-
   // WebSquare 미리보기 렌더링 (iframe postMessage 방식)
   const renderPreview = useCallback(() => {
     if (!convertedCode || !iframeRef.current?.contentWindow) {
@@ -331,7 +275,7 @@ export default function ConvertedCodeEditor({
     setConverting(true)
     try {
       // 모든 매핑 가져오기
-      const allMappings = await fetchMappings(fileKey)
+      const allMappings = await fetchMappings(fileKey, nodeId)
       const mappingMap = new Map(allMappings.map(m => [m.figmaNodeId, m]))
 
       // 트리 순회하며 계층 구조로 코드 생성
@@ -355,12 +299,17 @@ export default function ConvertedCodeEditor({
           const { tagName, properties } = regItem
           const mergedProps = { ...properties }
           const regItemNameLower = regItem.name.toLowerCase()
-          const figmaAttr = ''  // 더 이상 XML에 포함하지 않음
 
-          // 커스텀 속성 병합 (class 포함 모든 속성)
+          // 커스텀 속성 병합 (class는 default 뒤에 추가)
           if (nodeMapping?.customAttrs) {
             Object.entries(nodeMapping.customAttrs).forEach(([key, value]) => {
-              mergedProps[key] = value
+              if (key === 'class' && mergedProps.class) {
+                const defaultClasses = mergedProps.class.split(' ').filter(Boolean)
+                const customClasses = value.split(' ').filter((c: string) => c && !defaultClasses.includes(c))
+                mergedProps.class = [...defaultClasses, ...customClasses].join(' ')
+              } else {
+                mergedProps[key] = value
+              }
             })
           }
 
@@ -390,7 +339,11 @@ export default function ConvertedCodeEditor({
           }
           if (regItemNameLower === 'anchor') {
             const text = n.characters || findTextInChildren(n)
-            if (text) mergedProps.label = text
+            const anchorPropsStr = Object.entries(mergedProps).map(([k, v]) => `${k}="${v}"`).join(' ')
+            const labelTag = text
+              ? `\n${indentStr}    <xf:label><![CDATA[${text}]]></xf:label>\n${indentStr}`
+              : ''
+            return `${indentStr}<${tagName} ${anchorPropsStr}>${labelTag}</${tagName}>`
           }
           if (regItemNameLower === 'input') {
             const text = n.characters || findTextInChildren(n)
@@ -409,7 +362,7 @@ ${indentStr}            <xf:value></xf:value>
 ${indentStr}        </xf:item>`
             ).join('\n')
 
-            return `${indentStr}<${tagName} ${propsStr}${figmaAttr}>
+            return `${indentStr}<${tagName} ${propsStr}>
 ${indentStr}    <xf:choices>
 ${itemsCode}
 ${indentStr}    </xf:choices>
@@ -428,7 +381,7 @@ ${indentStr}            <xf:value><![CDATA[${t}]]></xf:value>
 ${indentStr}        </xf:item>`
             ).join('\n')
 
-            return `${indentStr}<${tagName} ${propsStr}${figmaAttr}>
+            return `${indentStr}<${tagName} ${propsStr}>
 ${indentStr}    <xf:choices>
 ${itemsCode}
 ${indentStr}    </xf:choices>
@@ -447,7 +400,7 @@ ${indentStr}            <xf:value><![CDATA[${t}]]></xf:value>
 ${indentStr}        </xf:item>`
             ).join('\n')
 
-            return `${indentStr}<${tagName} ${propsStr}${figmaAttr}>
+            return `${indentStr}<${tagName} ${propsStr}>
 ${indentStr}    <xf:choices>
 ${itemsCode}
 ${indentStr}    </xf:choices>
@@ -470,7 +423,7 @@ ${indentStr}</${tagName}>`
                 ).join('\n') + '\n' + indentStr + '    '
               : ''
 
-            return `${indentStr}<xf:group tagname="table" ${tablePropsStr}${figmaAttr}>
+            return `${indentStr}<xf:group tagname="table" ${tablePropsStr}>
 ${indentStr}    <w2:attributes>
 ${indentStr}        <w2:summary></w2:summary>
 ${indentStr}    </w2:attributes>
@@ -497,7 +450,7 @@ ${indentStr}            <w2:column id="column2" width="70" displayMode="label" v
 ${indentStr}            <w2:column id="gBodyColumn1" width="70" inputType="text"></w2:column>
 ${indentStr}            <w2:column id="gBodyColumn2" width="70" inputType="text"></w2:column>`
 
-            return `${indentStr}<w2:gridView ${gridPropsStr}${figmaAttr}>
+            return `${indentStr}<w2:gridView ${gridPropsStr}>
 ${indentStr}    <w2:caption id="caption1" style="" value="this is a grid caption."></w2:caption>
 ${indentStr}    <w2:header id="" style="">
 ${indentStr}        <w2:row>
@@ -521,9 +474,9 @@ ${indentStr}</w2:gridView>`
               ? ' ' + Object.entries(trProps).map(([k, v]) => `${k}="${v}"`).join(' ')
               : ''
             if (childrenCode) {
-              return `${indentStr}<xf:group tagname="tr"${trPropsStr}${figmaAttr}>\n${childrenCode}\n${indentStr}</xf:group>`
+              return `${indentStr}<xf:group tagname="tr"${trPropsStr}>\n${childrenCode}\n${indentStr}</xf:group>`
             }
-            return `${indentStr}<xf:group tagname="tr"${trPropsStr}${figmaAttr}></xf:group>`
+            return `${indentStr}<xf:group tagname="tr"${trPropsStr}></xf:group>`
           }
 
           // th 특수 처리
@@ -531,7 +484,7 @@ ${indentStr}</w2:gridView>`
             const { tagname: _thTag, ...thProps } = mergedProps as Record<string, string>
             const thPropsStr = Object.entries(thProps).map(([k, v]) => `${k}="${v}"`).join(' ')
             const innerContent = childrenCode ? `\n${childrenCode}\n${indentStr}` : ''
-            return `${indentStr}<xf:group tagname="th" ${thPropsStr}${figmaAttr}>
+            return `${indentStr}<xf:group tagname="th" ${thPropsStr}>
 ${indentStr}    <w2:attributes>
 ${indentStr}        <w2:scope>row</w2:scope>
 ${indentStr}    </w2:attributes>${innerContent}</xf:group>`
@@ -542,7 +495,7 @@ ${indentStr}    </w2:attributes>${innerContent}</xf:group>`
             const { tagname: _tdTag, ...tdProps } = mergedProps as Record<string, string>
             const tdPropsStr = Object.entries(tdProps).map(([k, v]) => `${k}="${v}"`).join(' ')
             const innerContent = childrenCode ? `\n${childrenCode}\n${indentStr}` : ''
-            return `${indentStr}<xf:group tagname="td" ${tdPropsStr}${figmaAttr}>${innerContent}</xf:group>`
+            return `${indentStr}<xf:group tagname="td" ${tdPropsStr}>${innerContent}</xf:group>`
           }
 
           const propsStr = Object.entries(mergedProps).map(([k, v]) => `${k}="${v}"`).join(' ')
@@ -550,12 +503,12 @@ ${indentStr}    </w2:attributes>${innerContent}</xf:group>`
           // 자식 코드가 있으면 중첩 구조로
           if (childrenCode) {
             return propsStr
-              ? `${indentStr}<${tagName} ${propsStr}${figmaAttr}>\n${childrenCode}\n${indentStr}</${tagName}>`
-              : `${indentStr}<${tagName}${figmaAttr}>\n${childrenCode}\n${indentStr}</${tagName}>`
+              ? `${indentStr}<${tagName} ${propsStr}>\n${childrenCode}\n${indentStr}</${tagName}>`
+              : `${indentStr}<${tagName}>\n${childrenCode}\n${indentStr}</${tagName}>`
           } else {
             return propsStr
-              ? `${indentStr}<${tagName} ${propsStr}${figmaAttr}></${tagName}>`
-              : `${indentStr}<${tagName}${figmaAttr}/>`
+              ? `${indentStr}<${tagName} ${propsStr}></${tagName}>`
+              : `${indentStr}<${tagName}/>`
           }
         }
 
@@ -598,8 +551,8 @@ ${innerCode}
 </html>`
 
       setConvertedCode(formatXml(result))
-    } catch {
-      // 변환 실패
+    } catch (e) {
+      console.error('Failed to convert XML:', e)
     } finally {
       setConverting(false)
     }
@@ -739,7 +692,6 @@ ${innerCode}
                   <iframe
                     ref={iframeRef}
                     src="/websquare/preview.html"
-                    onLoad={handleIframeLoad}
                     style={{
                       display: 'block',
                       border: 'none',

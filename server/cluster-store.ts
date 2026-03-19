@@ -18,10 +18,17 @@ export interface MappingCluster {
 }
 
 export interface SignatureData {
+  ancestors?: AncestorData[];  // 부모 컨텍스트 (최대 2단계, children 미포함)
   name: string;
   type: string;
   componentProperties?: Record<string, { value: string; type: string }>;
   children?: SignatureData[];
+}
+
+export interface AncestorData {
+  name: string;
+  type: string;
+  componentProperties?: Record<string, { value: string; type: string }>;
 }
 
 export interface FigmaNodeLike {
@@ -45,12 +52,24 @@ export interface AutoMappingSuggestion {
 export class ClusterStore {
   constructor(private db: Database) {}
 
-  // 노드 구조에서 시그니처 데이터 생성 (전체 자식 포함)
-  createSignatureData(node: FigmaNodeLike): SignatureData {
+  // 노드 구조에서 시그니처 데이터 생성 (부모 컨텍스트 + 전체 자식 포함)
+  // ancestors: 부모 정보 배열 (최대 2단계, [할아버지, 부모] 순서)
+  createSignatureData(node: FigmaNodeLike, ancestors: FigmaNodeLike[] = []): SignatureData {
     const data: SignatureData = {
       name: node.name,
       type: node.type,
     };
+
+    // 부모 컨텍스트 추가 (있는 만큼, 최대 2단계)
+    if (ancestors.length > 0) {
+      data.ancestors = ancestors.map(a => {
+        const ancestor: AncestorData = { name: a.name, type: a.type };
+        if (a.componentProperties && Object.keys(a.componentProperties).length > 0) {
+          ancestor.componentProperties = a.componentProperties;
+        }
+        return ancestor;
+      });
+    }
 
     // componentProperties 포함 (인스턴스 variant 정보 등)
     if (node.componentProperties && Object.keys(node.componentProperties).length > 0) {
@@ -71,8 +90,8 @@ export class ClusterStore {
   }
 
   // 노드에서 직접 시그니처 해시 생성
-  createNodeSignature(node: FigmaNodeLike): string {
-    const data = this.createSignatureData(node);
+  createNodeSignature(node: FigmaNodeLike, ancestors: FigmaNodeLike[] = []): string {
+    const data = this.createSignatureData(node, ancestors);
     return this.createSignatureHash(data);
   }
 

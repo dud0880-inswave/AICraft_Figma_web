@@ -14,6 +14,7 @@ export interface RegistryItem {
 export interface NodeMapping {
   id: string;
   figmaFileKey: string;
+  figmaRootNodeId: string | null;
   figmaNodeId: string;
   figmaNodeName: string;
   figmaNodeType?: string;
@@ -73,14 +74,18 @@ export async function deleteRegistryItem(id: string): Promise<void> {
 
 // ---- Mapping API ----
 
-export async function fetchMappings(fileKey: string): Promise<NodeMapping[]> {
-  const res = await fetch(`${API_BASE}/mappings?fileKey=${encodeURIComponent(fileKey)}`);
+export async function fetchMappings(fileKey: string, rootNodeId?: string | null): Promise<NodeMapping[]> {
+  let url = `${API_BASE}/mappings?fileKey=${encodeURIComponent(fileKey)}`;
+  if (rootNodeId) url += `&rootNodeId=${encodeURIComponent(rootNodeId)}`;
+  const res = await fetch(url);
   if (!res.ok) throw new Error('Failed to fetch mappings');
   return res.json();
 }
 
-export async function fetchMapping(fileKey: string, nodeId: string): Promise<NodeMapping | null> {
-  const res = await fetch(`${API_BASE}/mappings/${encodeURIComponent(fileKey)}/${encodeURIComponent(nodeId)}`);
+export async function fetchMapping(fileKey: string, nodeId: string, rootNodeId?: string | null): Promise<NodeMapping | null> {
+  let url = `${API_BASE}/mappings/${encodeURIComponent(fileKey)}/${encodeURIComponent(nodeId)}`;
+  if (rootNodeId) url += `?rootNodeId=${encodeURIComponent(rootNodeId)}`;
+  const res = await fetch(url);
   if (res.status === 404) return null;
   if (!res.ok) throw new Error('Failed to fetch mapping');
   return res.json();
@@ -96,10 +101,10 @@ export async function saveMapping(mapping: Omit<NodeMapping, 'id' | 'createdAt' 
   return res.json();
 }
 
-export async function deleteMapping(fileKey: string, nodeId: string): Promise<void> {
-  const res = await fetch(`${API_BASE}/mappings/${encodeURIComponent(fileKey)}/${encodeURIComponent(nodeId)}`, {
-    method: 'DELETE',
-  });
+export async function deleteMapping(fileKey: string, nodeId: string, rootNodeId?: string | null): Promise<void> {
+  let url = `${API_BASE}/mappings/${encodeURIComponent(fileKey)}/${encodeURIComponent(nodeId)}`;
+  if (rootNodeId) url += `?rootNodeId=${encodeURIComponent(rootNodeId)}`;
+  const res = await fetch(url, { method: 'DELETE' });
   if (!res.ok) throw new Error('Failed to delete mapping');
 }
 
@@ -289,12 +294,13 @@ export async function applyAutoMappingSuggestions(
     registryId: string;
     registryName: string;
     customAttrs: Record<string, string>;
-  }>
+  }>,
+  rootNodeId?: string | null
 ): Promise<{ success: boolean; appliedCount: number }> {
   const res = await fetch(`${API_BASE}/clusters/apply`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ fileKey, suggestions }),
+    body: JSON.stringify({ fileKey, rootNodeId, suggestions }),
   });
   if (!res.ok) throw new Error('Failed to apply auto mapping suggestions');
   return res.json();

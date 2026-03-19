@@ -3,75 +3,20 @@ import type { FigmaNode } from '../types/figma'
 import type { RegistryItem, NodeMapping } from '../utils/api'
 import { fetchRegistry, fetchMapping, saveMapping, deleteMapping } from '../utils/api'
 import { loadSavedCssList, loadComponentClassMapping, type CssItem, type ComponentClassMapping } from './SettingsModal'
+import { findTextInChildren, collectAllTexts, collectTopLevelTexts } from '../utils/text-utils'
 
 interface MappingEditorProps {
   node: FigmaNode | null  // 단일 선택 (프리뷰용)
   nodes: FigmaNode[]  // 다중 선택 (일괄 적용용)
   fileKey: string | null
+  rootNodeId: string | null  // 등록된 최상위 노드 ID
   onRegistryLoad?: (registry: RegistryItem[]) => void
   onMappingChange?: () => void
 }
 
-// 하위 노드에서 텍스트 찾기 (첫 번째만)
-function findTextInChildren(node: FigmaNode | null): string | null {
-  if (!node?.children) return null
 
-  for (const child of node.children) {
-    if (child.characters) {
-      return child.characters
-    }
-    const found = findTextInChildren(child)
-    if (found) return found
-  }
 
-  return null
-}
-
-// 하위 노드에서 모든 텍스트 수집
-function collectAllTexts(node: FigmaNode | null): string[] {
-  const texts: string[] = []
-
-  function traverse(n: FigmaNode) {
-    if (n.characters) {
-      texts.push(n.characters)
-    }
-    if (n.children) {
-      for (const child of n.children) {
-        traverse(child)
-      }
-    }
-  }
-
-  if (node) traverse(node)
-  return texts
-}
-
-// 최상단 레벨의 텍스트들만 수집 (첫 번째 행)
-function collectTopLevelTexts(node: FigmaNode | null): string[] {
-  if (!node?.children) return []
-
-  const texts: string[] = []
-
-  // 첫 번째 자식(행)의 텍스트들을 수집
-  const firstRow = node.children[0]
-  if (firstRow) {
-    function collectTextsFromNode(n: FigmaNode) {
-      if (n.characters) {
-        texts.push(n.characters)
-      }
-      if (n.children) {
-        for (const child of n.children) {
-          collectTextsFromNode(child)
-        }
-      }
-    }
-    collectTextsFromNode(firstRow)
-  }
-
-  return texts
-}
-
-export default function MappingEditor({ node, nodes, fileKey, onRegistryLoad, onMappingChange }: MappingEditorProps) {
+export default function MappingEditor({ node, nodes, fileKey, rootNodeId, onRegistryLoad, onMappingChange }: MappingEditorProps) {
   const [registry, setRegistry] = useState<RegistryItem[]>([])
   const [mapping, setMapping] = useState<NodeMapping | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
@@ -124,7 +69,7 @@ export default function MappingEditor({ node, nodes, fileKey, onRegistryLoad, on
     const load = async () => {
       setLoading(true)
       try {
-        const m = await fetchMapping(fileKey, node.id)
+        const m = await fetchMapping(fileKey, node.id, rootNodeId)
         setMapping(m)
       } catch {
         setMapping(null)
@@ -133,7 +78,7 @@ export default function MappingEditor({ node, nodes, fileKey, onRegistryLoad, on
       }
     }
     load()
-  }, [node?.id, fileKey])
+  }, [node?.id, fileKey, rootNodeId])
 
   // 매핑 변경 시 바인딩된 클래스가 있는 CSS 파일 우선 선택, 없으면 첫 번째 파일
   useEffect(() => {
@@ -162,6 +107,7 @@ export default function MappingEditor({ node, nodes, fileKey, onRegistryLoad, on
       for (const n of targetNodes) {
         lastMapping = await saveMapping({
           figmaFileKey: fileKey,
+          figmaRootNodeId: rootNodeId,
           figmaNodeId: n.id,
           figmaNodeName: n.name,
           figmaNodeType: n.type,
@@ -192,7 +138,7 @@ export default function MappingEditor({ node, nodes, fileKey, onRegistryLoad, on
     setSaving(true)
     try {
       for (const n of targetNodes) {
-        await deleteMapping(fileKey, n.id)
+        await deleteMapping(fileKey, n.id, rootNodeId)
       }
       setMapping(null)
       onMappingChange?.()
@@ -214,7 +160,7 @@ export default function MappingEditor({ node, nodes, fileKey, onRegistryLoad, on
       let lastMapping: NodeMapping | null = null
       for (const n of targetNodes) {
         // 각 노드의 기존 매핑 가져오기
-        const nodeMapping = await fetchMapping(fileKey, n.id)
+        const nodeMapping = await fetchMapping(fileKey, n.id, rootNodeId)
         if (nodeMapping) {
           const nodeCurrentClasses = (nodeMapping.customAttrs?.class || '').split(' ').filter(Boolean)
           const nodeNewClasses = nodeCurrentClasses.includes(className)
@@ -223,6 +169,7 @@ export default function MappingEditor({ node, nodes, fileKey, onRegistryLoad, on
 
           lastMapping = await saveMapping({
             figmaFileKey: fileKey,
+            figmaRootNodeId: rootNodeId,
             figmaNodeId: n.id,
             figmaNodeName: n.name,
             figmaNodeType: n.type,
@@ -239,7 +186,7 @@ export default function MappingEditor({ node, nodes, fileKey, onRegistryLoad, on
       } else {
         // 다중 선택 시 첫 번째 노드의 매핑 다시 로드
         if (node) {
-          const m = await fetchMapping(fileKey, node.id)
+          const m = await fetchMapping(fileKey, node.id, rootNodeId)
           setMapping(m)
         }
       }
@@ -261,7 +208,7 @@ export default function MappingEditor({ node, nodes, fileKey, onRegistryLoad, on
     try {
       let lastMapping: NodeMapping | null = null
       for (const n of targetNodes) {
-        const nodeMapping = await fetchMapping(fileKey, n.id)
+        const nodeMapping = await fetchMapping(fileKey, n.id, rootNodeId)
         if (nodeMapping) {
           const nodeNewAttrs = {
             ...nodeMapping.customAttrs,
@@ -269,6 +216,7 @@ export default function MappingEditor({ node, nodes, fileKey, onRegistryLoad, on
           }
           lastMapping = await saveMapping({
             figmaFileKey: fileKey,
+            figmaRootNodeId: rootNodeId,
             figmaNodeId: n.id,
             figmaNodeName: n.name,
             figmaNodeType: n.type,
@@ -284,7 +232,7 @@ export default function MappingEditor({ node, nodes, fileKey, onRegistryLoad, on
       if (lastMapping && targetNodes.length === 1) {
         setMapping(lastMapping)
       } else if (node) {
-        const m = await fetchMapping(fileKey, node.id)
+        const m = await fetchMapping(fileKey, node.id, rootNodeId)
         setMapping(m)
       }
 
@@ -308,11 +256,12 @@ export default function MappingEditor({ node, nodes, fileKey, onRegistryLoad, on
     try {
       let lastMapping: NodeMapping | null = null
       for (const n of targetNodes) {
-        const nodeMapping = await fetchMapping(fileKey, n.id)
+        const nodeMapping = await fetchMapping(fileKey, n.id, rootNodeId)
         if (nodeMapping) {
           const { [key]: _, ...restAttrs } = nodeMapping.customAttrs || {}
           lastMapping = await saveMapping({
             figmaFileKey: fileKey,
+            figmaRootNodeId: rootNodeId,
             figmaNodeId: n.id,
             figmaNodeName: n.name,
             figmaNodeType: n.type,
@@ -328,7 +277,7 @@ export default function MappingEditor({ node, nodes, fileKey, onRegistryLoad, on
       if (lastMapping && targetNodes.length === 1) {
         setMapping(lastMapping)
       } else if (node) {
-        const m = await fetchMapping(fileKey, node.id)
+        const m = await fetchMapping(fileKey, node.id, rootNodeId)
         setMapping(m)
       }
 
@@ -467,7 +416,7 @@ export default function MappingEditor({ node, nodes, fileKey, onRegistryLoad, on
       {/* 스플리터 영역 */}
       <div className="flex-1 flex flex-col min-h-0" ref={splitContainerRef}>
         {/* 상단: 컴포넌트 선택 */}
-        <div className="overflow-auto" style={{ height: topHeight ?? 'auto', flexShrink: 0, minHeight: 278 }}>
+        <div className="overflow-auto" style={{ height: topHeight ?? 'auto', flexShrink: 0, minHeight: 278, maxHeight: topHeight ? undefined : '50%' }}>
           <div className="px-4 py-3">
             <div className="text-xs text-gray-400 mb-2">컴포넌트 선택</div>
             <div ref={dropdownRef} className="relative">
@@ -604,10 +553,16 @@ export default function MappingEditor({ node, nodes, fileKey, onRegistryLoad, on
               const mergedProps: Record<string, string> = { ...properties }
               const selectedItemNameLower = selectedItem.name.toLowerCase()
 
-              // 커스텀 속성 병합 (class 포함 모든 속성)
+              // 커스텀 속성 병합 (class는 default 뒤에 추가)
               if (mapping.customAttrs) {
                 Object.entries(mapping.customAttrs).forEach(([key, value]) => {
-                  mergedProps[key] = value
+                  if (key === 'class' && mergedProps.class) {
+                    const defaultClasses = mergedProps.class.split(' ').filter(Boolean)
+                    const customClasses = value.split(' ').filter((c: string) => c && !defaultClasses.includes(c))
+                    mergedProps.class = [...defaultClasses, ...customClasses].join(' ')
+                  } else {
+                    mergedProps[key] = value
+                  }
                 })
               }
 

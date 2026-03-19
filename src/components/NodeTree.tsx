@@ -78,11 +78,6 @@ interface DragState {
   index: number
 }
 
-interface DropTarget {
-  parentId: string | null
-  index: number
-  position: 'before' | 'after' | 'inside'
-}
 
 function TreeItem({
   node,
@@ -180,7 +175,7 @@ function TreeItem({
           marginBottom: dropTarget === 'after' ? '-2px' : '0',
         }}
         draggable
-        onClick={(e) => onSelect(node, e.ctrlKey || e.metaKey, e.shiftKey)}
+        onClick={(e) => isVisible && onSelect(node, e.ctrlKey || e.metaKey, e.shiftKey)}
         onMouseEnter={() => onHover(node)}
         onMouseLeave={() => onHover(null)}
         onDragStart={(e) => onDragStart(e, node, parentId, index)}
@@ -357,7 +352,7 @@ export default function NodeTree({
     setDragState({ nodeId: node.id, parentId, index })
   }
 
-  const handleDragOver = (e: React.DragEvent, _node: FigmaNode, _parentId: string | null, _index: number) => {
+  const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault()
   }
 
@@ -411,6 +406,7 @@ export default function NodeTree({
 
   // Shift 클릭 범위 선택 처리
   const handleNodeSelect = useCallback((node: FigmaNode, ctrlKey: boolean, shiftKey?: boolean) => {
+    if (node.visible === false) return
     if (shiftKey && onSelectNodeIds && selectedNodeIds.length > 0) {
       const lastId = selectedNodeIds[selectedNodeIds.length - 1]
       const lastIndex = flatVisibleNodes.findIndex(n => n.id === lastId)
@@ -418,7 +414,7 @@ export default function NodeTree({
       if (lastIndex >= 0 && currentIndex >= 0) {
         const start = Math.min(lastIndex, currentIndex)
         const end = Math.max(lastIndex, currentIndex)
-        const rangeIds = flatVisibleNodes.slice(start, end + 1).map(n => n.id)
+        const rangeIds = flatVisibleNodes.slice(start, end + 1).filter(n => n.visible !== false).map(n => n.id)
         // 기존 선택에 합치기
         const merged = new Set([...selectedNodeIds, ...rangeIds])
         onSelectNodeIds(Array.from(merged))
@@ -435,12 +431,14 @@ export default function NodeTree({
 
     if (e.key === 'ArrowDown') {
       e.preventDefault()
-      const nextIndex = Math.min(currentIndex + 1, flatVisibleNodes.length - 1)
-      handleNodeSelect(flatVisibleNodes[nextIndex], false, e.shiftKey)
+      let nextIndex = currentIndex + 1
+      while (nextIndex < flatVisibleNodes.length && flatVisibleNodes[nextIndex].visible === false) nextIndex++
+      if (nextIndex < flatVisibleNodes.length) handleNodeSelect(flatVisibleNodes[nextIndex], false, e.shiftKey)
     } else if (e.key === 'ArrowUp') {
       e.preventDefault()
-      const prevIndex = Math.max(currentIndex - 1, 0)
-      handleNodeSelect(flatVisibleNodes[prevIndex], false, e.shiftKey)
+      let prevIndex = currentIndex - 1
+      while (prevIndex >= 0 && flatVisibleNodes[prevIndex].visible === false) prevIndex--
+      if (prevIndex >= 0) handleNodeSelect(flatVisibleNodes[prevIndex], false, e.shiftKey)
     } else if (e.key === 'ArrowRight') {
       e.preventDefault()
       if (currentId) {

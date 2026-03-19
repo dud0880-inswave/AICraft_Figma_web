@@ -19,23 +19,24 @@ interface ComponentData {
 
 const COMPONENTS: ComponentData[] = [
   { name: "checkbox", tagName: "xf:select", properties: { appearance: "full", rows: "1" } },
-  { name: "radio", tagName: "xf:select1", properties: { appearance: "full" } },
+  { name: "radio", tagName: "xf:select1", properties: { appearance: "full", rows: "1" } },
   { name: "select", tagName: "xf:select1", properties: { appearance: "minimal" } },
   { name: "input", tagName: "xf:input", properties: {} },
   { name: "multiselect", tagName: "xf:select", properties: { appearance: "minimal" } },
   { name: "inputcalendar", tagName: "w2:inputCalendar", properties: {} },
   { name: "button", tagName: "w2:button", properties: {} },
-  { name: "pagelist", tagName: "w2:pageList", properties: {} },
+  { name: "pagelist", tagName: "w2:pageList", properties: { displayButtonType: "display", adaptive: "none" } },
   { name: "textarea", tagName: "xf:textarea", properties: {} },
   { name: "tabcontrol", tagName: "w2:tabControl", properties: {} },
   { name: "textbox", tagName: "w2:textbox", properties: {} },
-  { name: "table", tagName: "xf:group", properties: { tagname: "table", class: "w2tb" } },
+  { name: "table", tagName: "xf:group", properties: { tagname: "table", class: "w2tb", style: "width:100%;" } },
   { name: "tr", tagName: "xf:group", properties: { tagname: "tr" } },
   { name: "th", tagName: "xf:group", properties: { tagname: "th", class: "w2tb_th" } },
   { name: "td", tagName: "xf:group", properties: { tagname: "td", class: "w2tb_td" } },
-  { name: "gridview", tagName: "w2:gridView", properties: {} },
+  { name: "gridview", tagName: "w2:gridView", properties: { style: "height:153px;", autoFit: "allColumn" } },
   { name: "searchbox", tagName: "w2:Searchbox", properties: {} },
   { name: "group", tagName: "xf:group", properties: {} },
+  { name: "anchor", tagName: "w2:anchor", properties: { outerDiv: "false" } },
 ];
 
 export class RegistryStore {

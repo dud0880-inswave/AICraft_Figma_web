@@ -95,7 +95,8 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
     if (path === '/api/mappings' && req.method === 'GET') {
       const fileKey = url.searchParams.get('fileKey');
       if (!fileKey) return badRequest(res, 'fileKey required');
-      const mappings = mappingStore.listByFile(fileKey);
+      const rootNodeId = url.searchParams.get('rootNodeId') || null;
+      const mappings = mappingStore.listByFile(fileKey, rootNodeId);
       return json(res, mappings);
     }
 
@@ -109,7 +110,8 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
       const parts = path.split('/');
       const fileKey = decodeURIComponent(parts[3]);
       const nodeId = decodeURIComponent(parts[4]);
-      const mapping = mappingStore.get(fileKey, nodeId);
+      const rootNodeId = url.searchParams.get('rootNodeId') || null;
+      const mapping = mappingStore.get(fileKey, rootNodeId, nodeId);
       if (!mapping) return notFound(res);
       return json(res, mapping);
     }
@@ -118,7 +120,8 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
       const parts = path.split('/');
       const fileKey = decodeURIComponent(parts[3]);
       const nodeId = decodeURIComponent(parts[4]);
-      const deleted = mappingStore.delete(fileKey, nodeId);
+      const rootNodeId = url.searchParams.get('rootNodeId') || null;
+      const deleted = mappingStore.delete(fileKey, rootNodeId, nodeId);
       if (!deleted) return notFound(res);
       return json(res, { success: true });
     }
@@ -143,21 +146,21 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
       if (!fileKey) return badRequest(res, 'fileKey required');
       figmaFilesStore.delete(fileKey, nodeId || null);
       // 관련 매핑 및 파일 데이터 삭제
-      mappingStore.deleteByFileKey(fileKey);
-      figmaFileDataStore.deleteByFileKey(fileKey);
+      mappingStore.deleteByFileKey(fileKey, nodeId || null);
+      figmaFileDataStore.delete(fileKey, nodeId || null);
       // 파일 삭제 후 클러스터 재생성 (삭제된 파일의 클러스터 정리)
       clusterStore.deleteGenerated();
       const remainingFiles = figmaFilesStore.list().filter(f => f.completed);
       for (const file of remainingFiles) {
-        const mappings = mappingStore.listByFile(file.fileKey);
+        const mappings = mappingStore.listByFile(file.fileKey, file.nodeId);
         const mappedMappings = mappings.filter(m => m.status === 'mapped' && m.registryId);
         const fileData = figmaFileDataStore.get(file.fileKey, file.nodeId);
         if (!fileData) continue;
         const document = JSON.parse(fileData.data);
         for (const mapping of mappedMappings) {
-          const node = findNodeInDocument(document, mapping.figmaNodeId);
-          if (!node) continue;
-          clusterStore.upsert(clusterStore.createSignatureData(node), mapping.registryId!, mapping.registryName || '', mapping.customAttrs);
+          const result = findNodeInDocument(document, mapping.figmaNodeId);
+          if (!result) continue;
+          clusterStore.upsert(clusterStore.createSignatureData(result.node, result.ancestors), mapping.registryId!, mapping.registryName || '', mapping.customAttrs);
         }
       }
       return json(res, { success: true });
@@ -224,7 +227,7 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
 
       for (const file of completedFiles) {
         // 해당 파일의 매핑 가져오기
-        const mappings = mappingStore.listByFile(file.fileKey);
+        const mappings = mappingStore.listByFile(file.fileKey, file.nodeId);
         const mappedMappings = mappings.filter(m => m.status === 'mapped' && m.registryId);
 
         // 파일 데이터 가져오기
@@ -235,10 +238,10 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
 
         // 각 매핑에 대해 노드 찾고 클러스터 생성
         for (const mapping of mappedMappings) {
-          const node = findNodeInDocument(document, mapping.figmaNodeId);
-          if (!node) continue;
+          const result = findNodeInDocument(document, mapping.figmaNodeId);
+          if (!result) continue;
 
-          const signatureData = clusterStore.createSignatureData(node);
+          const signatureData = clusterStore.createSignatureData(result.node, result.ancestors);
           clusterStore.upsert(
             signatureData,
             mapping.registryId!,
@@ -270,9 +273,10 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
       // 모든 노드의 시그니처 계산
       const nodeSignatures: Array<{ nodeId: string; nodeName: string; nodeType: string; signature: string; node: FigmaNodeLike }> = [];
 
-      const processNode = (node: FigmaNodeLike & { id: string }) => {
+      const processNode = (node: FigmaNodeLike & { id: string }, parents: FigmaNodeLike[] = []) => {
         if (!existingSet.has(node.id)) {
-          const signature = clusterStore.createNodeSignature(node);
+          const ancestors = parents.slice(-1);
+          const signature = clusterStore.createNodeSignature(node, ancestors);
           nodeSignatures.push({
             nodeId: node.id,
             nodeName: node.name,
@@ -284,7 +288,7 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
         // 자식 노드도 처리
         if (node.children) {
           for (const child of node.children as Array<FigmaNodeLike & { id: string }>) {
-            processNode(child);
+            processNode(child, [...parents, node]);
           }
         }
       };
@@ -323,8 +327,9 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
     // 제안된 매핑 일괄 적용
     if (path === '/api/clusters/apply' && req.method === 'POST') {
       const body = await parseBody(req);
-      const { fileKey, suggestions } = body as {
+      const { fileKey, rootNodeId, suggestions } = body as {
         fileKey: string;
+        rootNodeId?: string | null;
         suggestions: Array<{
           nodeId: string;
           nodeName: string;
@@ -350,6 +355,7 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
 
         mappingStore.save({
           figmaFileKey: fileKey,
+          figmaRootNodeId: rootNodeId ?? null,
           figmaNodeId: suggestion.nodeId,
           figmaNodeName: suggestion.nodeName,
           figmaNodeType: suggestion.nodeType,
@@ -620,14 +626,16 @@ async function parseBody(req: IncomingMessage): Promise<any> {
   });
 }
 
-// 문서에서 노드 찾기 (재귀)
-function findNodeInDocument(node: any, nodeId: string): FigmaNodeLike | null {
+// 문서에서 노드 찾기 (재귀) — 부모 경로도 반환
+function findNodeInDocument(node: any, nodeId: string, parentPath: any[] = []): { node: FigmaNodeLike; ancestors: FigmaNodeLike[] } | null {
   if (node.id === nodeId) {
-    return node;
+    // 부모 경로에서 최대 1단계까지 (부모만)
+    const ancestors = parentPath.slice(-1);
+    return { node, ancestors };
   }
   if (node.children) {
     for (const child of node.children) {
-      const found = findNodeInDocument(child, nodeId);
+      const found = findNodeInDocument(child, nodeId, [...parentPath, node]);
       if (found) return found;
     }
   }

@@ -3,7 +3,6 @@ import type { FigmaNode, BoundingBox } from '../types/figma'
 
 interface FigmaViewerProps {
   imageUrl: string | null
-  pageNode: FigmaNode | null
   pageBounds: BoundingBox | null
   selectedNodes: FigmaNode[]  // 멀티 셀렉트 지원
   hoveredNode: FigmaNode | null
@@ -13,7 +12,6 @@ interface FigmaViewerProps {
 
 export default function FigmaViewer({
   imageUrl,
-  pageNode: _pageNode,
   pageBounds,
   selectedNodes,
   hoveredNode,

@@ -35,7 +35,7 @@ export default function Dashboard({ onSelectFile, onAddNewFile, onOpenSettings }
     try {
       await deleteFigmaFile(fileKey, nodeId)
       setFiles(files.filter(f => !(f.fileKey === fileKey && f.nodeId === nodeId)))
-      generateClusters().catch(() => {})
+      generateClusters().catch((e) => console.error('Failed to regenerate clusters:', e))
     } catch (err) {
       console.error('Failed to delete file:', err)
     }
@@ -58,14 +58,8 @@ export default function Dashboard({ onSelectFile, onAddNewFile, onOpenSettings }
       <header className="theme-bg-secondary border-b theme-border">
         <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
-              <path d="M10.667 32C13.612 32 16 29.612 16 26.667V21.333H10.667C7.722 21.333 5.333 23.722 5.333 26.667C5.333 29.612 7.722 32 10.667 32Z" fill="#0ACF83"/>
-              <path d="M5.333 16C5.333 13.055 7.722 10.667 10.667 10.667H16V21.333H10.667C7.722 21.333 5.333 18.945 5.333 16Z" fill="#A259FF"/>
-              <path d="M5.333 5.333C5.333 2.388 7.722 0 10.667 0H16V10.667H10.667C7.722 10.667 5.333 8.278 5.333 5.333Z" fill="#F24E1E"/>
-              <path d="M16 0H21.333C24.278 0 26.667 2.388 26.667 5.333C26.667 8.278 24.278 10.667 21.333 10.667H16V0Z" fill="#FF7262"/>
-              <path d="M26.667 16C26.667 18.945 24.278 21.333 21.333 21.333C18.388 21.333 16 18.945 16 16C16 13.055 18.388 10.667 21.333 10.667C24.278 10.667 26.667 13.055 26.667 16Z" fill="#1ABCFE"/>
-            </svg>
-            <h1 className="text-xl font-bold theme-text-primary">Figma Analyzer</h1>
+            <img src="/websquareAI.png" width="32" height="32" alt="WebSquare AI" className="rounded" />
+            <h1 className="text-xl font-bold theme-text-primary">WebSquare AI</h1>
           </div>
           <button
             onClick={onOpenSettings}
