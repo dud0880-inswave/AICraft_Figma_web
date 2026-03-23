@@ -1,7 +1,7 @@
 import { useState, useCallback, useEffect, useRef } from 'react'
 import type { FigmaFile, FigmaNode, BoundingBox } from './types/figma'
 import type { RegistryItem, AutoMappingSuggestion, FigmaNodeForSignature } from './utils/api'
-import { saveFigmaFile, touchFigmaFile, fetchMappings, fetchFigmaFileData, saveFigmaFileData, saveMapping, fetchAutoMappingSuggestions, fetchDefaultRuleSuggestions, applyAutoMappingSuggestions } from './utils/api'
+import { saveFigmaFile, touchFigmaFile, fetchMappings, fetchFigmaFileData, saveFigmaFileData, saveMapping, fetchAutoMappingSuggestions, fetchDefaultRuleSuggestions, applyAutoMappingSuggestions, saveProjectSettings } from './utils/api'
 import { parseFigmaUrl, fetchFigmaFile, fetchNodeImages } from './utils/figma-api'
 import { findNodeById, calculatePageBounds, groupNodes, ungroupNode, reorderNodes } from './utils/tree-utils'
 import Dashboard from './components/Dashboard'
@@ -12,7 +12,7 @@ import FigmaViewer from './components/FigmaViewer'
 import MappingEditor from './components/MappingEditor'
 import ConvertedCodeEditor from './components/ConvertedCodeEditor'
 import Splitter from './components/Splitter'
-import SettingsModal, { loadSavedToken } from './components/SettingsModal'
+import SettingsModal from './components/SettingsModal'
 import AutoMappingSuggestionModal from './components/AutoMappingSuggestionModal'
 
 type AppView = 'dashboard' | 'editor'
@@ -20,6 +20,8 @@ type AppView = 'dashboard' | 'editor'
 interface AppState {
   token: string
   fileKey: string | null
+  projectId: string | null  // 현재 프로젝트 ID
+  projectName: string | null  // 현재 프로젝트 이름
   file: FigmaFile | null
   currentPageId: string | null
   targetNodeId: string | null  // URL에서 지정한 노드 ID
@@ -36,6 +38,8 @@ interface AppState {
 const initialState: AppState = {
   token: '',
   fileKey: null,
+  projectId: null,
+  projectName: null,
   file: null,
   currentPageId: null,
   targetNodeId: null,
@@ -50,10 +54,7 @@ const initialState: AppState = {
 }
 
 export default function App() {
-  const [state, setState] = useState<AppState>(() => ({
-    ...initialState,
-    token: loadSavedToken(),  // localStorage에서 토큰 불러오기
-  }))
+  const [state, setState] = useState<AppState>(initialState)
   const [view, setView] = useState<AppView>('dashboard')
   const [showSettings, setShowSettings] = useState(false)
   const [showAddFileModal, setShowAddFileModal] = useState(false)
@@ -67,6 +68,7 @@ export default function App() {
   const [registry, setRegistry] = useState<RegistryItem[]>([])  // 레지스트리 데이터
   const [convertTrigger, setConvertTrigger] = useState(0)  // 변환 트리거
   const [mappedNodeIds, setMappedNodeIds] = useState<Set<string>>(new Set())  // 매핑된 노드 ID
+  const [cssRefreshKey, setCssRefreshKey] = useState(0)  // CSS 새로고침 트리거
   const containerRef = useRef<HTMLDivElement>(null)
 
   // 자동 매핑 제안 모달 상태
@@ -75,6 +77,12 @@ export default function App() {
   const [autoMappingLoading, setAutoMappingLoading] = useState(false)
   const [pendingFileKey, setPendingFileKey] = useState<string | null>(null)
   const [pendingNodeId, setPendingNodeId] = useState<string | null>(null)
+  const [pendingProjectId, setPendingProjectId] = useState<string | null>(null)
+  const [pendingProjectName, setPendingProjectName] = useState<string | null>(null)
+  const [addFileProjectId, setAddFileProjectId] = useState<string | null>(null)
+  const [settingsProjectId, setSettingsProjectId] = useState<string | null>(null)
+  const [settingsProjectName, setSettingsProjectName] = useState<string | null>(null)
+  const [navigateToProjectId, setNavigateToProjectId] = useState<string | null>(null)
 
   // 왼쪽 패널 리사이즈
   const handleLeftResize = useCallback((delta: number) => {
@@ -92,7 +100,7 @@ export default function App() {
   }, [])
 
   // 파일 추가 (대시보드에 추가 + 자동 매핑 제안)
-  const handleAddFile = useCallback(async (token: string, fileUrl: string) => {
+  const handleAddFile = useCallback(async (token: string, fileUrl: string, projectId: string) => {
     const parsed = parseFigmaUrl(fileUrl)
     if (!parsed) {
       setState((s) => ({ ...s, error: '올바른 Figma URL이 아닙니다' }))
@@ -103,16 +111,10 @@ export default function App() {
     setState((s) => ({ ...s, loading: true, error: null, token }))
 
     try {
-      const file = await fetchFigmaFile(fileKey, token, nodeId)
+      // 토큰을 프로젝트 설정에 저장
+      await saveProjectSettings(projectId, { 'figma-token': token })
 
-      // [DEBUG] Figma API 응답 JSON 저장
-      // const debugBlob = new Blob([JSON.stringify(file, null, 2)], { type: 'application/json' })
-      // const debugUrl = URL.createObjectURL(debugBlob)
-      // const debugLink = document.createElement('a')
-      // debugLink.href = debugUrl
-      // debugLink.download = `figma-debug-${fileKey}-${nodeId || 'full'}.json`
-      // debugLink.click()
-      // URL.revokeObjectURL(debugUrl)
+      const file = await fetchFigmaFile(fileKey, token, nodeId)
 
       const pages = file.document.children || []
       let displayRoot: FigmaNode | null = null
@@ -130,18 +132,19 @@ export default function App() {
           // 노드 이미지 가져오기
           const images = await fetchNodeImages(fileKey, token, [nodeId], 'png', 1)
           const thumbnailUrl = images.images[nodeId] || undefined
-          await saveFigmaFile(fileKey, nodeId, targetNode.name, thumbnailUrl)
+          await saveFigmaFile(fileKey, nodeId, targetNode.name, thumbnailUrl, projectId)
         } else {
           throw new Error('해당 노드를 찾을 수 없습니다')
         }
       } else {
         // 전체 파일 저장
         displayRoot = pages[0] || null
-        await saveFigmaFile(fileKey, null, file.name, file.thumbnailUrl)
+        await saveFigmaFile(fileKey, null, file.name, file.thumbnailUrl, projectId)
       }
 
       setState((s) => ({ ...s, loading: false }))
       setShowAddFileModal(false)
+      setAddFileProjectId(null)
       setDashboardKey((k) => k + 1) // 대시보드 새로고침
 
       // 자동 매핑 제안 확인
@@ -159,10 +162,10 @@ export default function App() {
             ? [convertNode(displayRoot)]
             : displayRoot.children.map(c => convertNode(c))
 
-          // 클러스터 제안 + default rule 제안 병렬 조회
+          // 클러스터 제안 + default rule 제안 병렬 조회 (프로젝트별 클러스터)
           const [clusterSuggestions, defaultSuggestions] = await Promise.all([
-            fetchAutoMappingSuggestions(nodesForSignature, []).then(s => s.map(s => ({ ...s, source: 'cluster' as const }))),
-            fetchDefaultRuleSuggestions(nodesForSignature),
+            fetchAutoMappingSuggestions(nodesForSignature, [], projectId).then(s => s.map(s => ({ ...s, source: 'cluster' as const }))),
+            fetchDefaultRuleSuggestions(projectId, nodesForSignature),
           ])
 
           // 병합: 중복 허용 (클러스터/기본규칙 둘 다 표시)
@@ -172,6 +175,7 @@ export default function App() {
             setAutoMappingSuggestions(merged)
             setPendingFileKey(fileKey)
             setPendingNodeId(nodeId)
+            setPendingProjectId(projectId)
             setShowAutoMappingModal(true)
           }
         } catch (e) {
@@ -230,14 +234,14 @@ export default function App() {
 
   // 매핑 정보 로드
   useEffect(() => {
-    if (!state.fileKey) {
+    if (!state.fileKey || !state.projectId) {
       setMappedNodeIds(new Set())
       return
     }
 
     const loadMappings = async () => {
       try {
-        const mappings = await fetchMappings(state.fileKey!, state.targetNodeId)
+        const mappings = await fetchMappings(state.projectId!, state.fileKey!, state.targetNodeId)
         const ids = new Set(mappings.map(m => m.figmaNodeId))
         setMappedNodeIds(ids)
       } catch (err) {
@@ -246,7 +250,7 @@ export default function App() {
     }
 
     loadMappings()
-  }, [state.fileKey, convertTrigger])
+  }, [state.fileKey, state.projectId, convertTrigger])
 
   // 페이지 선택
   const handleSelectPage = useCallback((pageId: string) => {
@@ -305,15 +309,19 @@ export default function App() {
     setState((s) => ({ ...s, hoveredNodeId: node?.id || null }))
   }, [])
 
-  // 리셋 (대시보드로 돌아가기)
-  const handleReset = useCallback(() => {
+  // 현재 프로젝트로 이동
+  const handleBackToProject = useCallback(() => {
+    const projectId = state.projectId
     setState((s) => ({ ...initialState, token: s.token }))  // 토큰은 유지
+    setNavigateToProjectId(projectId)
     setView('dashboard')
-  }, [])
+  }, [state.projectId])
 
   // 대시보드에서 파일 선택
-  const handleSelectFileFromDashboard = useCallback(async (fileKey: string, nodeId: string | null) => {
+  const handleSelectFileFromDashboard = useCallback(async (fileKey: string, nodeId: string | null, projectId: string, projectName?: string) => {
     if (!state.token) {
+      setSettingsProjectId(projectId)
+      setSettingsProjectName(projectName || null)
       setShowSettings(true)
       return
     }
@@ -326,7 +334,7 @@ export default function App() {
 
       // 저장된 수정 데이터가 있으면 적용
       try {
-        const savedData = await fetchFigmaFileData(fileKey, nodeId)
+        const savedData = await fetchFigmaFileData(projectId, fileKey, nodeId)
         if (savedData && savedData.data) {
           // 저장된 document 구조로 교체
           file = { ...file, document: savedData.data as typeof file.document }
@@ -375,7 +383,7 @@ export default function App() {
 
       // DB 업데이트 (lastOpenedAt만)
       try {
-        await touchFigmaFile(fileKey, nodeId)
+        await touchFigmaFile(projectId, fileKey, nodeId)
       } catch (e) {
         console.error('Failed to update file info:', e)
       }
@@ -383,6 +391,8 @@ export default function App() {
       setState((s) => ({
         ...s,
         fileKey,
+        projectId,
+        projectName: projectName || null,
         file,
         currentPageId: targetPageId,
         targetNodeId,
@@ -409,7 +419,7 @@ export default function App() {
 
   // 에디터 화면에서 자동 매핑 버튼 클릭
   const handleAutoMappingFromEditor = useCallback(async () => {
-    if (!state.fileKey || !state.file) return
+    if (!state.fileKey || !state.file || !state.projectId) return
     const currentPage = state.file.document.children?.find((p: FigmaNode) => p.id === state.currentPageId) || null
     const root = state.targetNodeId && currentPage
       ? findNodeById(currentPage, state.targetNodeId)
@@ -428,13 +438,15 @@ export default function App() {
         ? [convertNode(root)]
         : (root.children || []).map(c => convertNode(c))
       const [clusterSuggestions, defaultSuggestions] = await Promise.all([
-        fetchAutoMappingSuggestions(nodesForSignature, []).then(s => s.map(s => ({ ...s, source: 'cluster' as const }))),
-        fetchDefaultRuleSuggestions(nodesForSignature),
+        fetchAutoMappingSuggestions(nodesForSignature, [], state.projectId!).then(s => s.map(s => ({ ...s, source: 'cluster' as const }))),
+        fetchDefaultRuleSuggestions(state.projectId!, nodesForSignature),
       ])
       // 중복 허용 (클러스터/기본규칙 둘 다 표시)
       const merged = [...clusterSuggestions, ...defaultSuggestions]
       setPendingFileKey(state.fileKey)
       setPendingNodeId(state.targetNodeId)
+      setPendingProjectId(state.projectId)
+      setPendingProjectName(state.projectName)
       setAutoMappingSuggestions(merged)
       setShowAutoMappingModal(true)
     } catch (e) {
@@ -442,14 +454,16 @@ export default function App() {
     } finally {
       setAutoMappingLoading(false)
     }
-  }, [state.fileKey, state.file, state.currentPageId, state.targetNodeId])
+  }, [state.fileKey, state.file, state.currentPageId, state.targetNodeId, state.projectId])
 
   // 자동 매핑 적용 후 에디터로 이동
   const handleApplyAutoMapping = useCallback(async (selectedSuggestions: AutoMappingSuggestion[]) => {
     const fileKey = pendingFileKey
     const nodeId = pendingNodeId
+    const projectId = pendingProjectId
+    const projectName = pendingProjectName
 
-    if (!fileKey) {
+    if (!fileKey || !projectId) {
       setShowAutoMappingModal(false)
       return
     }
@@ -467,6 +481,7 @@ export default function App() {
 
         await applyAutoMappingSuggestions(
           fileKey,
+          projectId,
           deduped.map(s => ({
             nodeId: s.nodeId,
             nodeName: s.nodeName,
@@ -482,13 +497,13 @@ export default function App() {
       }
       setShowAutoMappingModal(false)
       // 에디터로 이동
-      handleSelectFileFromDashboard(fileKey, nodeId)
+      handleSelectFileFromDashboard(fileKey, nodeId, projectId, projectName || undefined)
     } catch (e) {
       console.error('Failed to apply auto mapping:', e)
     } finally {
       setAutoMappingLoading(false)
     }
-  }, [pendingFileKey, pendingNodeId, handleSelectFileFromDashboard])
+  }, [pendingFileKey, pendingNodeId, pendingProjectId, pendingProjectName, handleSelectFileFromDashboard])
 
   // 노드 순서 변경
   const handleReorderNodes = useCallback(async (parentId: string | null, nodeId: string, newIndex: number) => {
@@ -540,7 +555,9 @@ export default function App() {
 
     // 서버에 저장
     try {
-      await saveFigmaFileData(s.fileKey, s.targetNodeId, newDocument)
+      if (s.projectId) {
+        await saveFigmaFileData(s.projectId, s.fileKey, s.targetNodeId, newDocument)
+      }
     } catch (e) {
       console.error('Failed to save file data:', e)
     }
@@ -600,16 +617,19 @@ export default function App() {
 
     // 서버에 저장
     try {
-      await saveFigmaFileData(s.fileKey, s.targetNodeId, newDocument)
+      if (s.projectId) {
+        await saveFigmaFileData(s.projectId, s.fileKey, s.targetNodeId, newDocument)
+      }
     } catch (e) {
       console.error('Failed to save file data:', e)
     }
 
     // 새 그룹에 'group' 컴포넌트 매핑 추가
     const groupRegistry = registry.find(r => r.name === 'group')
-    if (groupRegistry) {
+    if (groupRegistry && s.projectId) {
       try {
         await saveMapping({
+          projectId: s.projectId,
           figmaFileKey: s.fileKey,
           figmaRootNodeId: s.targetNodeId,
           figmaNodeId: result.groupId,
@@ -687,7 +707,9 @@ export default function App() {
 
     // 서버에 저장
     try {
-      await saveFigmaFileData(s.fileKey, s.targetNodeId, newDocument)
+      if (s.projectId) {
+        await saveFigmaFileData(s.projectId, s.fileKey, s.targetNodeId, newDocument)
+      }
     } catch (e) {
       console.error('Failed to save file data:', e)
     }
@@ -732,8 +754,16 @@ export default function App() {
         <Dashboard
           key={dashboardKey}
           onSelectFile={handleSelectFileFromDashboard}
-          onAddNewFile={() => setShowAddFileModal(true)}
-          onOpenSettings={() => setShowSettings(true)}
+          onAddNewFile={(projectId) => {
+            setAddFileProjectId(projectId)
+            setShowAddFileModal(true)
+          }}
+          onOpenSettings={(projectId, projectName) => {
+            setSettingsProjectId(projectId)
+            setSettingsProjectName(projectName)
+            setShowSettings(true)
+          }}
+          initialProjectId={navigateToProjectId}
         />
         {state.error && (
           <div className="fixed bottom-4 left-1/2 transform -translate-x-1/2 bg-red-600 text-white px-4 py-2 rounded-lg z-50">
@@ -747,17 +777,25 @@ export default function App() {
         )}
         <AddFileModal
           isOpen={showAddFileModal}
-          onClose={() => setShowAddFileModal(false)}
+          onClose={() => {
+            setShowAddFileModal(false)
+            setAddFileProjectId(null)
+          }}
           onSubmit={handleAddFile}
           loading={state.loading}
-          savedToken={state.token}
-          onOpenSettings={() => setShowSettings(true)}
+          projectId={addFileProjectId || ''}
         />
         <SettingsModal
           isOpen={showSettings}
-          onClose={() => setShowSettings(false)}
-          token={state.token}
+          onClose={() => {
+            setShowSettings(false)
+            setSettingsProjectId(null)
+            setSettingsProjectName(null)
+          }}
           onSaveToken={handleSaveToken}
+          onCssChange={() => setCssRefreshKey(k => k + 1)}
+          projectId={settingsProjectId}
+          projectName={settingsProjectName || undefined}
         />
         {/* 자동 매핑 제안 모달 */}
         <AutoMappingSuggestionModal
@@ -765,8 +803,8 @@ export default function App() {
           onClose={() => {
             setShowAutoMappingModal(false)
             // 건너뛰기 시에도 에디터로 이동
-            if (pendingFileKey) {
-              handleSelectFileFromDashboard(pendingFileKey, pendingNodeId)
+            if (pendingFileKey && pendingProjectId) {
+              handleSelectFileFromDashboard(pendingFileKey, pendingNodeId, pendingProjectId, pendingProjectName || undefined)
             }
           }}
           suggestions={autoMappingSuggestions}
@@ -784,7 +822,7 @@ export default function App() {
       <header className="flex items-center justify-between px-4 py-2 theme-bg-secondary border-b theme-border">
         <div className="flex items-center gap-3">
           <img src="/websquareAI.png" width="24" height="24" alt="WebSquare AI" className="rounded" />
-          <h1 className="text-lg font-semibold theme-text-primary">{state.file.name}</h1>
+          <h1 className="text-lg font-semibold theme-text-primary">{state.projectName}</h1>
           {state.targetNodeId && displayRootNode && (
             <span className="text-sm text-blue-500 mapped-component-box border px-2 py-0.5 rounded">
               {displayRootNode.name}
@@ -801,19 +839,23 @@ export default function App() {
             {autoMappingLoading ? '분석 중...' : '자동 매핑'}
           </button>
           <button
-            onClick={handleReset}
+            onClick={handleBackToProject}
             className="flex items-center gap-1.5 px-3 py-1.5 text-sm theme-text-secondary theme-text-hover theme-bg-hover-strong rounded"
-            title="대시보드로 이동"
+            title="현재 프로젝트로 이동"
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
             </svg>
-            대시보드
+            프로젝트 이동
           </button>
           <button
-            onClick={() => setShowSettings(true)}
+            onClick={() => {
+              setSettingsProjectId(state.projectId)
+              setSettingsProjectName(state.projectName)
+              setShowSettings(true)
+            }}
             className="p-2 theme-text-secondary theme-text-hover theme-bg-hover-strong rounded"
-            title="설정"
+            title="프로젝트 설정"
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
@@ -883,6 +925,8 @@ export default function App() {
               nodes={selectedNodes}
               fileKey={state.fileKey}
               rootNodeId={state.targetNodeId}
+              projectId={state.projectId}
+              cssRefreshKey={cssRefreshKey}
               onRegistryLoad={setRegistry}
               onMappingChange={() => setConvertTrigger(t => t + 1)}
             />
@@ -899,6 +943,7 @@ export default function App() {
               <ConvertedCodeEditor
                 fileKey={state.fileKey}
                 nodeId={state.targetNodeId}
+                projectId={state.projectId}
                 rootNode={displayRootNode}
                 document={state.file?.document || null}
                 registry={registry}
@@ -907,7 +952,7 @@ export default function App() {
                 convertTrigger={convertTrigger}
                 onComplete={() => {
                   setDashboardKey(k => k + 1)
-                  handleReset()
+                  handleBackToProject()
                 }}
               />
             )
@@ -923,9 +968,15 @@ export default function App() {
       {/* 설정 모달 */}
       <SettingsModal
         isOpen={showSettings}
-        onClose={() => setShowSettings(false)}
-        token={state.token}
+        onClose={() => {
+          setShowSettings(false)
+          setSettingsProjectId(null)
+          setSettingsProjectName(null)
+        }}
         onSaveToken={handleSaveToken}
+        onCssChange={() => setCssRefreshKey(k => k + 1)}
+        projectId={settingsProjectId}
+        projectName={settingsProjectName || undefined}
       />
 
       {/* 자동 매핑 제안 모달 */}
@@ -934,8 +985,8 @@ export default function App() {
         onClose={() => {
           setShowAutoMappingModal(false)
           // 건너뛰기 시에도 에디터로 이동
-          if (pendingFileKey) {
-            handleSelectFileFromDashboard(pendingFileKey, pendingNodeId)
+          if (pendingFileKey && pendingProjectId) {
+            handleSelectFileFromDashboard(pendingFileKey, pendingNodeId, pendingProjectId, pendingProjectName || undefined)
           }
         }}
         suggestions={autoMappingSuggestions}

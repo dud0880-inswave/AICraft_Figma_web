@@ -1,11 +1,12 @@
 // ============================================================
-// Default Mapping Rules Store — 노드 이름 기반 자동 매핑 기본 규칙
+// Default Mapping Rules Store — 노드 이름 기반 자동 매핑 기본 규칙 (프로젝트별)
 // ============================================================
 import { randomUUID } from 'crypto';
 import type { Database } from 'better-sqlite3';
 
 export interface DefaultMappingRule {
   id: string;
+  projectId: string;
   registryId: string;
   keyword: string;
   createdAt: string;
@@ -13,8 +14,8 @@ export interface DefaultMappingRule {
 }
 
 // 컴포넌트 이름별 초기 기본 키워드 목록
-// registry 테이블의 name 컬럼 기준으로 매핑
 const INITIAL_RULES: { registryName: string; keywords: string[] }[] = [
+  { registryName: 'anchor',        keywords: ['anchor', '앵커'] },
   { registryName: 'button',        keywords: ['button', '버튼'] },
   { registryName: 'checkbox',      keywords: ['checkbox', '체크박스'] },
   { registryName: 'gridview',      keywords: ['gridview', 'grid', '그리드뷰', '그리드'] },
@@ -36,44 +37,44 @@ const INITIAL_RULES: { registryName: string; keywords: string[] }[] = [
 ];
 
 export class DefaultMappingRulesStore {
-  constructor(private db: Database) {
-    this.seed();
-  }
+  constructor(private db: Database) {}
 
-  // registry에 데이터가 있을 때 초기 룰 삽입 (없는 것만)
-  private seed(): void {
+  // 프로젝트 생성 시 초기 규칙 삽입
+  seedForProject(projectId: string): void {
     const insert = this.db.prepare(`
-      INSERT OR IGNORE INTO default_mapping_rules (id, registry_id, keyword, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?)
+      INSERT INTO default_mapping_rules (id, project_id, registry_id, keyword, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?)
     `);
 
     const now = new Date().toISOString();
 
     const tx = this.db.transaction(() => {
       for (const rule of INITIAL_RULES) {
-        const reg = this.db.prepare('SELECT id FROM registry WHERE name = ?').get(rule.registryName) as { id: string } | undefined;
+        // 해당 프로젝트의 registry에서 컴포넌트 찾기
+        const reg = this.db.prepare('SELECT id FROM registry WHERE project_id = ? AND name = ?').get(projectId, rule.registryName) as { id: string } | undefined;
         if (!reg) continue;
 
         for (const keyword of rule.keywords) {
-          const result = insert.run(randomUUID(), reg.id, keyword, now, now);
-          if (result.changes > 0) {
-            console.log(`[DefaultMappingRules] 추가: ${rule.registryName} ← "${keyword}"`);
-          }
+          insert.run(randomUUID(), projectId, reg.id, keyword, now, now);
         }
       }
     });
     tx();
+    console.log(`[DefaultMappingRules] 프로젝트 ${projectId}에 초기 규칙 생성`);
   }
 
-  list(): DefaultMappingRule[] {
+  // 프로젝트별 규칙 목록
+  listByProject(projectId: string): DefaultMappingRule[] {
     const rows = this.db.prepare(`
-      SELECT id, registry_id, keyword, created_at, updated_at
+      SELECT id, project_id, registry_id, keyword, created_at, updated_at
       FROM default_mapping_rules
+      WHERE project_id = ?
       ORDER BY LENGTH(keyword) DESC, keyword ASC
-    `).all() as { id: string; registry_id: string; keyword: string; created_at: string; updated_at: string }[];
+    `).all(projectId) as { id: string; project_id: string; registry_id: string; keyword: string; created_at: string; updated_at: string }[];
 
     return rows.map(r => ({
       id: r.id,
+      projectId: r.project_id,
       registryId: r.registry_id,
       keyword: r.keyword,
       createdAt: r.created_at,
@@ -81,14 +82,15 @@ export class DefaultMappingRulesStore {
     }));
   }
 
-  // registry_id 별 그룹화 목록 (UI용)
-  listGrouped(): { registryId: string; registryName: string; keywords: string[]; rules: { id: string; keyword: string }[] }[] {
+  // 프로젝트별 그룹화 목록 (UI용)
+  listGroupedByProject(projectId: string): { registryId: string; registryName: string; keywords: string[]; rules: { id: string; keyword: string }[] }[] {
     const rows = this.db.prepare(`
       SELECT dmr.id, dmr.registry_id, r.name as registry_name, dmr.keyword
       FROM default_mapping_rules dmr
       JOIN registry r ON r.id = dmr.registry_id
+      WHERE dmr.project_id = ?
       ORDER BY r.name, LENGTH(dmr.keyword) DESC
-    `).all() as { id: string; registry_id: string; registry_name: string; keyword: string }[];
+    `).all(projectId) as { id: string; registry_id: string; registry_name: string; keyword: string }[];
 
     const map = new Map<string, { registryId: string; registryName: string; keywords: string[]; rules: { id: string; keyword: string }[] }>();
     for (const row of rows) {
@@ -104,22 +106,22 @@ export class DefaultMappingRulesStore {
 
   get(id: string): DefaultMappingRule | null {
     const r = this.db.prepare(`
-      SELECT id, registry_id, keyword, created_at, updated_at
+      SELECT id, project_id, registry_id, keyword, created_at, updated_at
       FROM default_mapping_rules WHERE id = ?
-    `).get(id) as { id: string; registry_id: string; keyword: string; created_at: string; updated_at: string } | undefined;
+    `).get(id) as { id: string; project_id: string; registry_id: string; keyword: string; created_at: string; updated_at: string } | undefined;
 
     if (!r) return null;
-    return { id: r.id, registryId: r.registry_id, keyword: r.keyword, createdAt: r.created_at, updatedAt: r.updated_at };
+    return { id: r.id, projectId: r.project_id, registryId: r.registry_id, keyword: r.keyword, createdAt: r.created_at, updatedAt: r.updated_at };
   }
 
-  create(data: { registryId: string; keyword: string }): DefaultMappingRule {
+  create(projectId: string, data: { registryId: string; keyword: string }): DefaultMappingRule {
     const id = randomUUID();
     const now = new Date().toISOString();
     this.db.prepare(`
-      INSERT INTO default_mapping_rules (id, registry_id, keyword, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?)
-    `).run(id, data.registryId, data.keyword, now, now);
-    return { id, registryId: data.registryId, keyword: data.keyword, createdAt: now, updatedAt: now };
+      INSERT INTO default_mapping_rules (id, project_id, registry_id, keyword, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).run(id, projectId, data.registryId, data.keyword, now, now);
+    return { id, projectId, registryId: data.registryId, keyword: data.keyword, createdAt: now, updatedAt: now };
   }
 
   update(id: string, data: { registryId?: string; keyword?: string }): DefaultMappingRule | null {
@@ -142,19 +144,52 @@ export class DefaultMappingRulesStore {
     return result.changes > 0;
   }
 
-  /**
-   * 노드 이름으로 매칭되는 registry_id 반환
-   * 키워드 길이 내림차순으로 정렬된 목록에서 첫 매칭 반환 (더 구체적인 키워드 우선)
-   */
-  match(nodeName: string): { registryId: string; matchedKeyword: string } | null {
+  // 프로젝트 삭제 시 해당 프로젝트의 모든 규칙 삭제
+  deleteByProject(projectId: string): void {
+    this.db.prepare('DELETE FROM default_mapping_rules WHERE project_id = ?').run(projectId);
+  }
+
+  // 프로젝트의 모든 규칙 삭제 후 초기 규칙으로 재설정
+  resetForProject(projectId: string): number {
+    // 모든 규칙 삭제
+    this.db.prepare('DELETE FROM default_mapping_rules WHERE project_id = ?').run(projectId);
+
+    // 초기 규칙 재삽입
+    const insert = this.db.prepare(`
+      INSERT INTO default_mapping_rules (id, project_id, registry_id, keyword, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `);
+
+    const now = new Date().toISOString();
+    let count = 0;
+
+    const tx = this.db.transaction(() => {
+      for (const rule of INITIAL_RULES) {
+        const reg = this.db.prepare('SELECT id FROM registry WHERE project_id = ? AND name = ?').get(projectId, rule.registryName) as { id: string } | undefined;
+        if (!reg) continue;
+
+        for (const keyword of rule.keywords) {
+          insert.run(randomUUID(), projectId, reg.id, keyword, now, now);
+          count++;
+        }
+      }
+    });
+    tx();
+
+    console.log(`[DefaultMappingRules] 프로젝트 ${projectId}에 ${count}개 초기 규칙 복원`);
+    return count;
+  }
+
+  // 노드 이름으로 매칭되는 registry_id 반환 (프로젝트별)
+  match(projectId: string, nodeName: string): { registryId: string; matchedKeyword: string } | null {
     const lower = nodeName.toLowerCase();
 
-    // 길이 내림차순 정렬된 전체 룰 조회
     const rows = this.db.prepare(`
       SELECT registry_id, keyword
       FROM default_mapping_rules
+      WHERE project_id = ?
       ORDER BY LENGTH(keyword) DESC
-    `).all() as { registry_id: string; keyword: string }[];
+    `).all(projectId) as { registry_id: string; keyword: string }[];
 
     for (const row of rows) {
       if (lower.includes(row.keyword.toLowerCase())) {

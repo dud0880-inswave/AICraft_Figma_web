@@ -1,12 +1,12 @@
 import { useState, useEffect } from 'react'
+import { fetchProjectSettings } from '../utils/api'
 
 interface AddFileModalProps {
   isOpen: boolean
   onClose: () => void
-  onSubmit: (token: string, fileUrl: string) => void
+  onSubmit: (token: string, fileUrl: string, projectId: string) => void
   loading: boolean
-  savedToken?: string
-  onOpenSettings?: () => void
+  projectId?: string
 }
 
 export default function AddFileModal({
@@ -14,30 +14,31 @@ export default function AddFileModal({
   onClose,
   onSubmit,
   loading,
-  savedToken = '',
-  onOpenSettings,
+  projectId = '',
 }: AddFileModalProps) {
-  const [token, setToken] = useState(savedToken)
+  const [token, setToken] = useState('')
   const [fileUrl, setFileUrl] = useState('')
 
-  // savedToken이 변경되면 반영
+  // 모달 열릴 때 프로젝트 설정에서 토큰 로드
   useEffect(() => {
-    if (savedToken) {
-      setToken(savedToken)
-    }
-  }, [savedToken])
-
-  // 모달 열릴 때 URL 초기화
-  useEffect(() => {
-    if (isOpen) {
+    if (isOpen && projectId) {
       setFileUrl('')
+      const loadToken = async () => {
+        try {
+          const settings = await fetchProjectSettings(projectId)
+          setToken(settings['figma-token'] || '')
+        } catch {
+          setToken('')
+        }
+      }
+      loadToken()
     }
-  }, [isOpen])
+  }, [isOpen, projectId])
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
-    if (token && fileUrl) {
-      onSubmit(token, fileUrl)
+    if (token && fileUrl && projectId) {
+      onSubmit(token, fileUrl, projectId)
     }
   }
 
@@ -70,55 +71,41 @@ export default function AddFileModal({
 
         {/* 폼 */}
         <form onSubmit={handleSubmit} className="p-6">
-          {/* 토큰 상태 표시 */}
-          {hasToken ? (
-            <div className="mb-4">
-              <div className="flex items-center justify-between">
-                <label className="block text-sm font-medium text-gray-300">
-                  Figma Access Token
-                </label>
-                <button
-                  type="button"
-                  onClick={onOpenSettings}
-                  className="text-xs text-blue-400 hover:text-blue-300"
-                >
-                  변경
-                </button>
-              </div>
-              <div className="mt-2 flex items-center text-sm text-green-400 bg-green-900/20 px-3 py-2 rounded-lg">
+          {/* 토큰 입력 */}
+          <div className="mb-4">
+            <label className="block text-sm font-medium text-gray-300 mb-2">
+              Figma Access Token
+            </label>
+            {hasToken ? (
+              <div className="flex items-center text-sm text-green-400 bg-green-900/20 px-3 py-2 rounded-lg">
                 <svg className="w-4 h-4 mr-2" fill="currentColor" viewBox="0 0 20 20">
                   <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
                 </svg>
                 토큰이 설정되어 있습니다
-              </div>
-            </div>
-          ) : (
-            <div className="mb-4">
-              <div className="flex items-center justify-between">
-                <label className="block text-sm font-medium text-gray-300">
-                  Figma Access Token
-                </label>
                 <button
                   type="button"
-                  onClick={onOpenSettings}
-                  className="text-xs text-blue-400 hover:text-blue-300"
+                  onClick={() => setToken('')}
+                  className="ml-auto text-xs text-gray-400 hover:text-gray-300"
                 >
-                  설정
+                  변경
                 </button>
               </div>
-              <input
-                type="password"
-                value={token}
-                onChange={(e) => setToken(e.target.value)}
-                placeholder="figd_xxxxxxxxxxxxxxxx"
-                className="mt-2 w-full px-4 py-2 theme-bg-tertiary border theme-border rounded-lg theme-text-primary placeholder-gray-400 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-                required
-              />
-              <p className="text-xs theme-text-secondary mt-1">
-                Figma Settings → Account → Personal access tokens
-              </p>
-            </div>
-          )}
+            ) : (
+              <>
+                <input
+                  type="password"
+                  value={token}
+                  onChange={(e) => setToken(e.target.value)}
+                  placeholder="figd_xxxxxxxxxxxxxxxx"
+                  className="w-full px-4 py-2 theme-bg-tertiary border theme-border rounded-lg theme-text-primary placeholder-gray-400 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                  required
+                />
+                <p className="text-xs theme-text-secondary mt-1">
+                  Figma Settings → Account → Personal access tokens
+                </p>
+              </>
+            )}
+          </div>
 
           <div className="mb-6">
             <label className="block text-sm font-medium theme-text-secondary mb-2">

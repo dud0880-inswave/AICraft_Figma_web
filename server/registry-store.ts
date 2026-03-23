@@ -1,11 +1,12 @@
 // ============================================================
-// Registry Store — WebSquare 컴포넌트 레지스트리 (간소화)
+// Registry Store — WebSquare 컴포넌트 레지스트리 (프로젝트별)
 // ============================================================
 import { randomUUID } from 'crypto';
 import type { Database } from 'better-sqlite3';
 
 export interface RegistryItem {
   id: string;
+  projectId: string;
   name: string;
   tagName: string;
   properties: Record<string, string>;
@@ -17,7 +18,8 @@ interface ComponentData {
   properties: Record<string, string>;
 }
 
-const COMPONENTS: ComponentData[] = [
+// 초기 컴포넌트 데이터 (프로젝트 생성 시 복사됨)
+const INITIAL_COMPONENTS: ComponentData[] = [
   { name: "checkbox", tagName: "xf:select", properties: { appearance: "full", rows: "1" } },
   { name: "radio", tagName: "xf:select1", properties: { appearance: "full", rows: "1" } },
   { name: "select", tagName: "xf:select1", properties: { appearance: "minimal" } },
@@ -40,43 +42,27 @@ const COMPONENTS: ComponentData[] = [
 ];
 
 export class RegistryStore {
-  constructor(private db: Database) {
-    this.init();
-  }
+  constructor(private db: Database) {}
 
-  private init(): void {
-    // 테이블 생성
-    this.db.prepare(`
-      CREATE TABLE IF NOT EXISTS registry (
-        id         TEXT PRIMARY KEY,
-        name       TEXT NOT NULL UNIQUE,
-        tagName    TEXT NOT NULL DEFAULT '',
-        properties TEXT NOT NULL DEFAULT '{}'
-      )
-    `).run();
+  // 프로젝트 생성 시 초기 컴포넌트 데이터 삽입
+  seedForProject(projectId: string): void {
+    const insert = this.db.prepare('INSERT INTO registry (id, project_id, name, tagName, properties) VALUES (?, ?, ?, ?, ?)');
 
-    // 기존 데이터 확인
-    const existing = this.db.prepare('SELECT name, tagName, properties FROM registry').all() as { name: string; tagName: string; properties: string }[];
-    const existingMap = new Map(existing.map(r => [r.name, r]));
-
-    const insert = this.db.prepare('INSERT INTO registry (id, name, tagName, properties) VALUES (?, ?, ?, ?)');
-
-    // 신규 항목만 추가 — 기존 항목은 사용자 수정값 유지
     const tx = this.db.transaction(() => {
-      for (const comp of COMPONENTS) {
-        if (!existingMap.has(comp.name)) {
-          insert.run(randomUUID(), comp.name, comp.tagName, JSON.stringify(comp.properties));
-          console.log(`[Registry] 추가: ${comp.name}`);
-        }
+      for (const comp of INITIAL_COMPONENTS) {
+        insert.run(randomUUID(), projectId, comp.name, comp.tagName, JSON.stringify(comp.properties));
       }
     });
     tx();
+    console.log(`[Registry] 프로젝트 ${projectId}에 ${INITIAL_COMPONENTS.length}개 컴포넌트 초기화`);
   }
 
-  list(): RegistryItem[] {
-    const rows = this.db.prepare('SELECT id, name, tagName, properties FROM registry ORDER BY name').all() as { id: string; name: string; tagName: string; properties: string }[];
+  // 프로젝트별 컴포넌트 목록
+  listByProject(projectId: string): RegistryItem[] {
+    const rows = this.db.prepare('SELECT id, project_id, name, tagName, properties FROM registry WHERE project_id = ? ORDER BY name').all(projectId) as { id: string; project_id: string; name: string; tagName: string; properties: string }[];
     return rows.map(r => ({
       id: r.id,
+      projectId: r.project_id,
       name: r.name,
       tagName: r.tagName,
       properties: JSON.parse(r.properties),
@@ -84,32 +70,34 @@ export class RegistryStore {
   }
 
   get(id: string): RegistryItem | null {
-    const r = this.db.prepare('SELECT id, name, tagName, properties FROM registry WHERE id = ?').get(id) as { id: string; name: string; tagName: string; properties: string } | undefined;
+    const r = this.db.prepare('SELECT id, project_id, name, tagName, properties FROM registry WHERE id = ?').get(id) as { id: string; project_id: string; name: string; tagName: string; properties: string } | undefined;
     if (!r) return null;
     return {
       id: r.id,
+      projectId: r.project_id,
       name: r.name,
       tagName: r.tagName,
       properties: JSON.parse(r.properties),
     };
   }
 
-  getByName(name: string): RegistryItem | null {
-    const r = this.db.prepare('SELECT id, name, tagName, properties FROM registry WHERE name = ?').get(name) as { id: string; name: string; tagName: string; properties: string } | undefined;
+  getByName(projectId: string, name: string): RegistryItem | null {
+    const r = this.db.prepare('SELECT id, project_id, name, tagName, properties FROM registry WHERE project_id = ? AND name = ?').get(projectId, name) as { id: string; project_id: string; name: string; tagName: string; properties: string } | undefined;
     if (!r) return null;
     return {
       id: r.id,
+      projectId: r.project_id,
       name: r.name,
       tagName: r.tagName,
       properties: JSON.parse(r.properties),
     };
   }
 
-  create(data: { name: string; tagName: string; properties: Record<string, string> }): RegistryItem {
+  create(projectId: string, data: { name: string; tagName: string; properties: Record<string, string> }): RegistryItem {
     const id = randomUUID();
     const propsJson = JSON.stringify(data.properties || {});
-    this.db.prepare('INSERT INTO registry (id, name, tagName, properties) VALUES (?, ?, ?, ?)').run(id, data.name, data.tagName, propsJson);
-    return { id, name: data.name, tagName: data.tagName, properties: data.properties || {} };
+    this.db.prepare('INSERT INTO registry (id, project_id, name, tagName, properties) VALUES (?, ?, ?, ?, ?)').run(id, projectId, data.name, data.tagName, propsJson);
+    return { id, projectId, name: data.name, tagName: data.tagName, properties: data.properties || {} };
   }
 
   update(id: string, data: { name?: string; tagName?: string; properties?: Record<string, string> }): RegistryItem | null {
@@ -122,11 +110,16 @@ export class RegistryStore {
     const propsJson = JSON.stringify(properties);
 
     this.db.prepare('UPDATE registry SET name = ?, tagName = ?, properties = ? WHERE id = ?').run(name, tagName, propsJson, id);
-    return { id, name, tagName, properties };
+    return { id, projectId: existing.projectId, name, tagName, properties };
   }
 
   delete(id: string): boolean {
     const result = this.db.prepare('DELETE FROM registry WHERE id = ?').run(id);
     return result.changes > 0;
+  }
+
+  // 프로젝트 삭제 시 해당 프로젝트의 모든 컴포넌트 삭제
+  deleteByProject(projectId: string): void {
+    this.db.prepare('DELETE FROM registry WHERE project_id = ?').run(projectId);
   }
 }

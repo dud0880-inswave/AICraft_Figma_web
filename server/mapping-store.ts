@@ -1,11 +1,12 @@
 // ============================================================
-// Node Mapping Store — Figma 노드 ↔ WebSquare 컴포넌트 매핑
+// Node Mapping Store — Figma 노드 ↔ WebSquare 컴포넌트 매핑 (프로젝트별)
 // ============================================================
 import { randomUUID } from 'crypto';
 import type { Database } from 'better-sqlite3';
 
 export interface NodeMapping {
   id: string;
+  projectId: string;
   figmaFileKey: string;
   figmaRootNodeId: string | null;
   figmaNodeId: string;
@@ -21,56 +22,34 @@ export interface NodeMapping {
 }
 
 export class MappingStore {
-  constructor(private db: Database) {
-    this.migrate();
-  }
+  constructor(private db: Database) {}
 
-  private migrate(): void {
-    // figma_root_node_id 컬럼 추가 (이미 존재하면 무시)
-    const columns = this.db.prepare('PRAGMA table_info(node_mappings)').all() as { name: string }[];
-    const hasColumn = columns.some(c => c.name === 'figma_root_node_id');
-    if (!hasColumn) {
-      this.db.prepare('ALTER TABLE node_mappings ADD COLUMN figma_root_node_id TEXT').run();
-      // 기존 데이터 마이그레이션: figma_files에서 nodeId 가져와서 설정
-      this.db.prepare(`
-        UPDATE node_mappings SET figma_root_node_id = (
-          SELECT nodeId FROM figma_files WHERE figma_files.fileKey = node_mappings.figma_file_key LIMIT 1
-        )
-      `).run();
-      console.log('[MappingStore] Migration: added figma_root_node_id column');
-    }
-    // 인덱스 생성
-    this.db.prepare(
-      'CREATE INDEX IF NOT EXISTS idx_node_mappings_file_root ON node_mappings(figma_file_key, figma_root_node_id)'
-    ).run();
-  }
-
-  // 매핑 조회 (파일 + 루트노드 + 노드)
-  get(fileKey: string, rootNodeId: string | null, nodeId: string): NodeMapping | null {
+  // 매핑 조회 (프로젝트 + 파일 + 루트노드 + 노드)
+  get(projectId: string, fileKey: string, rootNodeId: string | null, nodeId: string): NodeMapping | null {
     const row = this.db.prepare(
-      'SELECT * FROM node_mappings WHERE figma_file_key = ? AND figma_root_node_id IS ? AND figma_node_id = ?'
-    ).get(fileKey, rootNodeId, nodeId) as RawMapping | undefined;
+      'SELECT * FROM node_mappings WHERE project_id = ? AND figma_file_key = ? AND figma_root_node_id IS ? AND figma_node_id = ?'
+    ).get(projectId, fileKey, rootNodeId, nodeId) as RawMapping | undefined;
     return row ? toMapping(row) : null;
   }
 
-  // 파일+루트노드의 모든 매핑 조회
-  listByFile(fileKey: string, rootNodeId?: string | null): NodeMapping[] {
+  // 파일+루트노드의 모든 매핑 조회 (프로젝트별)
+  listByFile(projectId: string, fileKey: string, rootNodeId?: string | null): NodeMapping[] {
     if (rootNodeId !== undefined) {
       const rows = this.db.prepare(
-        'SELECT * FROM node_mappings WHERE figma_file_key = ? AND figma_root_node_id IS ? ORDER BY created_at DESC'
-      ).all(fileKey, rootNodeId) as RawMapping[];
+        'SELECT * FROM node_mappings WHERE project_id = ? AND figma_file_key = ? AND figma_root_node_id IS ? ORDER BY created_at DESC'
+      ).all(projectId, fileKey, rootNodeId) as RawMapping[];
       return rows.map(toMapping);
     }
     // rootNodeId 미지정: fileKey 전체
     const rows = this.db.prepare(
-      'SELECT * FROM node_mappings WHERE figma_file_key = ? ORDER BY created_at DESC'
-    ).all(fileKey) as RawMapping[];
+      'SELECT * FROM node_mappings WHERE project_id = ? AND figma_file_key = ? ORDER BY created_at DESC'
+    ).all(projectId, fileKey) as RawMapping[];
     return rows.map(toMapping);
   }
 
   // 매핑 저장 (upsert)
   save(mapping: Omit<NodeMapping, 'id' | 'createdAt' | 'updatedAt'>): NodeMapping {
-    const existing = this.get(mapping.figmaFileKey, mapping.figmaRootNodeId, mapping.figmaNodeId);
+    const existing = this.get(mapping.projectId, mapping.figmaFileKey, mapping.figmaRootNodeId, mapping.figmaNodeId);
     const now = new Date().toISOString();
 
     if (existing) {
@@ -84,7 +63,7 @@ export class MappingStore {
           custom_attrs = ?,
           status = ?,
           updated_at = ?
-        WHERE figma_file_key = ? AND figma_root_node_id IS ? AND figma_node_id = ?
+        WHERE project_id = ? AND figma_file_key = ? AND figma_root_node_id IS ? AND figma_node_id = ?
       `).run(
         mapping.figmaNodeName,
         mapping.figmaNodeType ?? null,
@@ -94,20 +73,22 @@ export class MappingStore {
         JSON.stringify(mapping.customAttrs),
         mapping.status,
         now,
+        mapping.projectId,
         mapping.figmaFileKey,
         mapping.figmaRootNodeId,
         mapping.figmaNodeId
       );
-      return this.get(mapping.figmaFileKey, mapping.figmaRootNodeId, mapping.figmaNodeId)!;
+      return this.get(mapping.projectId, mapping.figmaFileKey, mapping.figmaRootNodeId, mapping.figmaNodeId)!;
     } else {
       const id = randomUUID();
       this.db.prepare(`
         INSERT INTO node_mappings
-          (id, figma_file_key, figma_root_node_id, figma_node_id, figma_node_name, figma_node_type,
+          (id, project_id, figma_file_key, figma_root_node_id, figma_node_id, figma_node_name, figma_node_type,
            registry_id, registry_name, registry_tag, custom_attrs, status, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
         id,
+        mapping.projectId,
         mapping.figmaFileKey,
         mapping.figmaRootNodeId,
         mapping.figmaNodeId,
@@ -121,29 +102,35 @@ export class MappingStore {
         now,
         now
       );
-      return this.get(mapping.figmaFileKey, mapping.figmaRootNodeId, mapping.figmaNodeId)!;
+      return this.get(mapping.projectId, mapping.figmaFileKey, mapping.figmaRootNodeId, mapping.figmaNodeId)!;
     }
   }
 
   // 매핑 삭제
-  delete(fileKey: string, rootNodeId: string | null, nodeId: string): boolean {
+  delete(projectId: string, fileKey: string, rootNodeId: string | null, nodeId: string): boolean {
     const result = this.db.prepare(
-      'DELETE FROM node_mappings WHERE figma_file_key = ? AND figma_root_node_id IS ? AND figma_node_id = ?'
-    ).run(fileKey, rootNodeId, nodeId);
+      'DELETE FROM node_mappings WHERE project_id = ? AND figma_file_key = ? AND figma_root_node_id IS ? AND figma_node_id = ?'
+    ).run(projectId, fileKey, rootNodeId, nodeId);
     return result.changes > 0;
   }
 
-  // 파일+루트노드 기준 매핑 전체 삭제
-  deleteByFileKey(fileKey: string, rootNodeId?: string | null): number {
+  // 파일+루트노드 기준 매핑 전체 삭제 (프로젝트별)
+  deleteByFileKey(projectId: string, fileKey: string, rootNodeId?: string | null): number {
     if (rootNodeId !== undefined) {
       const result = this.db.prepare(
-        'DELETE FROM node_mappings WHERE figma_file_key = ? AND figma_root_node_id IS ?'
-      ).run(fileKey, rootNodeId);
+        'DELETE FROM node_mappings WHERE project_id = ? AND figma_file_key = ? AND figma_root_node_id IS ?'
+      ).run(projectId, fileKey, rootNodeId);
       return result.changes;
     }
     const result = this.db.prepare(
-      'DELETE FROM node_mappings WHERE figma_file_key = ?'
-    ).run(fileKey);
+      'DELETE FROM node_mappings WHERE project_id = ? AND figma_file_key = ?'
+    ).run(projectId, fileKey);
+    return result.changes;
+  }
+
+  // 프로젝트의 모든 매핑 삭제
+  deleteByProject(projectId: string): number {
+    const result = this.db.prepare('DELETE FROM node_mappings WHERE project_id = ?').run(projectId);
     return result.changes;
   }
 }
@@ -151,6 +138,7 @@ export class MappingStore {
 // ---- Row → Domain ----
 interface RawMapping {
   id: string;
+  project_id: string;
   figma_file_key: string;
   figma_root_node_id: string | null;
   figma_node_id: string;
@@ -168,6 +156,7 @@ interface RawMapping {
 function toMapping(r: RawMapping): NodeMapping {
   return {
     id: r.id,
+    projectId: r.project_id,
     figmaFileKey: r.figma_file_key,
     figmaRootNodeId: r.figma_root_node_id,
     figmaNodeId: r.figma_node_id,

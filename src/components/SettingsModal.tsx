@@ -9,6 +9,9 @@ import {
   fetchDefaultMappingRulesGrouped,
   createDefaultMappingRule,
   deleteDefaultMappingRule,
+  resetDefaultMappingRules,
+  fetchProjectSettings,
+  saveProjectSettings,
 } from '../utils/api'
 import type { RegistryItem, MappingRulesJson, DefaultMappingRuleGrouped } from '../utils/api'
 import { useTheme } from '../contexts/ThemeContext'
@@ -16,16 +19,13 @@ import { useTheme } from '../contexts/ThemeContext'
 interface SettingsModalProps {
   isOpen: boolean
   onClose: () => void
-  token: string
   onSaveToken: (token: string) => void
+  onCssChange?: () => void  // CSS 변경 시 호출
+  projectId?: string | null  // 프로젝트별 설정
+  projectName?: string
 }
 
 type TabType = 'basic' | 'components' | 'css' | 'mappingRules'
-
-const STORAGE_KEY = 'figma-viewer-token'
-const CSS_STORAGE_KEY = 'figma-viewer-css-list'
-const CSS_CLASS_MAPPING_KEY = 'figma-viewer-css-class-mapping'
-const XML_EXPORT_PATH_KEY = 'figma-viewer-xml-export-path'
 
 export interface CssItem {
   id: string
@@ -114,103 +114,63 @@ export function autoMapClassesToComponents(
   return newMapping
 }
 
-// 컴포넌트-클래스 매핑 로드
-export function loadComponentClassMapping(): ComponentClassMapping {
-  const data = localStorage.getItem(CSS_CLASS_MAPPING_KEY)
-  if (!data) return {}
-  try {
-    return JSON.parse(data)
-  } catch {
-    return {}
-  }
-}
-
-// 컴포넌트-클래스 매핑 저장
-export function saveComponentClassMapping(mapping: ComponentClassMapping): void {
-  localStorage.setItem(CSS_CLASS_MAPPING_KEY, JSON.stringify(mapping))
-}
-
-export function loadSavedToken(): string {
-  return localStorage.getItem(STORAGE_KEY) || ''
-}
-
-export function saveToken(token: string): void {
-  if (token) {
-    localStorage.setItem(STORAGE_KEY, token)
-  } else {
-    localStorage.removeItem(STORAGE_KEY)
-  }
-}
-
-export function loadXmlExportPath(): string {
-  return localStorage.getItem(XML_EXPORT_PATH_KEY) || ''
-}
-
-export function saveXmlExportPath(path: string): void {
-  if (path) {
-    localStorage.setItem(XML_EXPORT_PATH_KEY, path)
-  } else {
-    localStorage.removeItem(XML_EXPORT_PATH_KEY)
-  }
-}
-
-export function loadSavedCssList(): CssItem[] {
-  const data = localStorage.getItem(CSS_STORAGE_KEY)
-  if (!data) return []
-  try {
-    return JSON.parse(data)
-  } catch {
-    return []
-  }
-}
-
-export function saveCssList(items: CssItem[]): void {
-  if (items.length > 0) {
-    localStorage.setItem(CSS_STORAGE_KEY, JSON.stringify(items))
-  } else {
-    localStorage.removeItem(CSS_STORAGE_KEY)
-  }
-}
-
-export function applyCssToPage(items: CssItem[]): void {
-  // 기존 스타일 제거
-  document.querySelectorAll('style[data-custom-css]').forEach(el => el.remove())
-
-  // 새 스타일 적용
-  items.forEach(item => {
-    const styleEl = document.createElement('style')
-    styleEl.setAttribute('data-custom-css', item.id)
-    styleEl.textContent = item.content
-    document.head.appendChild(styleEl)
-  })
-}
 
 // 기본 탭 컴포넌트
-function BasicTab({ token, onSaveToken, onClose }: { token: string; onSaveToken: (t: string) => void; onClose: () => void }) {
-  const [inputToken, setInputToken] = useState(token)
-  const [xmlExportPath, setXmlExportPath] = useState(loadXmlExportPath())
+function BasicTab({ onSaveToken, onClose, projectId }: { onSaveToken: (t: string) => void; onClose: () => void; projectId?: string | null }) {
+  const [inputToken, setInputToken] = useState('')
+  const [xmlExportPath, setXmlExportPath] = useState('')
+  const [loading, setLoading] = useState(true)
   const { theme, setTheme } = useTheme()
 
+  // 프로젝트 설정 로드
   useEffect(() => {
-    setInputToken(token)
-  }, [token])
+    const loadSettings = async () => {
+      if (!projectId) {
+        setLoading(false)
+        return
+      }
+      setLoading(true)
+      try {
+        const settings = await fetchProjectSettings(projectId)
+        setInputToken(settings['figma-token'] || '')
+        setXmlExportPath(settings['xml-export-path'] || '')
+      } catch (err) {
+        console.error('Failed to load settings:', err)
+      } finally {
+        setLoading(false)
+      }
+    }
+    loadSettings()
+  }, [projectId])
 
-  const handleSave = () => {
-    saveToken(inputToken)
-    saveXmlExportPath(xmlExportPath)
-    onSaveToken(inputToken)
+  const handleSave = async () => {
+    if (!projectId) {
+      onClose()
+      return
+    }
+
+    try {
+      await saveProjectSettings(projectId, {
+        'figma-token': inputToken,
+        'xml-export-path': xmlExportPath,
+      })
+      onSaveToken(inputToken)
+    } catch (err) {
+      console.error('Failed to save settings:', err)
+    }
     onClose()
   }
 
   const handleClearToken = () => {
     setInputToken('')
-    saveToken('')
-    onSaveToken('')
   }
 
   const handleClearPath = () => {
     setXmlExportPath('')
-    saveXmlExportPath('')
+  }
+
+  if (loading) {
+    return <div className="text-center py-8 theme-text-secondary">로딩 중...</div>
   }
 
   return (
@@ -334,7 +294,7 @@ function BasicTab({ token, onSaveToken, onClose }: { token: string; onSaveToken:
 }
 
 // 컴포넌트 탭 컴포넌트
-function ComponentsTab() {
+function ComponentsTab({ projectId }: { projectId?: string | null }) {
   const [registry, setRegistry] = useState<RegistryItem[]>([])
   const [loading, setLoading] = useState(true)
   const [showAddForm, setShowAddForm] = useState(false)
@@ -343,8 +303,12 @@ function ComponentsTab() {
   const [error, setError] = useState<string | null>(null)
 
   const loadRegistry = async () => {
+    if (!projectId) {
+      setLoading(false)
+      return
+    }
     try {
-      const items = await fetchRegistry()
+      const items = await fetchRegistry(projectId)
       setRegistry(items)
     } catch {
       setError('컴포넌트 목록을 불러오는데 실패했습니다')
@@ -355,7 +319,7 @@ function ComponentsTab() {
 
   useEffect(() => {
     loadRegistry()
-  }, [])
+  }, [projectId])
 
   const resetForm = () => {
     setFormData({ name: '', tagName: '', properties: '' })
@@ -365,6 +329,7 @@ function ComponentsTab() {
   }
 
   const handleAdd = async () => {
+    if (!projectId) return
     if (!formData.name || !formData.tagName) {
       setError('이름과 태그명은 필수입니다')
       return
@@ -375,7 +340,7 @@ function ComponentsTab() {
       if (formData.properties.trim()) {
         props = JSON.parse(formData.properties)
       }
-      await createRegistryItem({ name: formData.name, tagName: formData.tagName, properties: props })
+      await createRegistryItem(projectId, { name: formData.name, tagName: formData.tagName, properties: props })
       await loadRegistry()
       resetForm()
     } catch (err) {
@@ -560,7 +525,7 @@ function ComponentsTab() {
 type CssSubView = 'list' | 'edit' | 'mapping'
 
 // CSS 탭 컴포넌트
-function CssTab() {
+function CssTab({ projectId, onCssChange }: { projectId?: string | null; onCssChange?: () => void }) {
   const [cssList, setCssList] = useState<CssItem[]>([])
   const [editingItem, setEditingItem] = useState<CssItem | null>(null)
   const [subView, setSubView] = useState<CssSubView>('list')
@@ -568,13 +533,82 @@ function CssTab() {
   const [componentClassMapping, setComponentClassMapping] = useState<ComponentClassMapping>({})
   const [selectedComponentId, setSelectedComponentId] = useState<string | null>(null)
   const [selectedCssId, setSelectedCssId] = useState<string | null>(null)
+  const [loading, setLoading] = useState(true)
+
+  // 프로젝트 설정 로드/저장 헬퍼
+  const loadCssListFromSettings = async (): Promise<CssItem[]> => {
+    if (!projectId) return []
+    try {
+      const settings = await fetchProjectSettings(projectId)
+      const data = settings['css-list']
+      if (data) {
+        return JSON.parse(data)
+      }
+    } catch (err) {
+      console.error('Failed to load CSS list:', err)
+    }
+    return []
+  }
+
+  const saveCssListToSettings = async (items: CssItem[]) => {
+    if (!projectId) return
+    const value = JSON.stringify(items)
+    try {
+      await saveProjectSettings(projectId, { 'css-list': value })
+    } catch (err) {
+      console.error('Failed to save CSS list:', err)
+    }
+  }
+
+  const loadMappingFromSettings = async (): Promise<ComponentClassMapping> => {
+    if (!projectId) return {}
+    try {
+      const settings = await fetchProjectSettings(projectId)
+      const data = settings['css-class-mapping']
+      if (data) {
+        return JSON.parse(data)
+      }
+    } catch (err) {
+      console.error('Failed to load CSS mapping:', err)
+    }
+    return {}
+  }
+
+  const saveMappingToSettings = async (mapping: ComponentClassMapping) => {
+    if (!projectId) return
+    const value = JSON.stringify(mapping)
+    try {
+      await saveProjectSettings(projectId, { 'css-class-mapping': value })
+    } catch (err) {
+      console.error('Failed to save CSS mapping:', err)
+    }
+  }
 
   // 초기 데이터 로드
   useEffect(() => {
-    setCssList(loadSavedCssList())
-    setComponentClassMapping(loadComponentClassMapping())
-    fetchRegistry().then(setRegistry).catch((e) => console.error('Failed to fetch registry:', e))
-  }, [])
+    const loadData = async () => {
+      if (!projectId) {
+        setLoading(false)
+        return
+      }
+      setLoading(true)
+      try {
+        const [cssItems, mapping, reg] = await Promise.all([
+          loadCssListFromSettings(),
+          loadMappingFromSettings(),
+          fetchRegistry(projectId),
+        ])
+        setCssList(cssItems)
+        setComponentClassMapping(mapping)
+        setRegistry(reg)
+      } catch (err) {
+        console.error('Failed to load data:', err)
+      } finally {
+        setLoading(false)
+      }
+    }
+    loadData()
+  }, [projectId])
 
   // 매핑 모드 진입 시 첫 번째 CSS 파일 자동 선택
   useEffect(() => {
@@ -606,7 +640,7 @@ function CssTab() {
     if (newItems.length > 0) {
       const updated = [...cssList, ...newItems]
       setCssList(updated)
-      saveCssList(updated)
+      saveCssListToSettings(updated)
 
       // 각 CSS 파일별로 자동 매핑 적용
       if (registry.length > 0) {
@@ -617,8 +651,9 @@ function CssTab() {
           }
         }
         setComponentClassMapping(currentMapping)
-        saveComponentClassMapping(currentMapping)
+        saveMappingToSettings(currentMapping)
       }
+      onCssChange?.()
     }
 
     e.target.value = ''
@@ -627,7 +662,8 @@ function CssTab() {
   const handleDelete = (id: string) => {
     const updated = cssList.filter(item => item.id !== id)
     setCssList(updated)
-    saveCssList(updated)
+    saveCssListToSettings(updated)
+    onCssChange?.()
   }
 
   const handleEdit = (item: CssItem) => {
@@ -644,17 +680,18 @@ function CssTab() {
       item.id === updatedItem.id ? updatedItem : item
     )
     setCssList(updated)
-    saveCssList(updated)
+    saveCssListToSettings(updated)
 
     // 새로 추출된 클래스에 대해 자동 매핑 적용
     if (classNames.length > 0 && registry.length > 0) {
       const autoMapped = autoMapClassesToComponents(editingItem.id, classNames, registry, componentClassMapping)
       setComponentClassMapping(autoMapped)
-      saveComponentClassMapping(autoMapped)
+      saveMappingToSettings(autoMapped)
     }
 
     setEditingItem(null)
     setSubView('list')
+    onCssChange?.()
   }
 
   const handleAddNew = () => {
@@ -674,17 +711,18 @@ function CssTab() {
     const newItem = { ...editingItem, classNames }
     const updated = [...cssList, newItem]
     setCssList(updated)
-    saveCssList(updated)
+    saveCssListToSettings(updated)
 
     // 새로 추출된 클래스에 대해 자동 매핑 적용
     if (classNames.length > 0 && registry.length > 0) {
       const autoMapped = autoMapClassesToComponents(editingItem.id, classNames, registry, componentClassMapping)
       setComponentClassMapping(autoMapped)
-      saveComponentClassMapping(autoMapped)
+      saveMappingToSettings(autoMapped)
     }
 
     setEditingItem(null)
     setSubView('list')
+    onCssChange?.()
   }
 
   const handleCancelEdit = () => {
@@ -705,7 +743,8 @@ function CssTab() {
 
     newMapping[cssId][componentId] = updated
     setComponentClassMapping(newMapping)
-    saveComponentClassMapping(newMapping)
+    saveMappingToSettings(newMapping)
+    onCssChange?.()
   }
 
   const isNewItem = editingItem && !cssList.find(item => item.id === editingItem.id)
@@ -767,7 +806,8 @@ function CssTab() {
     if (!selectedCssId || !selectedCss || registry.length === 0) return
     const autoMapped = autoMapClassesToComponents(selectedCssId, selectedCss.classNames, registry, componentClassMapping)
     setComponentClassMapping(autoMapped)
-    saveComponentClassMapping(autoMapped)
+    saveMappingToSettings(autoMapped)
+    onCssChange?.()
   }
 
   // 선택된 CSS 파일의 매핑 초기화
@@ -777,7 +817,12 @@ function CssTab() {
     const newMapping = { ...componentClassMapping }
     delete newMapping[selectedCssId]
     setComponentClassMapping(newMapping)
-    saveComponentClassMapping(newMapping)
+    saveMappingToSettings(newMapping)
+    onCssChange?.()
+  }
+
+  if (loading) {
+    return <div className="text-center py-8 theme-text-secondary">로딩 중...</div>
   }
 
   // 클래스 매핑 모드
@@ -1048,7 +1093,7 @@ function CssTab() {
 // ---- 매핑룰 탭 ----
 type MappingRulesSubView = 'default' | 'export'
 
-function MappingRulesTab() {
+function MappingRulesTab({ projectId }: { projectId?: string | null }) {
   const [subView, setSubView] = useState<MappingRulesSubView>('default')
   const [status, setStatus] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
   const [loading, setLoading] = useState(false)
@@ -1064,11 +1109,15 @@ function MappingRulesTab() {
 
   // 데이터 로드
   const loadData = async () => {
+    if (!projectId) {
+      setRulesLoading(false)
+      return
+    }
     setRulesLoading(true)
     try {
       const [rules, reg] = await Promise.all([
-        fetchDefaultMappingRulesGrouped(),
-        fetchRegistry(),
+        fetchDefaultMappingRulesGrouped(projectId),
+        fetchRegistry(projectId),
       ])
       setDefaultRules(rules)
       setRegistry(reg)
@@ -1081,7 +1130,7 @@ function MappingRulesTab() {
 
   useEffect(() => {
     loadData()
-  }, [])
+  }, [projectId])
 
   // 컴포넌트 확장/축소 토글
   const toggleExpand = (registryId: string) => {
@@ -1098,11 +1147,12 @@ function MappingRulesTab() {
 
   // 키워드 추가
   const handleAddKeyword = async (registryId: string) => {
+    if (!projectId) return
     const keyword = newKeyword[registryId]?.trim()
     if (!keyword) return
 
     try {
-      await createDefaultMappingRule({ registryId, keyword })
+      await createDefaultMappingRule(projectId, { registryId, keyword })
       setNewKeyword(prev => ({ ...prev, [registryId]: '' }))
       await loadData()
       setStatus({ type: 'success', text: `키워드 "${keyword}" 추가됨` })
@@ -1122,8 +1172,26 @@ function MappingRulesTab() {
     }
   }
 
+  // 초기화 (기본값으로 복원)
+  const handleReset = async () => {
+    if (!projectId) return
+    if (!confirm('모든 기본 매핑 규칙을 삭제하고 기본값으로 복원하시겠습니까?')) return
+
+    setLoading(true)
+    try {
+      const result = await resetDefaultMappingRules(projectId)
+      await loadData()
+      setStatus({ type: 'success', text: `${result.count}개 규칙으로 초기화됨` })
+    } catch {
+      setStatus({ type: 'error', text: '초기화 실패' })
+    } finally {
+      setLoading(false)
+    }
+  }
+
   // 새 컴포넌트 추가 (첫 키워드와 함께)
   const handleAddNewComponent = async () => {
+    if (!projectId) return
     if (!selectedNewComponent) return
     const keyword = newKeyword[selectedNewComponent]?.trim()
     if (!keyword) {
@@ -1132,7 +1200,7 @@ function MappingRulesTab() {
     }
 
     try {
-      await createDefaultMappingRule({ registryId: selectedNewComponent, keyword })
+      await createDefaultMappingRule(projectId, { registryId: selectedNewComponent, keyword })
       setNewKeyword(prev => ({ ...prev, [selectedNewComponent]: '' }))
       setShowAddComponent(false)
       setSelectedNewComponent('')
@@ -1150,9 +1218,10 @@ function MappingRulesTab() {
   )
 
   const handleExport = async () => {
+    if (!projectId) return
     try {
       setLoading(true)
-      const data = await exportMappingRules()
+      const data = await exportMappingRules(projectId)
       const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
@@ -1169,6 +1238,7 @@ function MappingRulesTab() {
   }
 
   const handleImport = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!projectId) return
     const file = e.target.files?.[0]
     if (!file) return
     const reader = new FileReader()
@@ -1177,7 +1247,7 @@ function MappingRulesTab() {
         setLoading(true)
         const data = JSON.parse(ev.target?.result as string) as MappingRulesJson
         if (data.version !== 1) throw new Error('지원하지 않는 버전')
-        const result = await importMappingRules(data)
+        const result = await importMappingRules(projectId, data)
         setStatus({ type: 'success', text: `가져오기 완료 — 기본규칙 ${result.defaultAdded}개 추가, 커스텀룰 ${result.clusterUpdated}개 적용` })
         await loadData()
       } catch (err) {
@@ -1360,6 +1430,18 @@ function MappingRulesTab() {
               <p className="text-xs text-gray-500">
                 노드 이름에 키워드가 포함되면 해당 컴포넌트로 자동 매핑됩니다. (대소문자 무시)
               </p>
+
+              {/* 초기화 버튼 */}
+              <div className="pt-2 border-t border-gray-700">
+                <button
+                  onClick={handleReset}
+                  disabled={loading}
+                  className="px-3 py-1.5 text-xs bg-gray-600 hover:bg-gray-500 text-white rounded disabled:opacity-50"
+                >
+                  {loading ? '초기화 중...' : '기본값으로 초기화'}
+                </button>
+                <span className="ml-2 text-xs text-gray-500">모든 규칙을 삭제하고 기본값으로 복원합니다.</span>
+              </div>
             </>
           )}
         </div>
@@ -1399,7 +1481,7 @@ function MappingRulesTab() {
   )
 }
 
-export default function SettingsModal({ isOpen, onClose, token, onSaveToken }: SettingsModalProps) {
+export default function SettingsModal({ isOpen, onClose, onSaveToken, onCssChange, projectId, projectName }: SettingsModalProps) {
   const [activeTab, setActiveTab] = useState<TabType>('basic')
 
   // 모달 열릴 때 기본 탭으로 리셋
@@ -1430,7 +1512,12 @@ export default function SettingsModal({ isOpen, onClose, token, onSaveToken }: S
       <div className="relative theme-bg-secondary rounded-lg shadow-xl w-full max-w-lg mx-4 max-h-[85vh] flex flex-col">
         {/* 헤더 */}
         <div className="flex items-center justify-between px-6 pt-6 pb-4">
-          <h2 className="text-lg font-semibold theme-text-primary">설정</h2>
+          <div>
+            <h2 className="text-lg font-semibold theme-text-primary">설정</h2>
+            {projectId && projectName && (
+              <p className="text-sm theme-text-secondary mt-1">프로젝트: {projectName}</p>
+            )}
+          </div>
           <button
             onClick={onClose}
             className="theme-text-secondary hover:theme-text-primary p-1"
@@ -1461,11 +1548,11 @@ export default function SettingsModal({ isOpen, onClose, token, onSaveToken }: S
         {/* 탭 컨텐츠 */}
         <div className="p-6 flex-1 overflow-auto">
           {activeTab === 'basic' && (
-            <BasicTab token={token} onSaveToken={onSaveToken} onClose={onClose} />
+            <BasicTab onSaveToken={onSaveToken} onClose={onClose} projectId={projectId} />
           )}
-          {activeTab === 'components' && <ComponentsTab />}
-          {activeTab === 'css' && <CssTab />}
-          {activeTab === 'mappingRules' && <MappingRulesTab />}
+          {activeTab === 'components' && <ComponentsTab projectId={projectId} />}
+          {activeTab === 'css' && <CssTab projectId={projectId} onCssChange={onCssChange} />}
+          {activeTab === 'mappingRules' && <MappingRulesTab projectId={projectId} />}
         </div>
       </div>
     </div>

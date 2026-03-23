@@ -1,8 +1,8 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
 import type { FigmaNode } from '../types/figma'
 import type { RegistryItem, NodeMapping } from '../utils/api'
-import { fetchRegistry, fetchMapping, saveMapping, deleteMapping } from '../utils/api'
-import { loadSavedCssList, loadComponentClassMapping, type CssItem, type ComponentClassMapping } from './SettingsModal'
+import { fetchRegistry, fetchMapping, saveMapping, deleteMapping, fetchProjectSettings } from '../utils/api'
+import { type CssItem, type ComponentClassMapping } from './SettingsModal'
 import { findTextInChildren, collectAllTexts, collectTopLevelTexts } from '../utils/text-utils'
 
 interface MappingEditorProps {
@@ -10,13 +10,15 @@ interface MappingEditorProps {
   nodes: FigmaNode[]  // 다중 선택 (일괄 적용용)
   fileKey: string | null
   rootNodeId: string | null  // 등록된 최상위 노드 ID
+  projectId: string | null  // 프로젝트 ID (CSS 설정 로드용)
+  cssRefreshKey?: number  // CSS 새로고침 트리거
   onRegistryLoad?: (registry: RegistryItem[]) => void
   onMappingChange?: () => void
 }
 
 
 
-export default function MappingEditor({ node, nodes, fileKey, rootNodeId, onRegistryLoad, onMappingChange }: MappingEditorProps) {
+export default function MappingEditor({ node, nodes, fileKey, rootNodeId, projectId, cssRefreshKey, onRegistryLoad, onMappingChange }: MappingEditorProps) {
   const [registry, setRegistry] = useState<RegistryItem[]>([])
   const [mapping, setMapping] = useState<NodeMapping | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
@@ -35,21 +37,44 @@ export default function MappingEditor({ node, nodes, fileKey, rootNodeId, onRegi
   const dropdownRef = useRef<HTMLDivElement>(null)
   const splitContainerRef = useRef<HTMLDivElement>(null)
 
-  // CSS 목록 및 매핑 로드
+  // CSS 목록 및 매핑 로드 (프로젝트 설정에서)
   useEffect(() => {
-    const list = loadSavedCssList()
-    setCssList(list)
-    setComponentClassMapping(loadComponentClassMapping())
-    if (list.length > 0 && !selectedCssId) {
-      setSelectedCssId(list[0].id)
+    const loadCssSettings = async () => {
+      if (!projectId) {
+        setCssList([])
+        setComponentClassMapping({})
+        return
+      }
+      try {
+        const settings = await fetchProjectSettings(projectId)
+        const cssListData = settings['css-list']
+        const classMappingData = settings['css-class-mapping']
+
+        const list: CssItem[] = cssListData ? JSON.parse(cssListData) : []
+        const mapping: ComponentClassMapping = classMappingData ? JSON.parse(classMappingData) : {}
+
+        setCssList(list)
+        setComponentClassMapping(mapping)
+        if (list.length > 0 && !selectedCssId) {
+          setSelectedCssId(list[0].id)
+        }
+      } catch {
+        setCssList([])
+        setComponentClassMapping({})
+      }
     }
-  }, [])
+    loadCssSettings()
+  }, [projectId, cssRefreshKey])
 
   // 레지스트리 로드
   useEffect(() => {
     const load = async () => {
+      if (!projectId) {
+        setRegistry([])
+        return
+      }
       try {
-        const items = await fetchRegistry()
+        const items = await fetchRegistry(projectId)
         setRegistry(items)
         onRegistryLoad?.(items)
       } catch {
@@ -57,11 +82,11 @@ export default function MappingEditor({ node, nodes, fileKey, rootNodeId, onRegi
       }
     }
     load()
-  }, [])
+  }, [projectId])
 
   // 노드 변경 시 매핑 로드
   useEffect(() => {
-    if (!node || !fileKey) {
+    if (!node || !fileKey || !projectId) {
       setMapping(null)
       return
     }
@@ -69,7 +94,7 @@ export default function MappingEditor({ node, nodes, fileKey, rootNodeId, onRegi
     const load = async () => {
       setLoading(true)
       try {
-        const m = await fetchMapping(fileKey, node.id, rootNodeId)
+        const m = await fetchMapping(projectId, fileKey, node.id, rootNodeId)
         setMapping(m)
       } catch {
         setMapping(null)
@@ -78,7 +103,7 @@ export default function MappingEditor({ node, nodes, fileKey, rootNodeId, onRegi
       }
     }
     load()
-  }, [node?.id, fileKey, rootNodeId])
+  }, [node?.id, fileKey, rootNodeId, projectId])
 
   // 매핑 변경 시 바인딩된 클래스가 있는 CSS 파일 우선 선택, 없으면 첫 번째 파일
   useEffect(() => {
@@ -97,7 +122,7 @@ export default function MappingEditor({ node, nodes, fileKey, rootNodeId, onRegi
 
   // 컴포넌트 선택 (다중 노드 지원)
   const handleSelectComponent = async (item: RegistryItem) => {
-    if (!fileKey) return
+    if (!fileKey || !projectId) return
     const targetNodes = nodes.length > 0 ? nodes : (node ? [node] : [])
     if (targetNodes.length === 0) return
 
@@ -106,6 +131,7 @@ export default function MappingEditor({ node, nodes, fileKey, rootNodeId, onRegi
       let lastMapping: NodeMapping | null = null
       for (const n of targetNodes) {
         lastMapping = await saveMapping({
+          projectId,
           figmaFileKey: fileKey,
           figmaRootNodeId: rootNodeId,
           figmaNodeId: n.id,
@@ -131,14 +157,14 @@ export default function MappingEditor({ node, nodes, fileKey, rootNodeId, onRegi
 
   // 매핑 해제 (다중 노드 지원)
   const handleClearMapping = async () => {
-    if (!fileKey) return
+    if (!fileKey || !projectId) return
     const targetNodes = nodes.length > 0 ? nodes : (node ? [node] : [])
     if (targetNodes.length === 0) return
 
     setSaving(true)
     try {
       for (const n of targetNodes) {
-        await deleteMapping(fileKey, n.id, rootNodeId)
+        await deleteMapping(projectId, fileKey, n.id, rootNodeId)
       }
       setMapping(null)
       onMappingChange?.()
@@ -151,7 +177,7 @@ export default function MappingEditor({ node, nodes, fileKey, rootNodeId, onRegi
 
   // 클래스 토글 (다중 노드 지원)
   const handleToggleClass = async (className: string) => {
-    if (!fileKey || !mapping) return
+    if (!fileKey || !projectId || !mapping) return
     const targetNodes = nodes.length > 0 ? nodes : (node ? [node] : [])
     if (targetNodes.length === 0) return
 
@@ -160,7 +186,7 @@ export default function MappingEditor({ node, nodes, fileKey, rootNodeId, onRegi
       let lastMapping: NodeMapping | null = null
       for (const n of targetNodes) {
         // 각 노드의 기존 매핑 가져오기
-        const nodeMapping = await fetchMapping(fileKey, n.id, rootNodeId)
+        const nodeMapping = await fetchMapping(projectId, fileKey, n.id, rootNodeId)
         if (nodeMapping) {
           const nodeCurrentClasses = (nodeMapping.customAttrs?.class || '').split(' ').filter(Boolean)
           const nodeNewClasses = nodeCurrentClasses.includes(className)
@@ -168,6 +194,7 @@ export default function MappingEditor({ node, nodes, fileKey, rootNodeId, onRegi
             : [...nodeCurrentClasses, className]
 
           lastMapping = await saveMapping({
+            projectId,
             figmaFileKey: fileKey,
             figmaRootNodeId: rootNodeId,
             figmaNodeId: n.id,
@@ -186,7 +213,7 @@ export default function MappingEditor({ node, nodes, fileKey, rootNodeId, onRegi
       } else {
         // 다중 선택 시 첫 번째 노드의 매핑 다시 로드
         if (node) {
-          const m = await fetchMapping(fileKey, node.id, rootNodeId)
+          const m = await fetchMapping(projectId, fileKey, node.id, rootNodeId)
           setMapping(m)
         }
       }
@@ -200,7 +227,7 @@ export default function MappingEditor({ node, nodes, fileKey, rootNodeId, onRegi
 
   // 속성 추가 (다중 노드 지원)
   const handleAddAttribute = async () => {
-    if (!fileKey || !mapping || !newAttrKey.trim()) return
+    if (!fileKey || !projectId || !mapping || !newAttrKey.trim()) return
     const targetNodes = nodes.length > 0 ? nodes : (node ? [node] : [])
     if (targetNodes.length === 0) return
 
@@ -208,13 +235,14 @@ export default function MappingEditor({ node, nodes, fileKey, rootNodeId, onRegi
     try {
       let lastMapping: NodeMapping | null = null
       for (const n of targetNodes) {
-        const nodeMapping = await fetchMapping(fileKey, n.id, rootNodeId)
+        const nodeMapping = await fetchMapping(projectId, fileKey, n.id, rootNodeId)
         if (nodeMapping) {
           const nodeNewAttrs = {
             ...nodeMapping.customAttrs,
             [newAttrKey.trim()]: newAttrValue
           }
           lastMapping = await saveMapping({
+            projectId,
             figmaFileKey: fileKey,
             figmaRootNodeId: rootNodeId,
             figmaNodeId: n.id,
@@ -232,7 +260,7 @@ export default function MappingEditor({ node, nodes, fileKey, rootNodeId, onRegi
       if (lastMapping && targetNodes.length === 1) {
         setMapping(lastMapping)
       } else if (node) {
-        const m = await fetchMapping(fileKey, node.id, rootNodeId)
+        const m = await fetchMapping(projectId, fileKey, node.id, rootNodeId)
         setMapping(m)
       }
 
@@ -248,7 +276,7 @@ export default function MappingEditor({ node, nodes, fileKey, rootNodeId, onRegi
 
   // 속성 삭제
   const handleRemoveAttribute = async (key: string) => {
-    if (!fileKey || !mapping) return
+    if (!fileKey || !projectId || !mapping) return
     const targetNodes = nodes.length > 0 ? nodes : (node ? [node] : [])
     if (targetNodes.length === 0) return
 
@@ -256,10 +284,11 @@ export default function MappingEditor({ node, nodes, fileKey, rootNodeId, onRegi
     try {
       let lastMapping: NodeMapping | null = null
       for (const n of targetNodes) {
-        const nodeMapping = await fetchMapping(fileKey, n.id, rootNodeId)
+        const nodeMapping = await fetchMapping(projectId, fileKey, n.id, rootNodeId)
         if (nodeMapping) {
           const { [key]: _, ...restAttrs } = nodeMapping.customAttrs || {}
           lastMapping = await saveMapping({
+            projectId,
             figmaFileKey: fileKey,
             figmaRootNodeId: rootNodeId,
             figmaNodeId: n.id,
@@ -277,7 +306,7 @@ export default function MappingEditor({ node, nodes, fileKey, rootNodeId, onRegi
       if (lastMapping && targetNodes.length === 1) {
         setMapping(lastMapping)
       } else if (node) {
-        const m = await fetchMapping(fileKey, node.id, rootNodeId)
+        const m = await fetchMapping(projectId, fileKey, node.id, rootNodeId)
         setMapping(m)
       }
 
@@ -499,7 +528,7 @@ export default function MappingEditor({ node, nodes, fileKey, rootNodeId, onRegi
 
               // colspan/rowspan 값 업데이트 핸들러
               const handleSpanChange = async (attrKey: 'colspan' | 'rowspan', value: string) => {
-                if (!fileKey || !mapping) return
+                if (!fileKey || !projectId || !mapping) return
                 const targetNodes = nodes.length > 0 ? nodes : (node ? [node] : [])
                 if (targetNodes.length === 0) return
 
@@ -507,7 +536,7 @@ export default function MappingEditor({ node, nodes, fileKey, rootNodeId, onRegi
                 try {
                   let lastMapping: NodeMapping | null = null
                   for (const n of targetNodes) {
-                    const nodeMapping = await fetchMapping(fileKey, n.id, rootNodeId)
+                    const nodeMapping = await fetchMapping(projectId, fileKey, n.id, rootNodeId)
                     if (nodeMapping) {
                       const newAttrs = { ...nodeMapping.customAttrs }
                       if (value && value !== '1') {
@@ -516,6 +545,7 @@ export default function MappingEditor({ node, nodes, fileKey, rootNodeId, onRegi
                         delete newAttrs[attrKey]
                       }
                       lastMapping = await saveMapping({
+                        projectId,
                         figmaFileKey: fileKey,
                         figmaRootNodeId: rootNodeId,
                         figmaNodeId: n.id,
@@ -532,7 +562,7 @@ export default function MappingEditor({ node, nodes, fileKey, rootNodeId, onRegi
                   if (lastMapping && targetNodes.length === 1) {
                     setMapping(lastMapping)
                   } else if (node) {
-                    const m = await fetchMapping(fileKey, node.id, rootNodeId)
+                    const m = await fetchMapping(projectId, fileKey, node.id, rootNodeId)
                     setMapping(m)
                   }
                   onMappingChange?.()

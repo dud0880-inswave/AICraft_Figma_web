@@ -50,12 +50,12 @@ function formatXml(xml: string): string {
 
 
 import type { RegistryItem } from '../utils/api'
-import { fetchMappings, updateFigmaFileCompleted, generateClusters, exportXml, saveFigmaFileData } from '../utils/api'
-import { loadSavedCssList, loadXmlExportPath } from './SettingsModal'
+import { fetchMappings, updateFigmaFileCompleted, generateClusters, exportXml, saveFigmaFileData, fetchProjectSettings } from '../utils/api'
 
 interface ConvertedCodeEditorProps {
   fileKey: string | null
   nodeId: string | null  // 특정 노드 ID (완료 상태 저장용)
+  projectId: string | null  // 프로젝트 ID (클러스터 생성용)
   rootNode: FigmaNode | null
   registry: RegistryItem[]
   visible: boolean
@@ -123,6 +123,7 @@ function countMaxColumnsInTable(
 export default function ConvertedCodeEditor({
   fileKey,
   nodeId,
+  projectId,
   rootNode,
   document,
   registry,
@@ -141,20 +142,46 @@ export default function ConvertedCodeEditor({
   const [completing, setCompleting] = useState(false)
   const [saving, setSaving] = useState(false)
   const [saveMessage, setSaveMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
+  const [cssContents, setCssContents] = useState<string[]>([])
   const iframeRef = useRef<HTMLIFrameElement>(null)
+
+  // 프로젝트 설정에서 CSS 목록 로드
+  useEffect(() => {
+    const loadCss = async () => {
+      if (!projectId) {
+        setCssContents([])
+        return
+      }
+      try {
+        const settings = await fetchProjectSettings(projectId)
+        const cssListData = settings['css-list']
+        if (cssListData) {
+          const cssList = JSON.parse(cssListData) as Array<{ content: string }>
+          setCssContents(cssList.map(item => item.content))
+        } else {
+          setCssContents([])
+        }
+      } catch {
+        setCssContents([])
+      }
+    }
+    loadCss()
+  }, [projectId])
 
   // 완료 처리
   const handleComplete = async () => {
-    if (!fileKey) return
+    if (!fileKey || !projectId) return
     setCompleting(true)
     try {
-      await updateFigmaFileCompleted(fileKey, nodeId, true)
+      await updateFigmaFileCompleted(projectId, fileKey, nodeId, true)
       // 현재 document 저장 후 클러스터 생성
       try {
-        if (document) {
-          await saveFigmaFileData(fileKey, nodeId, document)
+        if (document && projectId) {
+          await saveFigmaFileData(projectId, fileKey, nodeId, document)
         }
-        await generateClusters(fileKey, nodeId)
+        if (projectId) {
+          await generateClusters(projectId)
+        }
       } catch (e) {
         console.error('Failed to generate clusters:', e)
       }
@@ -170,16 +197,32 @@ export default function ConvertedCodeEditor({
   const handleSaveXml = async () => {
     if (!convertedCode || !rootNode) return
 
-    const exportPath = loadXmlExportPath()
-    if (!exportPath) {
-      setSaveMessage({ type: 'error', text: '설정에서 XML Export 경로를 지정해주세요' })
-      setTimeout(() => setSaveMessage(null), 3000)
-      return
-    }
-
     setSaving(true)
     setSaveMessage(null)
     try {
+      // 프로젝트 설정에서 XML export 경로 가져오기
+      if (!projectId) {
+        setSaveMessage({ type: 'error', text: '프로젝트를 선택해주세요' })
+        setTimeout(() => setSaveMessage(null), 3000)
+        setSaving(false)
+        return
+      }
+
+      let exportPath: string | null = null
+      try {
+        const settings = await fetchProjectSettings(projectId)
+        exportPath = settings['xml-export-path'] || null
+      } catch {
+        exportPath = null
+      }
+
+      if (!exportPath) {
+        setSaveMessage({ type: 'error', text: '설정에서 XML Export 경로를 지정해주세요' })
+        setTimeout(() => setSaveMessage(null), 3000)
+        setSaving(false)
+        return
+      }
+
       // 파일명 생성: 노드 이름 기반
       const filename = rootNode.name.replace(/[<>:"/\\|?*]/g, '_')
       const result = await exportXml(convertedCode, filename, exportPath)
@@ -231,9 +274,6 @@ export default function ConvertedCodeEditor({
   useEffect(() => {
     if (activeTab === 'preview' && convertedCode && iframeReady && iframeRef.current?.contentWindow) {
       const timer = setTimeout(() => {
-        const cssList = loadSavedCssList()
-        const cssContents = cssList.map(item => item.content)
-
         iframeRef.current?.contentWindow?.postMessage(
           { event: 'previewFrame.sendXML', xml: convertedCode, css: cssContents },
           '*'
@@ -241,7 +281,7 @@ export default function ConvertedCodeEditor({
       }, 100)
       return () => clearTimeout(timer)
     }
-  }, [activeTab, convertedCode, iframeReady])
+  }, [activeTab, convertedCode, iframeReady, cssContents])
 
   // WebSquare 미리보기 렌더링 (iframe postMessage 방식)
   const renderPreview = useCallback(() => {
@@ -258,24 +298,20 @@ export default function ConvertedCodeEditor({
     setPreviewLoading(true)
     setPreviewError(null)
 
-    // 설정에서 CSS 목록 가져오기
-    const cssList = loadSavedCssList()
-    const cssContents = cssList.map(item => item.content)
-
     iframeRef.current.contentWindow.postMessage(
       { event: 'previewFrame.sendXML', xml: convertedCode, css: cssContents },
       '*'
     )
-  }, [convertedCode, iframeReady])
+  }, [convertedCode, iframeReady, cssContents])
 
   // 변환 실행
   const handleConvert = async () => {
-    if (!fileKey || !rootNode) return
+    if (!fileKey || !rootNode || !projectId) return
 
     setConverting(true)
     try {
       // 모든 매핑 가져오기
-      const allMappings = await fetchMappings(fileKey, nodeId)
+      const allMappings = await fetchMappings(projectId, fileKey, nodeId)
       const mappingMap = new Map(allMappings.map(m => [m.figmaNodeId, m]))
 
       // 트리 순회하며 계층 구조로 코드 생성

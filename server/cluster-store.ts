@@ -13,6 +13,7 @@ export interface MappingCluster {
   customAttrs: Record<string, string>;
   sampleCount: number;
   source: 'generated' | 'imported';
+  projectId: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -114,6 +115,21 @@ export class ClusterStore {
     return row ? toCluster(row) : null;
   }
 
+  // 시그니처 + 프로젝트로 클러스터 조회
+  getBySignatureAndProject(signature: string, projectId: string | null): MappingCluster | null {
+    let row: RawCluster | undefined;
+    if (projectId) {
+      row = this.db.prepare(
+        'SELECT * FROM mapping_clusters WHERE signature = ? AND project_id = ?'
+      ).get(signature, projectId) as RawCluster | undefined;
+    } else {
+      row = this.db.prepare(
+        'SELECT * FROM mapping_clusters WHERE signature = ? AND project_id IS NULL'
+      ).get(signature) as RawCluster | undefined;
+    }
+    return row ? toCluster(row) : null;
+  }
+
   // 여러 시그니처로 클러스터 일괄 조회
   getBySignatures(signatures: string[]): MappingCluster[] {
     if (signatures.length === 0) return [];
@@ -134,15 +150,25 @@ export class ClusterStore {
     return rows.map(toCluster);
   }
 
+  // 프로젝트별 클러스터 목록
+  listByProject(projectId: string): MappingCluster[] {
+    const rows = this.db.prepare(
+      'SELECT * FROM mapping_clusters WHERE project_id = ? ORDER BY sample_count DESC, updated_at DESC'
+    ).all(projectId) as RawCluster[];
+    return rows.map(toCluster);
+  }
+
   // 클러스터 생성 또는 업데이트 (sample_count 증가) — source: 'generated'
   upsert(
     signatureData: SignatureData,
     registryId: string,
     registryName: string,
-    customAttrs: Record<string, string> = {}
+    customAttrs: Record<string, string> = {},
+    projectId: string | null = null
   ): MappingCluster {
     const signature = this.createSignatureHash(signatureData);
-    const existing = this.getBySignature(signature);
+    // 프로젝트 + 시그니처 조합으로 조회
+    const existing = this.getBySignatureAndProject(signature, projectId);
     const now = new Date().toISOString();
 
     if (existing) {
@@ -154,21 +180,21 @@ export class ClusterStore {
           sample_count = sample_count + 1,
           source = 'generated',
           updated_at = ?
-        WHERE signature = ?
+        WHERE id = ?
       `).run(
         registryId,
         registryName,
         JSON.stringify(customAttrs),
         now,
-        signature
+        existing.id
       );
-      return this.getBySignature(signature)!;
+      return this.get(existing.id)!;
     } else {
       const id = randomUUID();
       this.db.prepare(`
         INSERT INTO mapping_clusters
-          (id, signature, signature_data, registry_id, registry_name, custom_attrs, sample_count, source, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, 1, 'generated', ?, ?)
+          (id, signature, signature_data, registry_id, registry_name, custom_attrs, sample_count, source, project_id, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, 1, 'generated', ?, ?, ?)
       `).run(
         id,
         signature,
@@ -176,10 +202,11 @@ export class ClusterStore {
         registryId,
         registryName,
         JSON.stringify(customAttrs),
+        projectId,
         now,
         now
       );
-      return this.getBySignature(signature)!;
+      return this.get(id)!;
     }
   }
 
@@ -192,8 +219,19 @@ export class ClusterStore {
   }
 
   // generated 클러스터만 삭제 (imported는 유지)
-  deleteGenerated(): number {
-    const result = this.db.prepare("DELETE FROM mapping_clusters WHERE source = 'generated'").run();
+  deleteGenerated(projectId?: string): number {
+    if (projectId) {
+      const result = this.db.prepare("DELETE FROM mapping_clusters WHERE source = 'generated' AND project_id = ?").run(projectId);
+      return result.changes;
+    } else {
+      const result = this.db.prepare("DELETE FROM mapping_clusters WHERE source = 'generated'").run();
+      return result.changes;
+    }
+  }
+
+  // 프로젝트별 클러스터 삭제
+  deleteByProject(projectId: string): number {
+    const result = this.db.prepare('DELETE FROM mapping_clusters WHERE project_id = ?').run(projectId);
     return result.changes;
   }
 
@@ -214,6 +252,7 @@ interface RawCluster {
   custom_attrs: string;
   sample_count: number;
   source: 'generated' | 'imported';
+  project_id: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -228,6 +267,7 @@ function toCluster(r: RawCluster): MappingCluster {
     customAttrs: JSON.parse(r.custom_attrs),
     sampleCount: r.sample_count,
     source: r.source ?? 'generated',
+    projectId: r.project_id,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
   };
