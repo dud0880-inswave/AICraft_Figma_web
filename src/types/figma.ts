@@ -32,6 +32,7 @@ export interface FigmaNode {
   style?: TypeStyle
   componentId?: string
   componentProperties?: Record<string, { value: string; type: string }>
+  layoutMode?: 'NONE' | 'HORIZONTAL' | 'VERTICAL'
 }
 
 export interface BoundingBox {

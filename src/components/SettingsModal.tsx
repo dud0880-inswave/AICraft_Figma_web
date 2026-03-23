@@ -1,6 +1,16 @@
 import { useState, useEffect } from 'react'
-import { fetchRegistry, createRegistryItem, updateRegistryItem, deleteRegistryItem, exportMappingRules, importMappingRules } from '../utils/api'
-import type { RegistryItem, MappingRulesJson } from '../utils/api'
+import {
+  fetchRegistry,
+  createRegistryItem,
+  updateRegistryItem,
+  deleteRegistryItem,
+  exportMappingRules,
+  importMappingRules,
+  fetchDefaultMappingRulesGrouped,
+  createDefaultMappingRule,
+  deleteDefaultMappingRule,
+} from '../utils/api'
+import type { RegistryItem, MappingRulesJson, DefaultMappingRuleGrouped } from '../utils/api'
 import { useTheme } from '../contexts/ThemeContext'
 
 interface SettingsModalProps {
@@ -1036,9 +1046,108 @@ function CssTab() {
 }
 
 // ---- 매핑룰 탭 ----
+type MappingRulesSubView = 'default' | 'export'
+
 function MappingRulesTab() {
+  const [subView, setSubView] = useState<MappingRulesSubView>('default')
   const [status, setStatus] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
   const [loading, setLoading] = useState(false)
+
+  // Default mapping rules state
+  const [defaultRules, setDefaultRules] = useState<DefaultMappingRuleGrouped[]>([])
+  const [registry, setRegistry] = useState<RegistryItem[]>([])
+  const [rulesLoading, setRulesLoading] = useState(true)
+  const [expandedComponents, setExpandedComponents] = useState<Set<string>>(new Set())
+  const [newKeyword, setNewKeyword] = useState<{ [registryId: string]: string }>({})
+  const [showAddComponent, setShowAddComponent] = useState(false)
+  const [selectedNewComponent, setSelectedNewComponent] = useState<string>('')
+
+  // 데이터 로드
+  const loadData = async () => {
+    setRulesLoading(true)
+    try {
+      const [rules, reg] = await Promise.all([
+        fetchDefaultMappingRulesGrouped(),
+        fetchRegistry(),
+      ])
+      setDefaultRules(rules)
+      setRegistry(reg)
+    } catch {
+      setStatus({ type: 'error', text: '데이터 로드 실패' })
+    } finally {
+      setRulesLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    loadData()
+  }, [])
+
+  // 컴포넌트 확장/축소 토글
+  const toggleExpand = (registryId: string) => {
+    setExpandedComponents(prev => {
+      const next = new Set(prev)
+      if (next.has(registryId)) {
+        next.delete(registryId)
+      } else {
+        next.add(registryId)
+      }
+      return next
+    })
+  }
+
+  // 키워드 추가
+  const handleAddKeyword = async (registryId: string) => {
+    const keyword = newKeyword[registryId]?.trim()
+    if (!keyword) return
+
+    try {
+      await createDefaultMappingRule({ registryId, keyword })
+      setNewKeyword(prev => ({ ...prev, [registryId]: '' }))
+      await loadData()
+      setStatus({ type: 'success', text: `키워드 "${keyword}" 추가됨` })
+    } catch (err) {
+      setStatus({ type: 'error', text: err instanceof Error ? err.message : '추가 실패' })
+    }
+  }
+
+  // 키워드 삭제
+  const handleDeleteKeyword = async (ruleId: string, keyword: string) => {
+    try {
+      await deleteDefaultMappingRule(ruleId)
+      await loadData()
+      setStatus({ type: 'success', text: `키워드 "${keyword}" 삭제됨` })
+    } catch {
+      setStatus({ type: 'error', text: '삭제 실패' })
+    }
+  }
+
+  // 새 컴포넌트 추가 (첫 키워드와 함께)
+  const handleAddNewComponent = async () => {
+    if (!selectedNewComponent) return
+    const keyword = newKeyword[selectedNewComponent]?.trim()
+    if (!keyword) {
+      setStatus({ type: 'error', text: '키워드를 입력하세요' })
+      return
+    }
+
+    try {
+      await createDefaultMappingRule({ registryId: selectedNewComponent, keyword })
+      setNewKeyword(prev => ({ ...prev, [selectedNewComponent]: '' }))
+      setShowAddComponent(false)
+      setSelectedNewComponent('')
+      setExpandedComponents(prev => new Set(prev).add(selectedNewComponent))
+      await loadData()
+      setStatus({ type: 'success', text: '컴포넌트 규칙 추가됨' })
+    } catch (err) {
+      setStatus({ type: 'error', text: err instanceof Error ? err.message : '추가 실패' })
+    }
+  }
+
+  // 규칙이 없는 컴포넌트 목록
+  const componentsWithoutRules = registry.filter(
+    r => !defaultRules.some(dr => dr.registryId === r.id)
+  )
 
   const handleExport = async () => {
     try {
@@ -1070,6 +1179,7 @@ function MappingRulesTab() {
         if (data.version !== 1) throw new Error('지원하지 않는 버전')
         const result = await importMappingRules(data)
         setStatus({ type: 'success', text: `가져오기 완료 — 기본규칙 ${result.defaultAdded}개 추가, 커스텀룰 ${result.clusterUpdated}개 적용` })
+        await loadData()
       } catch (err) {
         setStatus({ type: 'error', text: err instanceof Error ? err.message : '가져오기 실패' })
       } finally {
@@ -1081,38 +1191,208 @@ function MappingRulesTab() {
   }
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h3 className="text-sm font-medium theme-text-primary mb-1">매핑룰 내보내기</h3>
-        <p className="text-xs theme-text-secondary mb-3">기본 매핑 규칙과 커스텀 매핑 규칙을 JSON 파일로 저장합니다.</p>
+    <div className="space-y-4">
+      {/* 서브 탭 */}
+      <div className="flex gap-2">
         <button
-          onClick={handleExport}
-          disabled={loading}
-          className="px-4 py-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-sm rounded"
+          onClick={() => setSubView('default')}
+          className={`px-3 py-1 text-sm rounded ${
+            subView === 'default' ? 'bg-blue-600 text-white' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+          }`}
         >
-          {loading ? '처리 중...' : '다운로드'}
+          기본 매핑 규칙
+        </button>
+        <button
+          onClick={() => setSubView('export')}
+          className={`px-3 py-1 text-sm rounded ${
+            subView === 'export' ? 'bg-blue-600 text-white' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+          }`}
+        >
+          내보내기/가져오기
         </button>
       </div>
 
-      <div className="border-t theme-border pt-6">
-        <h3 className="text-sm font-medium theme-text-primary mb-1">매핑룰 가져오기</h3>
-        <p className="text-xs theme-text-secondary mb-3">JSON 파일을 불러와 규칙을 적용합니다. 기본규칙은 중복 키워드를 건너뛰고, 커스텀룰은 시그니처 기준으로 덮어씁니다.</p>
-        <label className="px-4 py-2 bg-green-600 hover:bg-green-500 text-white text-sm rounded cursor-pointer inline-block">
-          파일 선택
-          <input
-            type="file"
-            accept=".json"
-            className="hidden"
-
-            onChange={handleImport}
-            disabled={loading}
-          />
-        </label>
-      </div>
-
+      {/* 상태 메시지 */}
       {status && (
         <div className={`text-sm px-3 py-2 rounded ${status.type === 'success' ? 'bg-green-900/30 text-green-400' : 'bg-red-900/30 text-red-400'}`}>
           {status.text}
+          <button onClick={() => setStatus(null)} className="ml-2 opacity-60 hover:opacity-100">×</button>
+        </div>
+      )}
+
+      {subView === 'default' && (
+        <div className="space-y-3">
+          {rulesLoading ? (
+            <div className="text-center text-gray-400 py-4">로딩 중...</div>
+          ) : (
+            <>
+              {/* 컴포넌트 추가 버튼 */}
+              {componentsWithoutRules.length > 0 && !showAddComponent && (
+                <button
+                  onClick={() => setShowAddComponent(true)}
+                  className="w-full px-3 py-2 border-2 border-dashed border-gray-600 rounded-lg text-sm text-gray-400 hover:border-gray-500 hover:text-gray-300"
+                >
+                  + 컴포넌트 규칙 추가
+                </button>
+              )}
+
+              {/* 새 컴포넌트 추가 폼 */}
+              {showAddComponent && (
+                <div className="border border-gray-600 rounded-lg p-3 bg-gray-700/30 space-y-2">
+                  <div className="flex items-center gap-2">
+                    <select
+                      value={selectedNewComponent}
+                      onChange={(e) => setSelectedNewComponent(e.target.value)}
+                      className="flex-1 px-3 py-2 bg-gray-700 border border-gray-600 rounded text-sm text-white"
+                    >
+                      <option value="">컴포넌트 선택...</option>
+                      {componentsWithoutRules.map(c => (
+                        <option key={c.id} value={c.id}>{c.name}</option>
+                      ))}
+                    </select>
+                    <button
+                      onClick={() => { setShowAddComponent(false); setSelectedNewComponent('') }}
+                      className="px-2 py-2 text-gray-400 hover:text-white"
+                    >
+                      ×
+                    </button>
+                  </div>
+                  {selectedNewComponent && (
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="text"
+                        value={newKeyword[selectedNewComponent] || ''}
+                        onChange={(e) => setNewKeyword(prev => ({ ...prev, [selectedNewComponent]: e.target.value }))}
+                        placeholder="첫 번째 키워드 입력"
+                        className="flex-1 px-3 py-2 bg-gray-700 border border-gray-600 rounded text-sm text-white"
+                        onKeyDown={(e) => e.key === 'Enter' && handleAddNewComponent()}
+                      />
+                      <button
+                        onClick={handleAddNewComponent}
+                        className="px-3 py-2 bg-blue-600 hover:bg-blue-500 text-white text-sm rounded"
+                      >
+                        추가
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* 규칙 목록 */}
+              <div className="border border-gray-700 rounded-lg max-h-64 overflow-y-auto">
+                {defaultRules.length === 0 ? (
+                  <div className="px-3 py-4 text-center text-gray-500 text-sm">
+                    등록된 기본 매핑 규칙이 없습니다
+                  </div>
+                ) : (
+                  defaultRules.map(group => {
+                    const isExpanded = expandedComponents.has(group.registryId)
+                    return (
+                      <div key={group.registryId} className="border-b border-gray-700 last:border-b-0">
+                        {/* 컴포넌트 헤더 */}
+                        <button
+                          onClick={() => toggleExpand(group.registryId)}
+                          className="w-full px-3 py-2 flex items-center justify-between hover:bg-gray-700/30"
+                        >
+                          <div className="flex items-center gap-2">
+                            <svg
+                              className={`w-4 h-4 text-gray-400 transition-transform ${isExpanded ? 'rotate-90' : ''}`}
+                              fill="none"
+                              stroke="currentColor"
+                              viewBox="0 0 24 24"
+                            >
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                            </svg>
+                            <span className="text-sm font-medium text-white">{group.registryName}</span>
+                          </div>
+                          <span className="text-xs bg-gray-600 px-2 py-0.5 rounded text-gray-300">
+                            {group.keywords.length}개 키워드
+                          </span>
+                        </button>
+
+                        {/* 키워드 목록 */}
+                        {isExpanded && (
+                          <div className="px-3 py-2 bg-gray-800/50 space-y-2">
+                            {/* 기존 키워드 */}
+                            <div className="flex flex-wrap gap-1">
+                              {group.rules.map(rule => (
+                                <span
+                                  key={rule.id}
+                                  className="inline-flex items-center gap-1 px-2 py-1 bg-gray-700 rounded text-sm text-gray-300"
+                                >
+                                  {rule.keyword}
+                                  <button
+                                    onClick={() => handleDeleteKeyword(rule.id, rule.keyword)}
+                                    className="text-gray-500 hover:text-red-400"
+                                  >
+                                    ×
+                                  </button>
+                                </span>
+                              ))}
+                            </div>
+
+                            {/* 키워드 추가 */}
+                            <div className="flex items-center gap-2">
+                              <input
+                                type="text"
+                                value={newKeyword[group.registryId] || ''}
+                                onChange={(e) => setNewKeyword(prev => ({ ...prev, [group.registryId]: e.target.value }))}
+                                placeholder="새 키워드..."
+                                className="flex-1 px-2 py-1 bg-gray-700 border border-gray-600 rounded text-sm text-white placeholder-gray-500"
+                                onKeyDown={(e) => e.key === 'Enter' && handleAddKeyword(group.registryId)}
+                              />
+                              <button
+                                onClick={() => handleAddKeyword(group.registryId)}
+                                disabled={!newKeyword[group.registryId]?.trim()}
+                                className="px-2 py-1 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-xs rounded"
+                              >
+                                추가
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })
+                )}
+              </div>
+
+              <p className="text-xs text-gray-500">
+                노드 이름에 키워드가 포함되면 해당 컴포넌트로 자동 매핑됩니다. (대소문자 무시)
+              </p>
+            </>
+          )}
+        </div>
+      )}
+
+      {subView === 'export' && (
+        <div className="space-y-6">
+          <div>
+            <h3 className="text-sm font-medium theme-text-primary mb-1">매핑룰 내보내기</h3>
+            <p className="text-xs theme-text-secondary mb-3">기본 매핑 규칙과 커스텀 매핑 규칙을 JSON 파일로 저장합니다.</p>
+            <button
+              onClick={handleExport}
+              disabled={loading}
+              className="px-4 py-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-sm rounded"
+            >
+              {loading ? '처리 중...' : '다운로드'}
+            </button>
+          </div>
+
+          <div className="border-t theme-border pt-6">
+            <h3 className="text-sm font-medium theme-text-primary mb-1">매핑룰 가져오기</h3>
+            <p className="text-xs theme-text-secondary mb-3">JSON 파일을 불러와 규칙을 적용합니다. 기본규칙은 중복 키워드를 건너뛰고, 커스텀룰은 시그니처 기준으로 덮어씁니다.</p>
+            <label className="px-4 py-2 bg-green-600 hover:bg-green-500 text-white text-sm rounded cursor-pointer inline-block">
+              파일 선택
+              <input
+                type="file"
+                accept=".json"
+                className="hidden"
+                onChange={handleImport}
+                disabled={loading}
+              />
+            </label>
+          </div>
         </div>
       )}
     </div>
@@ -1147,7 +1427,7 @@ export default function SettingsModal({ isOpen, onClose, token, onSaveToken }: S
       />
 
       {/* 모달 */}
-      <div className="relative theme-bg-secondary rounded-lg shadow-xl w-full max-w-lg mx-4">
+      <div className="relative theme-bg-secondary rounded-lg shadow-xl w-full max-w-lg mx-4 max-h-[85vh] flex flex-col">
         {/* 헤더 */}
         <div className="flex items-center justify-between px-6 pt-6 pb-4">
           <h2 className="text-lg font-semibold theme-text-primary">설정</h2>
@@ -1179,7 +1459,7 @@ export default function SettingsModal({ isOpen, onClose, token, onSaveToken }: S
         </div>
 
         {/* 탭 컨텐츠 */}
-        <div className="p-6">
+        <div className="p-6 flex-1 overflow-auto">
           {activeTab === 'basic' && (
             <BasicTab token={token} onSaveToken={onSaveToken} onClose={onClose} />
           )}

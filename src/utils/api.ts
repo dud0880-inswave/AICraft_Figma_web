@@ -331,6 +331,54 @@ export async function importMappingRules(data: MappingRulesJson): Promise<{ defa
   return res.json();
 }
 
+// ---- Default Mapping Rules CRUD ----
+
+export interface DefaultMappingRule {
+  id: string;
+  registryId: string;
+  keyword: string;
+  createdAt: string;
+}
+
+export interface DefaultMappingRuleGrouped {
+  registryId: string;
+  registryName: string;
+  keywords: string[];
+  rules: DefaultMappingRule[];
+}
+
+export async function fetchDefaultMappingRules(): Promise<DefaultMappingRule[]> {
+  const res = await fetch(`${API_BASE}/default-mapping-rules`);
+  if (!res.ok) throw new Error('Failed to fetch default mapping rules');
+  return res.json();
+}
+
+export async function fetchDefaultMappingRulesGrouped(): Promise<DefaultMappingRuleGrouped[]> {
+  const res = await fetch(`${API_BASE}/default-mapping-rules?grouped=true`);
+  if (!res.ok) throw new Error('Failed to fetch default mapping rules');
+  return res.json();
+}
+
+export async function createDefaultMappingRule(data: { registryId: string; keyword: string }): Promise<DefaultMappingRule> {
+  const res = await fetch(`${API_BASE}/default-mapping-rules`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) {
+    const err = await res.json();
+    throw new Error(err.error || 'Failed to create default mapping rule');
+  }
+  return res.json();
+}
+
+export async function deleteDefaultMappingRule(id: string): Promise<void> {
+  const res = await fetch(`${API_BASE}/default-mapping-rules/${id}`, {
+    method: 'DELETE',
+  });
+  if (!res.ok) throw new Error('Failed to delete default mapping rule');
+}
+
 // ---- XML Export API ----
 
 export async function exportXml(

@@ -82,20 +82,22 @@ export class DefaultMappingRulesStore {
   }
 
   // registry_id 별 그룹화 목록 (UI용)
-  listGrouped(): { registryId: string; registryName: string; keywords: string[] }[] {
+  listGrouped(): { registryId: string; registryName: string; keywords: string[]; rules: { id: string; keyword: string }[] }[] {
     const rows = this.db.prepare(`
-      SELECT dmr.registry_id, r.name as registry_name, dmr.keyword
+      SELECT dmr.id, dmr.registry_id, r.name as registry_name, dmr.keyword
       FROM default_mapping_rules dmr
       JOIN registry r ON r.id = dmr.registry_id
       ORDER BY r.name, LENGTH(dmr.keyword) DESC
-    `).all() as { registry_id: string; registry_name: string; keyword: string }[];
+    `).all() as { id: string; registry_id: string; registry_name: string; keyword: string }[];
 
-    const map = new Map<string, { registryId: string; registryName: string; keywords: string[] }>();
+    const map = new Map<string, { registryId: string; registryName: string; keywords: string[]; rules: { id: string; keyword: string }[] }>();
     for (const row of rows) {
       if (!map.has(row.registry_id)) {
-        map.set(row.registry_id, { registryId: row.registry_id, registryName: row.registry_name, keywords: [] });
+        map.set(row.registry_id, { registryId: row.registry_id, registryName: row.registry_name, keywords: [], rules: [] });
       }
-      map.get(row.registry_id)!.keywords.push(row.keyword);
+      const group = map.get(row.registry_id)!;
+      group.keywords.push(row.keyword);
+      group.rules.push({ id: row.id, keyword: row.keyword });
     }
     return Array.from(map.values());
   }

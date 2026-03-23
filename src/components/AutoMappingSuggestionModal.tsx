@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import type { AutoMappingSuggestion } from '../utils/api'
 
 interface AutoMappingSuggestionModalProps {
@@ -9,6 +9,9 @@ interface AutoMappingSuggestionModalProps {
   loading: boolean
 }
 
+// 고유 키 생성: nodeId + source 조합
+const getSuggestionKey = (s: AutoMappingSuggestion) => `${s.nodeId}::${s.source}`
+
 export default function AutoMappingSuggestionModal({
   isOpen,
   onClose,
@@ -16,35 +19,40 @@ export default function AutoMappingSuggestionModal({
   onApply,
   loading,
 }: AutoMappingSuggestionModalProps) {
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(
-    () => new Set(suggestions.map(s => s.nodeId))
+  const [selectedKeys, setSelectedKeys] = useState<Set<string>>(
+    () => new Set(suggestions.map(getSuggestionKey))
   )
 
-  // 소스별 분류
-  const clusterIds = useMemo(() => suggestions.filter(s => s.source === 'cluster').map(s => s.nodeId), [suggestions])
-  const defaultRuleIds = useMemo(() => suggestions.filter(s => s.source !== 'cluster').map(s => s.nodeId), [suggestions])
+  // suggestions가 변경되면 selectedKeys를 업데이트 (모든 제안 기본 선택)
+  useEffect(() => {
+    setSelectedKeys(new Set(suggestions.map(getSuggestionKey)))
+  }, [suggestions])
+
+  // 소스별 분류 (고유 키 기준)
+  const clusterKeys = useMemo(() => suggestions.filter(s => s.source === 'cluster').map(getSuggestionKey), [suggestions])
+  const defaultRuleKeys = useMemo(() => suggestions.filter(s => s.source !== 'cluster').map(getSuggestionKey), [suggestions])
 
   // 전체 선택 상태
   const allSelected = useMemo(() => {
-    return suggestions.length > 0 && selectedIds.size === suggestions.length
-  }, [suggestions, selectedIds])
+    return suggestions.length > 0 && selectedKeys.size === suggestions.length
+  }, [suggestions, selectedKeys])
 
   const someSelected = useMemo(() => {
-    return selectedIds.size > 0 && selectedIds.size < suggestions.length
-  }, [suggestions, selectedIds])
+    return selectedKeys.size > 0 && selectedKeys.size < suggestions.length
+  }, [suggestions, selectedKeys])
 
   // 소스별 선택 상태
-  const clusterAllSelected = useMemo(() => clusterIds.length > 0 && clusterIds.every(id => selectedIds.has(id)), [clusterIds, selectedIds])
-  const defaultRuleAllSelected = useMemo(() => defaultRuleIds.length > 0 && defaultRuleIds.every(id => selectedIds.has(id)), [defaultRuleIds, selectedIds])
+  const clusterAllSelected = useMemo(() => clusterKeys.length > 0 && clusterKeys.every(key => selectedKeys.has(key)), [clusterKeys, selectedKeys])
+  const defaultRuleAllSelected = useMemo(() => defaultRuleKeys.length > 0 && defaultRuleKeys.every(key => selectedKeys.has(key)), [defaultRuleKeys, selectedKeys])
 
   // 체크박스 토글
-  const toggleSelection = (nodeId: string) => {
-    setSelectedIds(prev => {
+  const toggleSelection = (key: string) => {
+    setSelectedKeys(prev => {
       const next = new Set(prev)
-      if (next.has(nodeId)) {
-        next.delete(nodeId)
+      if (next.has(key)) {
+        next.delete(key)
       } else {
-        next.add(nodeId)
+        next.add(key)
       }
       return next
     })
@@ -53,20 +61,20 @@ export default function AutoMappingSuggestionModal({
   // 전체 선택/해제
   const toggleAll = () => {
     if (allSelected) {
-      setSelectedIds(new Set())
+      setSelectedKeys(new Set())
     } else {
-      setSelectedIds(new Set(suggestions.map(s => s.nodeId)))
+      setSelectedKeys(new Set(suggestions.map(getSuggestionKey)))
     }
   }
 
   // 소스별 선택/해제
-  const toggleBySource = (ids: string[], allSelected: boolean) => {
-    setSelectedIds(prev => {
+  const toggleBySource = (keys: string[], allSelected: boolean) => {
+    setSelectedKeys(prev => {
       const next = new Set(prev)
       if (allSelected) {
-        ids.forEach(id => next.delete(id))
+        keys.forEach(key => next.delete(key))
       } else {
-        ids.forEach(id => next.add(id))
+        keys.forEach(key => next.add(key))
       }
       return next
     })
@@ -74,7 +82,7 @@ export default function AutoMappingSuggestionModal({
 
   // 적용
   const handleApply = () => {
-    const selected = suggestions.filter(s => selectedIds.has(s.nodeId))
+    const selected = suggestions.filter(s => selectedKeys.has(getSuggestionKey(s)))
     onApply(selected)
   }
 
@@ -123,81 +131,84 @@ export default function AutoMappingSuggestionModal({
                 className="w-4 h-4 rounded theme-border theme-bg-tertiary text-blue-500 focus:ring-blue-500"
               />
               <span className="text-sm text-gray-300">
-                전체 ({selectedIds.size}/{suggestions.length})
+                전체 ({selectedKeys.size}/{suggestions.length})
               </span>
             </label>
-            {clusterIds.length > 0 && (
+            {clusterKeys.length > 0 && (
               <button
                 type="button"
-                onClick={() => toggleBySource(clusterIds, clusterAllSelected)}
+                onClick={() => toggleBySource(clusterKeys, clusterAllSelected)}
                 className={`text-xs px-2 py-1 rounded transition-colors ${
                   clusterAllSelected
                     ? 'bg-purple-600 text-white'
                     : 'bg-purple-900/30 text-purple-300 hover:bg-purple-900/50'
                 }`}
               >
-                클러스터 {clusterAllSelected ? '해제' : '전체선택'} ({clusterIds.filter(id => selectedIds.has(id)).length}/{clusterIds.length})
+                클러스터 {clusterAllSelected ? '해제' : '전체선택'} ({clusterKeys.filter(key => selectedKeys.has(key)).length}/{clusterKeys.length})
               </button>
             )}
-            {defaultRuleIds.length > 0 && (
+            {defaultRuleKeys.length > 0 && (
               <button
                 type="button"
-                onClick={() => toggleBySource(defaultRuleIds, defaultRuleAllSelected)}
+                onClick={() => toggleBySource(defaultRuleKeys, defaultRuleAllSelected)}
                 className={`text-xs px-2 py-1 rounded transition-colors ${
                   defaultRuleAllSelected
                     ? 'bg-green-600 text-white'
                     : 'bg-green-900/30 text-green-300 hover:bg-green-900/50'
                 }`}
               >
-                기본규칙 {defaultRuleAllSelected ? '해제' : '전체선택'} ({defaultRuleIds.filter(id => selectedIds.has(id)).length}/{defaultRuleIds.length})
+                기본규칙 {defaultRuleAllSelected ? '해제' : '전체선택'} ({defaultRuleKeys.filter(key => selectedKeys.has(key)).length}/{defaultRuleKeys.length})
               </button>
             )}
           </div>
 
           {/* 제안 목록 */}
           <div className="space-y-2">
-            {suggestions.map(suggestion => (
-              <label
-                key={suggestion.nodeId}
-                className={`flex items-center gap-3 p-3 rounded-lg cursor-pointer transition-colors ${
-                  selectedIds.has(suggestion.nodeId)
-                    ? 'bg-blue-900/30 border border-blue-500/50'
-                    : 'theme-bg-tertiary border theme-border hover:opacity-80'
-                }`}
-              >
-                <input
-                  type="checkbox"
-                  checked={selectedIds.has(suggestion.nodeId)}
-                  onChange={() => toggleSelection(suggestion.nodeId)}
-                  className="w-4 h-4 rounded theme-border theme-bg-tertiary text-blue-500 focus:ring-blue-500"
-                />
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
-                    <span className="theme-text-primary font-medium truncate">
-                      {suggestion.nodeName}
-                    </span>
-                    <span className="text-xs px-1.5 py-0.5 theme-bg-secondary theme-text-secondary rounded">
-                      {suggestion.nodeType}
-                    </span>
-                    {suggestion.source === 'cluster' ? (
-                      <span className="text-xs px-1.5 py-0.5 bg-purple-900/50 text-purple-300 rounded">클러스터</span>
-                    ) : (
-                      <span className="text-xs px-1.5 py-0.5 bg-green-900/50 text-green-300 rounded">기본규칙</span>
-                    )}
+            {suggestions.map(suggestion => {
+              const key = getSuggestionKey(suggestion)
+              return (
+                <label
+                  key={key}
+                  className={`flex items-center gap-3 p-3 rounded-lg cursor-pointer transition-colors ${
+                    selectedKeys.has(key)
+                      ? 'bg-blue-900/30 border border-blue-500/50'
+                      : 'theme-bg-tertiary border theme-border hover:opacity-80'
+                  }`}
+                >
+                  <input
+                    type="checkbox"
+                    checked={selectedKeys.has(key)}
+                    onChange={() => toggleSelection(key)}
+                    className="w-4 h-4 rounded theme-border theme-bg-tertiary text-blue-500 focus:ring-blue-500"
+                  />
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="theme-text-primary font-medium truncate">
+                        {suggestion.nodeName}
+                      </span>
+                      <span className="text-xs px-1.5 py-0.5 theme-bg-secondary theme-text-secondary rounded">
+                        {suggestion.nodeType}
+                      </span>
+                      {suggestion.source === 'cluster' ? (
+                        <span className="text-xs px-1.5 py-0.5 bg-purple-900/50 text-purple-300 rounded">클러스터</span>
+                      ) : (
+                        <span className="text-xs px-1.5 py-0.5 bg-green-900/50 text-green-300 rounded">기본규칙</span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2 mt-1">
+                      <span className="text-sm text-blue-400">
+                        {suggestion.registryName}
+                      </span>
+                      {suggestion.source === 'cluster' ? (
+                        <span className="text-xs text-gray-500">({suggestion.sampleCount}회 매핑됨)</span>
+                      ) : (
+                        <span className="text-xs text-gray-500">(키워드: {suggestion.matchedKeyword})</span>
+                      )}
+                    </div>
                   </div>
-                  <div className="flex items-center gap-2 mt-1">
-                    <span className="text-sm text-blue-400">
-                      {suggestion.registryName}
-                    </span>
-                    {suggestion.source === 'cluster' ? (
-                      <span className="text-xs text-gray-500">({suggestion.sampleCount}회 매핑됨)</span>
-                    ) : (
-                      <span className="text-xs text-gray-500">(키워드: {suggestion.matchedKeyword})</span>
-                    )}
-                  </div>
-                </div>
-              </label>
-            ))}
+                </label>
+              )
+            })}
           </div>
         </div>
 
@@ -213,7 +224,7 @@ export default function AutoMappingSuggestionModal({
           <button
             type="button"
             onClick={handleApply}
-            disabled={loading || selectedIds.size === 0}
+            disabled={loading || selectedKeys.size === 0}
             className="flex-1 py-2.5 px-4 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-medium rounded-lg transition-colors flex items-center justify-center"
           >
             {loading ? (
@@ -225,7 +236,7 @@ export default function AutoMappingSuggestionModal({
                 적용 중...
               </>
             ) : (
-              `${selectedIds.size}개 적용`
+              `${selectedKeys.size}개 적용`
             )}
           </button>
         </div>

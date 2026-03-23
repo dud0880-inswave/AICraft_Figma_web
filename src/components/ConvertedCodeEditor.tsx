@@ -481,21 +481,37 @@ ${indentStr}</w2:gridView>`
 
           // th 특수 처리
           if (regItemNameLower === 'th') {
-            const { tagname: _thTag, ...thProps } = mergedProps as Record<string, string>
+            const { tagname: _thTag, colspan, rowspan, ...thProps } = mergedProps as Record<string, string>
             const thPropsStr = Object.entries(thProps).map(([k, v]) => `${k}="${v}"`).join(' ')
+            const hasSpan = (colspan && colspan !== '1') || (rowspan && rowspan !== '1')
+            const spanAttrs = hasSpan
+              ? [
+                  `${indentStr}        <w2:scope>row</w2:scope>`,
+                  `${indentStr}        <w2:colspan>${colspan || '1'}</w2:colspan>`,
+                  `${indentStr}        <w2:rowspan>${rowspan || '1'}</w2:rowspan>`
+                ]
+              : [`${indentStr}        <w2:scope>row</w2:scope>`]
             const innerContent = childrenCode ? `\n${childrenCode}\n${indentStr}` : ''
             return `${indentStr}<xf:group tagname="th" ${thPropsStr}>
 ${indentStr}    <w2:attributes>
-${indentStr}        <w2:scope>row</w2:scope>
+${spanAttrs.join('\n')}
 ${indentStr}    </w2:attributes>${innerContent}</xf:group>`
           }
 
           // td 특수 처리
           if (regItemNameLower === 'td') {
-            const { tagname: _tdTag, ...tdProps } = mergedProps as Record<string, string>
+            const { tagname: _tdTag, colspan, rowspan, ...tdProps } = mergedProps as Record<string, string>
             const tdPropsStr = Object.entries(tdProps).map(([k, v]) => `${k}="${v}"`).join(' ')
+            const hasSpan = (colspan && colspan !== '1') || (rowspan && rowspan !== '1')
+            const attrsBlock = hasSpan
+              ? `\n${indentStr}    <w2:attributes>
+${indentStr}        <w2:scope>row</w2:scope>
+${indentStr}        <w2:colspan>${colspan || '1'}</w2:colspan>
+${indentStr}        <w2:rowspan>${rowspan || '1'}</w2:rowspan>
+${indentStr}    </w2:attributes>`
+              : ''
             const innerContent = childrenCode ? `\n${childrenCode}\n${indentStr}` : ''
-            return `${indentStr}<xf:group tagname="td" ${tdPropsStr}>${innerContent}</xf:group>`
+            return `${indentStr}<xf:group tagname="td" ${tdPropsStr}>${attrsBlock}${innerContent}</xf:group>`
           }
 
           const propsStr = Object.entries(mergedProps).map(([k, v]) => `${k}="${v}"`).join(' ')

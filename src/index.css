@@ -6,6 +6,16 @@
   box-sizing: border-box;
 }
 
+/* number input 스피너 제거 */
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+input[type="number"] {
+  -moz-appearance: textfield;
+}
+
 /* 다크 테마 (기본) */
 :root.dark {
   --bg-primary: #1e1e1e;

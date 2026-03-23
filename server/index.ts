@@ -20,8 +20,8 @@ console.log('[Server] Initializing...');
 initDb();
 console.log('[Server] Creating stores...');
 const registryStore = new RegistryStore(getDb());
+const figmaFilesStore = new FigmaFilesStore(getDb());  // MappingStore보다 먼저 생성 (migrate에서 참조)
 const mappingStore = new MappingStore(getDb());
-const figmaFilesStore = new FigmaFilesStore(getDb());
 const figmaFileDataStore = new FigmaFileDataStore(getDb());
 const clusterStore = new ClusterStore(getDb());
 const defaultMappingRulesStore = new DefaultMappingRulesStore(getDb());
@@ -160,7 +160,7 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
         for (const mapping of mappedMappings) {
           const result = findNodeInDocument(document, mapping.figmaNodeId);
           if (!result) continue;
-          clusterStore.upsert(clusterStore.createSignatureData(result.node, result.ancestors), mapping.registryId!, mapping.registryName || '', mapping.customAttrs);
+          clusterStore.upsert(clusterStore.createSignatureData(result.node, result.parent), mapping.registryId!, mapping.registryName || '', mapping.customAttrs);
         }
       }
       return json(res, { success: true });
@@ -241,7 +241,7 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
           const result = findNodeInDocument(document, mapping.figmaNodeId);
           if (!result) continue;
 
-          const signatureData = clusterStore.createSignatureData(result.node, result.ancestors);
+          const signatureData = clusterStore.createSignatureData(result.node, result.parent);
           clusterStore.upsert(
             signatureData,
             mapping.registryId!,
@@ -273,10 +273,9 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
       // 모든 노드의 시그니처 계산
       const nodeSignatures: Array<{ nodeId: string; nodeName: string; nodeType: string; signature: string; node: FigmaNodeLike }> = [];
 
-      const processNode = (node: FigmaNodeLike & { id: string }, parents: FigmaNodeLike[] = []) => {
+      const processNode = (node: FigmaNodeLike & { id: string }, parent: FigmaNodeLike | null = null) => {
         if (!existingSet.has(node.id)) {
-          const ancestors = parents.slice(-1);
-          const signature = clusterStore.createNodeSignature(node, ancestors);
+          const signature = clusterStore.createNodeSignature(node, parent);
           nodeSignatures.push({
             nodeId: node.id,
             nodeName: node.name,
@@ -285,10 +284,10 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
             node,
           });
         }
-        // 자식 노드도 처리
+        // 자식 노드도 처리 (현재 노드를 부모로 전달)
         if (node.children) {
           for (const child of node.children as Array<FigmaNodeLike & { id: string }>) {
-            processNode(child, [...parents, node]);
+            processNode(child, node);
           }
         }
       };
@@ -600,7 +599,7 @@ process.on('SIGTERM', () => {
 // ============================================================
 function json(res: ServerResponse, data: unknown, status = 200): void {
   res.writeHead(status, { 'Content-Type': 'application/json' });
-  res.end(JSON.stringify(data));
+  res.end(JSON.stringify(data, null, 2));
 }
 
 function notFound(res: ServerResponse): void {
@@ -627,15 +626,13 @@ async function parseBody(req: IncomingMessage): Promise<any> {
 }
 
 // 문서에서 노드 찾기 (재귀) — 부모 경로도 반환
-function findNodeInDocument(node: any, nodeId: string, parentPath: any[] = []): { node: FigmaNodeLike; ancestors: FigmaNodeLike[] } | null {
+function findNodeInDocument(node: any, nodeId: string, parent: FigmaNodeLike | null = null): { node: FigmaNodeLike; parent: FigmaNodeLike | null } | null {
   if (node.id === nodeId) {
-    // 부모 경로에서 최대 1단계까지 (부모만)
-    const ancestors = parentPath.slice(-1);
-    return { node, ancestors };
+    return { node, parent };
   }
   if (node.children) {
     for (const child of node.children) {
-      const found = findNodeInDocument(child, nodeId, [...parentPath, node]);
+      const found = findNodeInDocument(child, nodeId, node);
       if (found) return found;
     }
   }

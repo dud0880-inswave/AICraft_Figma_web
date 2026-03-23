@@ -492,13 +492,94 @@ export default function MappingEditor({ node, nodes, fileKey, rootNodeId, onRegi
             </div>
 
             {/* 속성 추가 영역 */}
-            {mapping && (
+            {mapping && (() => {
+              const selectedItem = registry.find((r) => r.id === mapping.registryId)
+              const selectedItemNameLower = selectedItem?.name.toLowerCase() || ''
+              const isThOrTd = selectedItemNameLower === 'th' || selectedItemNameLower === 'td'
+
+              // colspan/rowspan 값 업데이트 핸들러
+              const handleSpanChange = async (attrKey: 'colspan' | 'rowspan', value: string) => {
+                if (!fileKey || !mapping) return
+                const targetNodes = nodes.length > 0 ? nodes : (node ? [node] : [])
+                if (targetNodes.length === 0) return
+
+                setSaving(true)
+                try {
+                  let lastMapping: NodeMapping | null = null
+                  for (const n of targetNodes) {
+                    const nodeMapping = await fetchMapping(fileKey, n.id, rootNodeId)
+                    if (nodeMapping) {
+                      const newAttrs = { ...nodeMapping.customAttrs }
+                      if (value && value !== '1') {
+                        newAttrs[attrKey] = value
+                      } else {
+                        delete newAttrs[attrKey]
+                      }
+                      lastMapping = await saveMapping({
+                        figmaFileKey: fileKey,
+                        figmaRootNodeId: rootNodeId,
+                        figmaNodeId: n.id,
+                        figmaNodeName: n.name,
+                        figmaNodeType: n.type,
+                        registryId: nodeMapping.registryId,
+                        registryName: nodeMapping.registryName,
+                        registryTag: nodeMapping.registryTag || '',
+                        customAttrs: newAttrs,
+                        status: 'mapped',
+                      })
+                    }
+                  }
+                  if (lastMapping && targetNodes.length === 1) {
+                    setMapping(lastMapping)
+                  } else if (node) {
+                    const m = await fetchMapping(fileKey, node.id, rootNodeId)
+                    setMapping(m)
+                  }
+                  onMappingChange?.()
+                } catch {
+                  // ignore
+                } finally {
+                  setSaving(false)
+                }
+              }
+
+              return (
               <div className="mt-3 p-3 theme-bg-tertiary border theme-border rounded-lg">
                 <div className="text-xs text-gray-400 mb-2">커스텀 속성</div>
 
+                {/* th/td 전용: colspan, rowspan */}
+                {isThOrTd && (
+                  <div className="flex gap-4 mb-3 border-b theme-border">
+                    <div className="flex items-center gap-2">
+                      <label className="text-xs theme-text-secondary font-mono">colspan</label>
+                      <input
+                        type="number"
+                        min="1"
+                        value={mapping.customAttrs?.colspan || ''}
+                        onChange={(e) => handleSpanChange('colspan', e.target.value)}
+                        placeholder="1"
+                        disabled={saving}
+                        className="w-16 px-2 py-1 text-xs theme-bg-primary border theme-border rounded theme-text-primary placeholder-[var(--text-muted)] focus:outline-none focus:border-blue-500 font-mono"
+                      />
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <label className="text-xs theme-text-secondary font-mono">rowspan</label>
+                      <input
+                        type="number"
+                        min="1"
+                        value={mapping.customAttrs?.rowspan || ''}
+                        onChange={(e) => handleSpanChange('rowspan', e.target.value)}
+                        placeholder="1"
+                        disabled={saving}
+                        className="w-16 px-2 py-1 text-xs theme-bg-primary border theme-border rounded theme-text-primary placeholder-[var(--text-muted)] focus:outline-none focus:border-blue-500 font-mono"
+                      />
+                    </div>
+                  </div>
+                )}
+
                 {/* 추가된 속성 목록 */}
                 {mapping.customAttrs && Object.entries(mapping.customAttrs)
-                  .filter(([key]) => key !== 'class')
+                  .filter(([key]) => key !== 'class' && !(isThOrTd && (key === 'colspan' || key === 'rowspan')))
                   .map(([key, value]) => (
                     <div key={key} className="flex items-center gap-2 mb-2">
                       <span className="text-xs theme-text-attr-key font-mono theme-bg-primary px-2 py-1 rounded">{key}</span>
@@ -542,7 +623,8 @@ export default function MappingEditor({ node, nodes, fileKey, rootNodeId, onRegi
                   </button>
                 </div>
               </div>
-            )}
+              )
+            })()}
 
             {/* 선택된 컴포넌트의 소스코드 */}
             {mapping?.registryId && (() => {
@@ -648,10 +730,20 @@ ${itemsCode}
 
               // th 특수 처리
               if (selectedItemNameLower === 'th') {
-                const thPropsStr = buildPropsStr(mergedProps)
+                const { colspan, rowspan, ...thProps } = mergedProps
+                const thPropsStr = buildPropsStr(thProps)
+                const hasSpan = (colspan && colspan !== '1') || (rowspan && rowspan !== '1')
+                const spanAttrs = hasSpan
+                  ? [
+                      '<w2:scope>row</w2:scope>',
+                      `<w2:colspan>${colspan || '1'}</w2:colspan>`,
+                      `<w2:rowspan>${rowspan || '1'}</w2:rowspan>`
+                    ]
+                  : ['<w2:scope>row</w2:scope>']
+                const attrsContent = spanAttrs.map(a => `        ${a}`).join('\n')
                 const code = `<xf:group ${thPropsStr}>
     <w2:attributes>
-        <w2:scope>row</w2:scope>
+${attrsContent}
     </w2:attributes>
     <!-- children -->
 </xf:group>`
@@ -665,8 +757,18 @@ ${itemsCode}
 
               // td 특수 처리
               if (selectedItemNameLower === 'td') {
-                const tdPropsStr = buildPropsStr(mergedProps)
-                const code = `<xf:group ${tdPropsStr}>
+                const { colspan, rowspan, ...tdProps } = mergedProps
+                const tdPropsStr = buildPropsStr(tdProps)
+                const hasSpan = (colspan && colspan !== '1') || (rowspan && rowspan !== '1')
+
+                const attrsBlock = hasSpan
+                  ? `\n    <w2:attributes>
+        <w2:scope>row</w2:scope>
+        <w2:colspan>${colspan || '1'}</w2:colspan>
+        <w2:rowspan>${rowspan || '1'}</w2:rowspan>
+    </w2:attributes>`
+                  : ''
+                const code = `<xf:group ${tdPropsStr}>${attrsBlock}
     <!-- children -->
 </xf:group>`
 

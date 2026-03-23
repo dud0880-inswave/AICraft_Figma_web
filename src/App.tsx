@@ -165,12 +165,8 @@ export default function App() {
             fetchDefaultRuleSuggestions(nodesForSignature),
           ])
 
-          // 병합: 같은 nodeId는 클러스터가 우선
-          const clusterNodeIds = new Set(clusterSuggestions.map(s => s.nodeId))
-          const merged = [
-            ...clusterSuggestions,
-            ...defaultSuggestions.filter(s => !clusterNodeIds.has(s.nodeId)),
-          ]
+          // 병합: 중복 허용 (클러스터/기본규칙 둘 다 표시)
+          const merged = [...clusterSuggestions, ...defaultSuggestions]
 
           if (merged.length > 0) {
             setAutoMappingSuggestions(merged)
@@ -435,11 +431,8 @@ export default function App() {
         fetchAutoMappingSuggestions(nodesForSignature, []).then(s => s.map(s => ({ ...s, source: 'cluster' as const }))),
         fetchDefaultRuleSuggestions(nodesForSignature),
       ])
-      const clusterNodeIds = new Set(clusterSuggestions.map(s => s.nodeId))
-      const merged = [
-        ...clusterSuggestions,
-        ...defaultSuggestions.filter(s => !clusterNodeIds.has(s.nodeId)),
-      ]
+      // 중복 허용 (클러스터/기본규칙 둘 다 표시)
+      const merged = [...clusterSuggestions, ...defaultSuggestions]
       setPendingFileKey(state.fileKey)
       setPendingNodeId(state.targetNodeId)
       setAutoMappingSuggestions(merged)
@@ -464,9 +457,17 @@ export default function App() {
     setAutoMappingLoading(true)
     try {
       if (selectedSuggestions.length > 0) {
+        // 중복 nodeId 처리: 클러스터 우선 (cluster가 default보다 앞에 있으므로 먼저 만난 것 유지)
+        const seen = new Set<string>()
+        const deduped = selectedSuggestions.filter(s => {
+          if (seen.has(s.nodeId)) return false
+          seen.add(s.nodeId)
+          return true
+        })
+
         await applyAutoMappingSuggestions(
           fileKey,
-          selectedSuggestions.map(s => ({
+          deduped.map(s => ({
             nodeId: s.nodeId,
             nodeName: s.nodeName,
             nodeType: s.nodeType,
@@ -476,6 +477,8 @@ export default function App() {
           })),
           nodeId
         )
+        // 매핑 다시 로드하여 노드트리 업데이트
+        setConvertTrigger(t => t + 1)
       }
       setShowAutoMappingModal(false)
       // 에디터로 이동

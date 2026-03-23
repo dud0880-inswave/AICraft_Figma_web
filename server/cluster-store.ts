@@ -18,17 +18,18 @@ export interface MappingCluster {
 }
 
 export interface SignatureData {
-  ancestors?: AncestorData[];  // 부모 컨텍스트 (최대 2단계, children 미포함)
   name: string;
   type: string;
   componentProperties?: Record<string, { value: string; type: string }>;
+  parent?: ParentData | null;  // 직속 부모 (1단계만)
   children?: SignatureData[];
 }
 
-export interface AncestorData {
+export interface ParentData {
   name: string;
   type: string;
   componentProperties?: Record<string, { value: string; type: string }>;
+  // parent, children 제외 (무한 반복 방지)
 }
 
 export interface FigmaNodeLike {
@@ -52,32 +53,34 @@ export interface AutoMappingSuggestion {
 export class ClusterStore {
   constructor(private db: Database) {}
 
-  // 노드 구조에서 시그니처 데이터 생성 (부모 컨텍스트 + 전체 자식 포함)
-  // ancestors: 부모 정보 배열 (최대 2단계, [할아버지, 부모] 순서)
-  createSignatureData(node: FigmaNodeLike, ancestors: FigmaNodeLike[] = []): SignatureData {
+  // 노드 구조에서 시그니처 데이터 생성
+  // parent: 직속 부모 노드 (1단계만)
+  // childDepth: 자식 포함 깊이 (기본 1단계만)
+  createSignatureData(node: FigmaNodeLike, parent: FigmaNodeLike | null = null, childDepth: number = 1): SignatureData {
     const data: SignatureData = {
       name: node.name,
       type: node.type,
     };
 
-    // 부모 컨텍스트 추가 (있는 만큼, 최대 2단계)
-    if (ancestors.length > 0) {
-      data.ancestors = ancestors.map(a => {
-        const ancestor: AncestorData = { name: a.name, type: a.type };
-        if (a.componentProperties && Object.keys(a.componentProperties).length > 0) {
-          ancestor.componentProperties = a.componentProperties;
-        }
-        return ancestor;
-      });
-    }
-
     // componentProperties 포함 (인스턴스 variant 정보 등)
     if (node.componentProperties && Object.keys(node.componentProperties).length > 0) {
-      (data as Record<string, unknown>).componentProperties = node.componentProperties;
+      data.componentProperties = node.componentProperties;
     }
 
-    if (node.children && node.children.length > 0) {
-      data.children = node.children.map(child => this.createSignatureData(child));
+    // 직속 부모 정보 추가 (1단계만, parent/children 제외)
+    if (parent) {
+      const parentData: ParentData = { name: parent.name, type: parent.type };
+      if (parent.componentProperties && Object.keys(parent.componentProperties).length > 0) {
+        parentData.componentProperties = parent.componentProperties;
+      }
+      data.parent = parentData;
+    } else {
+      data.parent = null;
+    }
+
+    // 자식 노드 처리 (depth가 남아있을 때만)
+    if (childDepth > 0 && node.children && node.children.length > 0) {
+      data.children = node.children.map(child => this.createSignatureData(child, node, childDepth - 1));
     }
 
     return data;
@@ -90,8 +93,8 @@ export class ClusterStore {
   }
 
   // 노드에서 직접 시그니처 해시 생성
-  createNodeSignature(node: FigmaNodeLike, ancestors: FigmaNodeLike[] = []): string {
-    const data = this.createSignatureData(node, ancestors);
+  createNodeSignature(node: FigmaNodeLike, parent: FigmaNodeLike | null = null, childDepth: number = 1): string {
+    const data = this.createSignatureData(node, parent, childDepth);
     return this.createSignatureHash(data);
   }
 
