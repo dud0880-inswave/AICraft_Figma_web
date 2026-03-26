@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import {
   fetchRegistry,
   createRegistryItem,
@@ -12,6 +12,7 @@ import {
   resetDefaultMappingRules,
   fetchProjectSettings,
   saveProjectSettings,
+  generateClusters,
 } from '../utils/api'
 import type { RegistryItem, MappingRulesJson, DefaultMappingRuleGrouped } from '../utils/api'
 import { useTheme } from '../contexts/ThemeContext'
@@ -21,6 +22,7 @@ interface SettingsModalProps {
   onClose: () => void
   onSaveToken: (token: string) => void
   onCssChange?: () => void  // CSS 변경 시 호출
+  onRegistryChange?: () => void  // Registry 변경 시 호출
   projectId?: string | null  // 프로젝트별 설정
   projectName?: string
 }
@@ -119,8 +121,12 @@ export function autoMapClassesToComponents(
 function BasicTab({ onSaveToken, onClose, projectId }: { onSaveToken: (t: string) => void; onClose: () => void; projectId?: string | null }) {
   const [inputToken, setInputToken] = useState('')
   const [xmlExportPath, setXmlExportPath] = useState('')
+  const [clusterIncludeNodeName, setClusterIncludeNodeName] = useState(true)
   const [loading, setLoading] = useState(true)
+  const [regenerating, setRegenerating] = useState(false)
+  const [toastMessage, setToastMessage] = useState<string | null>(null)
   const { theme, setTheme } = useTheme()
+  const previousClusterSetting = useRef<boolean>(true)
 
   // 프로젝트 설정 로드
   useEffect(() => {
@@ -134,6 +140,9 @@ function BasicTab({ onSaveToken, onClose, projectId }: { onSaveToken: (t: string
         const settings = await fetchProjectSettings(projectId)
         setInputToken(settings['figma-token'] || '')
         setXmlExportPath(settings['xml-export-path'] || '')
+        const includeNodeName = settings['cluster-include-node-name'] !== 'false'
+        setClusterIncludeNodeName(includeNodeName)
+        previousClusterSetting.current = includeNodeName
       } catch (err) {
         console.error('Failed to load settings:', err)
       } finally {
@@ -143,6 +152,14 @@ function BasicTab({ onSaveToken, onClose, projectId }: { onSaveToken: (t: string
     loadSettings()
   }, [projectId])
 
+  // 토스트 자동 숨김
+  useEffect(() => {
+    if (toastMessage) {
+      const timer = setTimeout(() => setToastMessage(null), 3000)
+      return () => clearTimeout(timer)
+    }
+  }, [toastMessage])
+
   const handleSave = async () => {
     if (!projectId) {
       onClose()
@@ -150,11 +167,30 @@ function BasicTab({ onSaveToken, onClose, projectId }: { onSaveToken: (t: string
     }
 
     try {
+      // 클러스터 설정 변경 여부 확인
+      const clusterSettingChanged = previousClusterSetting.current !== clusterIncludeNodeName
+
+      // 설정 저장
       await saveProjectSettings(projectId, {
         'figma-token': inputToken,
         'xml-export-path': xmlExportPath,
+        'cluster-include-node-name': clusterIncludeNodeName ? 'true' : 'false',
       })
       onSaveToken(inputToken)
+
+      // 클러스터 설정이 변경되었다면 재생성
+      if (clusterSettingChanged) {
+        setRegenerating(true)
+        try {
+          await generateClusters(projectId)
+          setToastMessage('클러스터가 재생성되었습니다.')
+        } catch (err) {
+          console.error('Failed to regenerate clusters:', err)
+          setToastMessage('클러스터 재생성에 실패했습니다.')
+        } finally {
+          setRegenerating(false)
+        }
+      }
     } catch (err) {
       console.error('Failed to save settings:', err)
     }
@@ -185,30 +221,30 @@ function BasicTab({ onSaveToken, onClose, projectId }: { onSaveToken: (t: string
             onClick={() => setTheme('dark')}
             className={`flex-1 px-4 py-3 rounded-lg border-2 transition-all ${
               theme === 'dark'
-                ? 'border-blue-500 bg-gray-800'
-                : 'border-gray-600 hover:border-gray-500 bg-gray-700'
+                ? 'border-blue-500 bg-gray-800 text-gray-300'
+                : 'theme-border hover:border-blue-500 theme-bg-tertiary'
             }`}
           >
             <div className="flex items-center justify-center gap-2">
-              <svg className="w-5 h-5 text-gray-300" fill="currentColor" viewBox="0 0 20 20">
+              <svg className={`w-5 h-5 ${theme === 'dark' ? 'text-gray-300' : 'theme-text-secondary'}`} fill="currentColor" viewBox="0 0 20 20">
                 <path d="M17.293 13.293A8 8 0 016.707 2.707a8.001 8.001 0 1010.586 10.586z" />
               </svg>
-              <span className="text-sm text-gray-300">다크</span>
+              <span className={`text-sm ${theme === 'dark' ? 'text-gray-300' : 'theme-text-primary'}`}>다크</span>
             </div>
           </button>
           <button
             onClick={() => setTheme('light')}
             className={`flex-1 px-4 py-3 rounded-lg border-2 transition-all ${
               theme === 'light'
-                ? 'border-blue-500 bg-gray-100'
-                : 'border-gray-600 hover:border-gray-500 bg-gray-700'
+                ? 'border-blue-500 bg-blue-50 text-gray-700'
+                : 'theme-border hover:border-blue-500 theme-bg-tertiary'
             }`}
           >
             <div className="flex items-center justify-center gap-2">
-              <svg className={`w-5 h-5 ${theme === 'light' ? 'text-yellow-500' : 'text-gray-300'}`} fill="currentColor" viewBox="0 0 20 20">
+              <svg className={`w-5 h-5 ${theme === 'light' ? 'text-yellow-500' : 'theme-text-secondary'}`} fill="currentColor" viewBox="0 0 20 20">
                 <path fillRule="evenodd" d="M10 2a1 1 0 011 1v1a1 1 0 11-2 0V3a1 1 0 011-1zm4 8a4 4 0 11-8 0 4 4 0 018 0zm-.464 4.95l.707.707a1 1 0 001.414-1.414l-.707-.707a1 1 0 00-1.414 1.414zm2.12-10.607a1 1 0 010 1.414l-.706.707a1 1 0 11-1.414-1.414l.707-.707a1 1 0 011.414 0zM17 11a1 1 0 100-2h-1a1 1 0 100 2h1zm-7 4a1 1 0 011 1v1a1 1 0 11-2 0v-1a1 1 0 011-1zM5.05 6.464A1 1 0 106.465 5.05l-.708-.707a1 1 0 00-1.414 1.414l.707.707zm1.414 8.486l-.707.707a1 1 0 01-1.414-1.414l.707-.707a1 1 0 011.414 1.414zM4 11a1 1 0 100-2H3a1 1 0 000 2h1z" clipRule="evenodd" />
               </svg>
-              <span className={`text-sm ${theme === 'light' ? 'text-gray-700' : 'text-gray-300'}`}>라이트</span>
+              <span className={`text-sm ${theme === 'light' ? 'text-gray-700' : 'theme-text-primary'}`}>라이트</span>
             </div>
           </button>
         </div>
@@ -231,9 +267,9 @@ function BasicTab({ onSaveToken, onClose, projectId }: { onSaveToken: (t: string
         </p>
         {inputToken && (
           <div className="flex items-center justify-between mt-2">
-            <div className="flex items-center text-sm text-green-500">
+            <div className="flex items-center text-sm text-green-600 dark:text-green-400">
               <svg className="w-4 h-4 mr-1" fill="currentColor" viewBox="0 0 20 20">
-                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414-1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
               </svg>
               토큰이 설정됨
             </div>
@@ -264,7 +300,7 @@ function BasicTab({ onSaveToken, onClose, projectId }: { onSaveToken: (t: string
         </p>
         {xmlExportPath && (
           <div className="flex items-center justify-between mt-2">
-            <div className="flex items-center text-sm text-green-500">
+            <div className="flex items-center text-sm text-green-600 dark:text-green-400">
               <svg className="w-4 h-4 mr-1" fill="currentColor" viewBox="0 0 20 20">
                 <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
               </svg>
@@ -280,21 +316,65 @@ function BasicTab({ onSaveToken, onClose, projectId }: { onSaveToken: (t: string
         )}
       </div>
 
+      {/* 클러스터 설정 */}
+      <div>
+        <label className="block text-sm font-medium theme-text-primary mb-2">
+          자동 매핑 클러스터 설정
+        </label>
+        <div className="space-y-3">
+          <label className="flex items-start gap-3 p-3 rounded-lg theme-bg-tertiary border theme-border cursor-pointer hover:border-blue-500 transition-colors">
+            <input
+              type="checkbox"
+              checked={clusterIncludeNodeName}
+              onChange={(e) => setClusterIncludeNodeName(e.target.checked)}
+              className="mt-0.5 w-4 h-4 text-blue-600 rounded focus:ring-blue-500 focus:ring-2"
+            />
+            <div className="flex-1">
+              <div className="text-sm theme-text-primary font-medium">노드 이름 포함</div>
+              <div className="text-xs theme-text-secondary mt-1">
+                클러스터 생성 시 노드 이름을 포함합니다. 체크 해제 시 구조만 비교하여 더 많은 노드가 자동 매핑됩니다.
+              </div>
+            </div>
+          </label>
+          <div className="text-xs theme-text-secondary bg-blue-900/20 border border-blue-500/30 rounded p-2">
+            <span className="font-medium text-blue-400">💡 팁:</span>
+            {clusterIncludeNodeName
+              ? " 노드 이름까지 일치해야 같은 클러스터로 인식됩니다. 정확도는 높지만 적중률이 낮을 수 있습니다."
+              : " 노드 구조만 같으면 이름이 달라도 같은 클러스터로 인식됩니다. 적중률은 높지만 오매칭 가능성이 있습니다."
+            }
+          </div>
+        </div>
+      </div>
+
       {/* 저장 버튼 */}
       <div className="flex justify-end pt-2">
         <button
           onClick={handleSave}
-          className="px-4 py-2 text-sm bg-blue-600 hover:bg-blue-700 text-white rounded"
+          disabled={regenerating}
+          className="px-4 py-2 text-sm bg-blue-600 hover:bg-blue-700 text-white rounded disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
         >
-          저장
+          {regenerating && (
+            <svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+            </svg>
+          )}
+          {regenerating ? '클러스터 재생성 중...' : '저장'}
         </button>
       </div>
+
+      {/* 토스트 메시지 */}
+      {toastMessage && (
+        <div className="fixed bottom-4 left-1/2 transform -translate-x-1/2 bg-green-600 text-white px-4 py-2 rounded-lg z-50 shadow-lg">
+          {toastMessage}
+        </div>
+      )}
     </div>
   )
 }
 
 // 컴포넌트 탭 컴포넌트
-function ComponentsTab({ projectId }: { projectId?: string | null }) {
+function ComponentsTab({ projectId, onRegistryChange }: { projectId?: string | null; onRegistryChange?: () => void }) {
   const [registry, setRegistry] = useState<RegistryItem[]>([])
   const [loading, setLoading] = useState(true)
   const [showAddForm, setShowAddForm] = useState(false)
@@ -342,6 +422,7 @@ function ComponentsTab({ projectId }: { projectId?: string | null }) {
       }
       await createRegistryItem(projectId, { name: formData.name, tagName: formData.tagName, properties: props })
       await loadRegistry()
+      onRegistryChange?.()
       resetForm()
     } catch (err) {
       setError(err instanceof Error ? err.message : '추가 실패')
@@ -361,6 +442,7 @@ function ComponentsTab({ projectId }: { projectId?: string | null }) {
       }
       await updateRegistryItem(editingId, { name: formData.name, tagName: formData.tagName, properties: props })
       await loadRegistry()
+      onRegistryChange?.()
       resetForm()
     } catch (err) {
       setError(err instanceof Error ? err.message : '수정 실패')
@@ -373,6 +455,7 @@ function ComponentsTab({ projectId }: { projectId?: string | null }) {
     try {
       await deleteRegistryItem(id)
       await loadRegistry()
+      onRegistryChange?.()
     } catch {
       setError('삭제 실패')
     }
@@ -389,7 +472,7 @@ function ComponentsTab({ projectId }: { projectId?: string | null }) {
   }
 
   if (loading) {
-    return <div className="text-gray-400 text-center py-8">로딩 중...</div>
+    return <div className="theme-text-secondary text-center py-8">로딩 중...</div>
   }
 
   return (
@@ -402,46 +485,46 @@ function ComponentsTab({ projectId }: { projectId?: string | null }) {
 
       {/* 추가/수정 폼 */}
       {(showAddForm || editingId) && (
-        <div className="bg-gray-700/50 border border-gray-600 rounded-lg p-4 space-y-3">
-          <h3 className="text-sm font-medium text-white">
+        <div className="theme-bg-tertiary border theme-border rounded-lg p-4 space-y-3">
+          <h3 className="text-sm font-medium theme-text-primary">
             {editingId ? '컴포넌트 수정' : '새 컴포넌트 추가'}
           </h3>
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs text-gray-400 mb-1">이름</label>
+              <label className="block text-xs theme-text-secondary mb-1">이름</label>
               <input
                 type="text"
                 value={formData.name}
                 onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                 placeholder="button"
-                className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded text-sm text-white placeholder-gray-400 focus:outline-none focus:border-blue-500"
+                className="w-full px-3 py-2 theme-bg-secondary border theme-border rounded text-sm theme-text-primary placeholder-gray-500 focus:outline-none focus:border-blue-500"
               />
             </div>
             <div>
-              <label className="block text-xs text-gray-400 mb-1">태그명</label>
+              <label className="block text-xs theme-text-secondary mb-1">태그명</label>
               <input
                 type="text"
                 value={formData.tagName}
                 onChange={(e) => setFormData({ ...formData, tagName: e.target.value })}
                 placeholder="w2:button"
-                className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded text-sm text-white placeholder-gray-400 focus:outline-none focus:border-blue-500"
+                className="w-full px-3 py-2 theme-bg-secondary border theme-border rounded text-sm theme-text-primary placeholder-gray-500 focus:outline-none focus:border-blue-500"
               />
             </div>
           </div>
           <div>
-            <label className="block text-xs text-gray-400 mb-1">속성 (JSON)</label>
+            <label className="block text-xs theme-text-secondary mb-1">속성 (JSON)</label>
             <textarea
               value={formData.properties}
               onChange={(e) => setFormData({ ...formData, properties: e.target.value })}
               placeholder='{"appearance": "full"}'
               rows={2}
-              className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded text-sm text-white placeholder-gray-400 focus:outline-none focus:border-blue-500 font-mono"
+              className="w-full px-3 py-2 theme-bg-secondary border theme-border rounded text-sm theme-text-primary placeholder-gray-500 focus:outline-none focus:border-blue-500 font-mono"
             />
           </div>
           <div className="flex justify-end gap-2">
             <button
               onClick={resetForm}
-              className="px-3 py-1.5 text-sm text-gray-400 hover:text-white hover:bg-gray-600 rounded"
+              className="px-3 py-1.5 text-sm theme-text-secondary theme-text-hover theme-bg-hover rounded"
             >
               취소
             </button>
@@ -456,9 +539,9 @@ function ComponentsTab({ projectId }: { projectId?: string | null }) {
       )}
 
       {/* 컴포넌트 목록 */}
-      <div className="border border-gray-700 rounded-lg overflow-hidden">
-        <div className="flex items-center justify-between px-3 py-2 bg-gray-700/50 border-b border-gray-700">
-          <span className="text-sm text-gray-300">컴포넌트 목록 ({registry.length})</span>
+      <div className="border theme-border rounded-lg overflow-hidden">
+        <div className="flex items-center justify-between px-3 py-2 theme-bg-tertiary border-b theme-border">
+          <span className="text-sm theme-text-secondary">컴포넌트 목록 ({registry.length})</span>
           {!showAddForm && !editingId && (
             <button
               onClick={() => setShowAddForm(true)}
@@ -470,24 +553,24 @@ function ComponentsTab({ projectId }: { projectId?: string | null }) {
         </div>
         <div className="max-h-64 overflow-auto">
           {registry.length === 0 ? (
-            <div className="px-3 py-4 text-center text-gray-500 text-sm">
+            <div className="px-3 py-4 text-center theme-text-secondary text-sm">
               등록된 컴포넌트가 없습니다
             </div>
           ) : (
             registry.map((item) => (
               <div
                 key={item.id}
-                className={`flex items-center justify-between px-3 py-2 border-b border-gray-700 last:border-b-0 hover:bg-gray-700/30 ${
+                className={`flex items-center justify-between px-3 py-2 border-b theme-border last:border-b-0 theme-bg-hover ${
                   editingId === item.id ? 'bg-blue-900/20' : ''
                 }`}
               >
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2">
-                    <span className="text-sm text-white font-medium">{item.name}</span>
-                    <span className="text-xs text-gray-500 font-mono">{item.tagName}</span>
+                    <span className="text-sm theme-text-primary font-medium">{item.name}</span>
+                    <span className="text-xs theme-text-secondary font-mono">{item.tagName}</span>
                   </div>
                   {Object.keys(item.properties).length > 0 && (
-                    <div className="text-xs text-gray-500 truncate">
+                    <div className="text-xs theme-text-secondary truncate">
                       {Object.entries(item.properties).map(([k, v]) => `${k}="${v}"`).join(' ')}
                     </div>
                   )}
@@ -495,7 +578,7 @@ function ComponentsTab({ projectId }: { projectId?: string | null }) {
                 <div className="flex items-center gap-1 ml-2">
                   <button
                     onClick={() => handleEdit(item)}
-                    className="p-1 text-gray-400 hover:text-blue-400"
+                    className="p-1 theme-text-secondary hover:text-blue-400"
                     title="수정"
                   >
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -504,7 +587,7 @@ function ComponentsTab({ projectId }: { projectId?: string | null }) {
                   </button>
                   <button
                     onClick={() => handleDelete(item.id)}
-                    className="p-1 text-gray-400 hover:text-red-400"
+                    className="p-1 theme-text-secondary hover:text-red-400"
                     title="삭제"
                   >
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -759,33 +842,33 @@ function CssTab({ projectId, onCssChange }: { projectId?: string | null; onCssCh
     return (
       <div className="space-y-3">
         <div className="flex items-center justify-between">
-          <h3 className="text-sm font-medium text-white">
+          <h3 className="text-sm font-medium theme-text-primary">
             {isNewItem ? '새 CSS 추가' : 'CSS 편집'}
           </h3>
           <button
             onClick={handleCancelEdit}
-            className="text-gray-400 hover:text-white text-sm"
+            className="theme-text-secondary theme-text-hover text-sm"
           >
             취소
           </button>
         </div>
         <div>
-          <label className="block text-xs text-gray-400 mb-1">파일명</label>
+          <label className="block text-xs theme-text-secondary mb-1">파일명</label>
           <input
             type="text"
             value={editingItem.name}
             onChange={(e) => setEditingItem({ ...editingItem, name: e.target.value })}
-            className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded text-sm text-white focus:outline-none focus:border-blue-500"
+            className="w-full px-3 py-2 theme-bg-tertiary border theme-border rounded text-sm theme-text-primary focus:outline-none focus:border-blue-500"
           />
         </div>
         <div>
-          <label className="block text-xs text-gray-400 mb-1">CSS 내용</label>
+          <label className="block text-xs theme-text-secondary mb-1">CSS 내용</label>
           <textarea
             value={editingItem.content}
             onChange={(e) => setEditingItem({ ...editingItem, content: e.target.value })}
             placeholder="/* CSS 스타일을 입력하세요 */"
             rows={10}
-            className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded text-sm text-white placeholder-gray-500 focus:outline-none focus:border-blue-500 font-mono"
+            className="w-full px-3 py-2 theme-bg-tertiary border theme-border rounded text-sm theme-text-primary placeholder-gray-500 focus:outline-none focus:border-blue-500 font-mono"
           />
         </div>
         <div className="flex justify-end">
@@ -833,7 +916,7 @@ function CssTab({ projectId, onCssChange }: { projectId?: string | null; onCssCh
         <div className="flex gap-2">
           <button
             onClick={() => setSubView('list')}
-            className="px-3 py-1 text-sm rounded bg-gray-700 text-gray-300 hover:bg-gray-600"
+            className="px-3 py-1 text-sm rounded theme-bg-tertiary theme-text-secondary theme-bg-hover"
           >
             CSS 파일
           </button>
@@ -846,7 +929,7 @@ function CssTab({ projectId, onCssChange }: { projectId?: string | null; onCssCh
         </div>
 
         <div className="flex items-center justify-between">
-          <h3 className="text-sm font-medium text-white">CSS 파일별 클래스 매핑</h3>
+          <h3 className="text-sm font-medium theme-text-primary">CSS 파일별 클래스 매핑</h3>
           {selectedCssId && (
             <div className="flex gap-2">
               <button
@@ -858,7 +941,7 @@ function CssTab({ projectId, onCssChange }: { projectId?: string | null; onCssCh
               </button>
               <button
                 onClick={handleClearCssMappings}
-                className="px-2 py-1 text-xs bg-gray-600 hover:bg-gray-500 text-white rounded"
+                className="px-2 py-1 text-xs theme-bg-tertiary theme-bg-hover theme-text-primary rounded"
               >
                 초기화
               </button>
@@ -867,14 +950,14 @@ function CssTab({ projectId, onCssChange }: { projectId?: string | null; onCssCh
         </div>
 
         {cssList.length === 0 ? (
-          <div className="text-center text-gray-500 text-sm py-4">
+          <div className="text-center theme-text-secondary text-sm py-4">
             CSS 파일이 없습니다.<br />
             먼저 CSS 파일을 추가해주세요.
           </div>
         ) : (
           <div className="space-y-3">
             {/* CSS 파일 탭 */}
-            <div className="border-b border-gray-700">
+            <div className="border-b theme-border">
               <div className="flex gap-1 overflow-x-auto">
                 {cssList.map(css => {
                   const mappingCount = Object.values(componentClassMapping[css.id] || {}).flat().length
@@ -889,12 +972,12 @@ function CssTab({ projectId, onCssChange }: { projectId?: string | null; onCssCh
                       className={`px-4 py-2 text-sm whitespace-nowrap border-b-2 transition-colors flex items-center gap-2 ${
                         isSelected
                           ? 'border-blue-500 text-blue-400 bg-blue-900/20'
-                          : 'border-transparent text-gray-400 hover:text-gray-300 hover:bg-gray-700/50'
+                          : 'border-transparent theme-text-secondary theme-text-hover theme-bg-hover'
                       }`}
                     >
                       <span>{css.name}</span>
                       <span className={`text-xs px-1.5 py-0.5 rounded ${
-                        isSelected ? 'bg-blue-600 text-white' : 'bg-gray-600 text-gray-300'
+                        isSelected ? 'bg-blue-600 text-white' : 'theme-bg-tertiary theme-text-secondary'
                       }`}>
                         {css.classNames?.length || 0}
                       </span>
@@ -910,9 +993,9 @@ function CssTab({ projectId, onCssChange }: { projectId?: string | null; onCssCh
             {selectedCssId && selectedCss ? (
               <div className="flex gap-3">
                 {/* 컴포넌트 목록 */}
-                <div className="w-1/3 border border-gray-700 rounded-lg overflow-hidden">
-                  <div className="px-3 py-2 bg-gray-700/50 border-b border-gray-700">
-                    <span className="text-xs text-gray-400">컴포넌트</span>
+                <div className="w-1/3 border theme-border rounded-lg overflow-hidden">
+                  <div className="px-3 py-2 theme-bg-tertiary border-b theme-border">
+                    <span className="text-xs theme-text-secondary">컴포넌트</span>
                   </div>
                   <div className="max-h-48 overflow-auto">
                     {registry.map(comp => {
@@ -921,10 +1004,10 @@ function CssTab({ projectId, onCssChange }: { projectId?: string | null; onCssCh
                         <button
                           key={comp.id}
                           onClick={() => setSelectedComponentId(comp.id)}
-                          className={`w-full px-3 py-2 text-left text-sm border-b border-gray-700 last:border-b-0 flex items-center justify-between ${
+                          className={`w-full px-3 py-2 text-left text-sm border-b theme-border last:border-b-0 flex items-center justify-between ${
                             selectedComponentId === comp.id
                               ? 'bg-blue-900/50 text-blue-400'
-                              : 'text-white hover:bg-gray-700/50'
+                              : 'theme-text-primary theme-bg-hover'
                           }`}
                         >
                           <span>{comp.name}</span>
@@ -938,9 +1021,9 @@ function CssTab({ projectId, onCssChange }: { projectId?: string | null; onCssCh
                 </div>
 
                 {/* 클래스 목록 */}
-                <div className="flex-1 border border-gray-700 rounded-lg overflow-hidden">
-                  <div className="px-3 py-2 bg-gray-700/50 border-b border-gray-700">
-                    <span className="text-xs text-gray-400">
+                <div className="flex-1 border theme-border rounded-lg overflow-hidden">
+                  <div className="px-3 py-2 theme-bg-tertiary border-b theme-border">
+                    <span className="text-xs theme-text-secondary">
                       {selectedComponent
                         ? `${selectedCss.name} → ${selectedComponent.name}`
                         : `${selectedCss.name}의 클래스 (${selectedCss.classNames?.length || 0}개)`}
@@ -958,7 +1041,7 @@ function CssTab({ projectId, onCssChange }: { projectId?: string | null; onCssCh
                               className={`px-2 py-1 text-xs rounded font-mono ${
                                 isAssigned
                                   ? 'bg-blue-600 text-white'
-                                  : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                                  : 'theme-bg-tertiary theme-text-secondary theme-bg-hover'
                               }`}
                             >
                               .{cls}
@@ -967,7 +1050,7 @@ function CssTab({ projectId, onCssChange }: { projectId?: string | null; onCssCh
                         })}
                       </div>
                     ) : (
-                      <div className="text-center text-gray-500 text-sm py-4">
+                      <div className="text-center theme-text-secondary text-sm py-4">
                         왼쪽에서 컴포넌트를 선택하세요
                       </div>
                     )}
@@ -975,7 +1058,7 @@ function CssTab({ projectId, onCssChange }: { projectId?: string | null; onCssCh
                 </div>
               </div>
             ) : (
-              <div className="text-center text-gray-500 text-sm py-4">
+              <div className="text-center theme-text-secondary text-sm py-4">
                 위에서 CSS 파일을 선택하세요
               </div>
             )}
@@ -998,7 +1081,7 @@ function CssTab({ projectId, onCssChange }: { projectId?: string | null; onCssCh
         </button>
         <button
           onClick={() => setSubView('mapping')}
-          className="px-3 py-1 text-sm rounded bg-gray-700 text-gray-300 hover:bg-gray-600"
+          className="px-3 py-1 text-sm rounded theme-bg-tertiary theme-text-secondary theme-bg-hover"
         >
           클래스 매핑
         </button>
@@ -1006,7 +1089,7 @@ function CssTab({ projectId, onCssChange }: { projectId?: string | null; onCssCh
 
       {/* 파일 업로드 */}
       <div>
-        <label className="flex items-center justify-center px-4 py-3 border-2 border-dashed border-gray-600 rounded-lg cursor-pointer hover:border-gray-500 hover:bg-gray-700/30 transition-colors">
+        <label className="flex items-center justify-center px-4 py-3 border-2 border-dashed theme-border rounded-lg cursor-pointer hover:border-blue-500 theme-bg-hover transition-colors">
           <input
             type="file"
             accept=".css"
@@ -1015,18 +1098,18 @@ function CssTab({ projectId, onCssChange }: { projectId?: string | null; onCssCh
             className="hidden"
           />
           <div className="text-center">
-            <svg className="w-6 h-6 mx-auto text-gray-500 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg className="w-6 h-6 mx-auto theme-text-secondary mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
             </svg>
-            <span className="text-sm text-gray-400">클릭하여 CSS 파일 선택</span>
+            <span className="text-sm theme-text-secondary">클릭하여 CSS 파일 선택</span>
           </div>
         </label>
       </div>
 
       {/* CSS 목록 */}
-      <div className="border border-gray-700 rounded-lg overflow-hidden">
-        <div className="flex items-center justify-between px-3 py-2 bg-gray-700/50 border-b border-gray-700">
-          <span className="text-sm text-gray-300">CSS 파일 ({cssList.length})</span>
+      <div className="border theme-border rounded-lg overflow-hidden">
+        <div className="flex items-center justify-between px-3 py-2 theme-bg-tertiary border-b theme-border">
+          <span className="text-sm theme-text-secondary">CSS 파일 ({cssList.length})</span>
           <button
             onClick={handleAddNew}
             className="px-2 py-1 text-xs bg-blue-600 hover:bg-blue-700 text-white rounded"
@@ -1036,20 +1119,20 @@ function CssTab({ projectId, onCssChange }: { projectId?: string | null; onCssCh
         </div>
         <div className="max-h-48 overflow-auto">
           {cssList.length === 0 ? (
-            <div className="px-3 py-4 text-center text-gray-500 text-sm">
+            <div className="px-3 py-4 text-center theme-text-secondary text-sm">
               등록된 CSS가 없습니다
             </div>
           ) : (
             cssList.map((item) => (
               <div
                 key={item.id}
-                className="flex items-center justify-between px-3 py-2 border-b border-gray-700 last:border-b-0 hover:bg-gray-700/30"
+                className="flex items-center justify-between px-3 py-2 border-b theme-border last:border-b-0 theme-bg-hover"
               >
                 <div className="flex items-center gap-2 min-w-0 flex-1">
                   <svg className="w-4 h-4 text-blue-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                   </svg>
-                  <span className="text-sm text-white truncate">{item.name}</span>
+                  <span className="text-sm theme-text-primary truncate">{item.name}</span>
                   <span className="text-xs text-green-400">
                     {item.classNames?.length || 0} 클래스
                   </span>
@@ -1057,7 +1140,7 @@ function CssTab({ projectId, onCssChange }: { projectId?: string | null; onCssCh
                 <div className="flex items-center gap-1 ml-2">
                   <button
                     onClick={() => handleEdit(item)}
-                    className="p-1 text-gray-400 hover:text-blue-400"
+                    className="p-1 theme-text-secondary hover:text-blue-400"
                     title="편집"
                   >
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1066,7 +1149,7 @@ function CssTab({ projectId, onCssChange }: { projectId?: string | null; onCssCh
                   </button>
                   <button
                     onClick={() => handleDelete(item.id)}
-                    className="p-1 text-gray-400 hover:text-red-400"
+                    className="p-1 theme-text-secondary hover:text-red-400"
                     title="삭제"
                   >
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1082,7 +1165,7 @@ function CssTab({ projectId, onCssChange }: { projectId?: string | null; onCssCh
 
       {/* 상태 표시 */}
       {cssList.length > 0 && (
-        <div className="text-xs text-gray-400">
+        <div className="text-xs theme-text-secondary">
           총 {new Set(cssList.flatMap(item => item.classNames || [])).size}개 클래스 추출됨
         </div>
       )}
@@ -1267,7 +1350,7 @@ function MappingRulesTab({ projectId }: { projectId?: string | null }) {
         <button
           onClick={() => setSubView('default')}
           className={`px-3 py-1 text-sm rounded ${
-            subView === 'default' ? 'bg-blue-600 text-white' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+            subView === 'default' ? 'bg-blue-600 text-white' : 'theme-bg-tertiary theme-text-secondary theme-bg-hover'
           }`}
         >
           기본 매핑 규칙
@@ -1275,7 +1358,7 @@ function MappingRulesTab({ projectId }: { projectId?: string | null }) {
         <button
           onClick={() => setSubView('export')}
           className={`px-3 py-1 text-sm rounded ${
-            subView === 'export' ? 'bg-blue-600 text-white' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+            subView === 'export' ? 'bg-blue-600 text-white' : 'theme-bg-tertiary theme-text-secondary theme-bg-hover'
           }`}
         >
           내보내기/가져오기
@@ -1293,14 +1376,14 @@ function MappingRulesTab({ projectId }: { projectId?: string | null }) {
       {subView === 'default' && (
         <div className="space-y-3">
           {rulesLoading ? (
-            <div className="text-center text-gray-400 py-4">로딩 중...</div>
+            <div className="text-center theme-text-secondary py-4">로딩 중...</div>
           ) : (
             <>
               {/* 컴포넌트 추가 버튼 */}
               {componentsWithoutRules.length > 0 && !showAddComponent && (
                 <button
                   onClick={() => setShowAddComponent(true)}
-                  className="w-full px-3 py-2 border-2 border-dashed border-gray-600 rounded-lg text-sm text-gray-400 hover:border-gray-500 hover:text-gray-300"
+                  className="w-full px-3 py-2 border-2 border-dashed theme-border rounded-lg text-sm theme-text-secondary hover:border-blue-500 theme-text-hover"
                 >
                   + 컴포넌트 규칙 추가
                 </button>
@@ -1308,12 +1391,12 @@ function MappingRulesTab({ projectId }: { projectId?: string | null }) {
 
               {/* 새 컴포넌트 추가 폼 */}
               {showAddComponent && (
-                <div className="border border-gray-600 rounded-lg p-3 bg-gray-700/30 space-y-2">
+                <div className="border theme-border rounded-lg p-3 theme-bg-tertiary space-y-2">
                   <div className="flex items-center gap-2">
                     <select
                       value={selectedNewComponent}
                       onChange={(e) => setSelectedNewComponent(e.target.value)}
-                      className="flex-1 px-3 py-2 bg-gray-700 border border-gray-600 rounded text-sm text-white"
+                      className="flex-1 px-3 py-2 theme-bg-tertiary border theme-border rounded text-sm theme-text-primary"
                     >
                       <option value="">컴포넌트 선택...</option>
                       {componentsWithoutRules.map(c => (
@@ -1322,7 +1405,7 @@ function MappingRulesTab({ projectId }: { projectId?: string | null }) {
                     </select>
                     <button
                       onClick={() => { setShowAddComponent(false); setSelectedNewComponent('') }}
-                      className="px-2 py-2 text-gray-400 hover:text-white"
+                      className="px-2 py-2 theme-text-secondary theme-text-hover"
                     >
                       ×
                     </button>
@@ -1334,7 +1417,7 @@ function MappingRulesTab({ projectId }: { projectId?: string | null }) {
                         value={newKeyword[selectedNewComponent] || ''}
                         onChange={(e) => setNewKeyword(prev => ({ ...prev, [selectedNewComponent]: e.target.value }))}
                         placeholder="첫 번째 키워드 입력"
-                        className="flex-1 px-3 py-2 bg-gray-700 border border-gray-600 rounded text-sm text-white"
+                        className="flex-1 px-3 py-2 theme-bg-tertiary border theme-border rounded text-sm theme-text-primary"
                         onKeyDown={(e) => e.key === 'Enter' && handleAddNewComponent()}
                       />
                       <button
@@ -1349,51 +1432,51 @@ function MappingRulesTab({ projectId }: { projectId?: string | null }) {
               )}
 
               {/* 규칙 목록 */}
-              <div className="border border-gray-700 rounded-lg max-h-64 overflow-y-auto">
+              <div className="border theme-border rounded-lg max-h-64 overflow-y-auto">
                 {defaultRules.length === 0 ? (
-                  <div className="px-3 py-4 text-center text-gray-500 text-sm">
+                  <div className="px-3 py-4 text-center theme-text-secondary text-sm">
                     등록된 기본 매핑 규칙이 없습니다
                   </div>
                 ) : (
                   defaultRules.map(group => {
                     const isExpanded = expandedComponents.has(group.registryId)
                     return (
-                      <div key={group.registryId} className="border-b border-gray-700 last:border-b-0">
+                      <div key={group.registryId} className="border-b theme-border last:border-b-0">
                         {/* 컴포넌트 헤더 */}
                         <button
                           onClick={() => toggleExpand(group.registryId)}
-                          className="w-full px-3 py-2 flex items-center justify-between hover:bg-gray-700/30"
+                          className="w-full px-3 py-2 flex items-center justify-between theme-bg-hover"
                         >
                           <div className="flex items-center gap-2">
                             <svg
-                              className={`w-4 h-4 text-gray-400 transition-transform ${isExpanded ? 'rotate-90' : ''}`}
+                              className={`w-4 h-4 theme-text-secondary transition-transform ${isExpanded ? 'rotate-90' : ''}`}
                               fill="none"
                               stroke="currentColor"
                               viewBox="0 0 24 24"
                             >
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                             </svg>
-                            <span className="text-sm font-medium text-white">{group.registryName}</span>
+                            <span className="text-sm font-medium theme-text-primary">{group.registryName}</span>
                           </div>
-                          <span className="text-xs bg-gray-600 px-2 py-0.5 rounded text-gray-300">
+                          <span className="text-xs theme-bg-tertiary px-2 py-0.5 rounded theme-text-secondary">
                             {group.keywords.length}개 키워드
                           </span>
                         </button>
 
                         {/* 키워드 목록 */}
                         {isExpanded && (
-                          <div className="px-3 py-2 bg-gray-800/50 space-y-2">
+                          <div className="px-3 py-2 theme-bg-tertiary space-y-2">
                             {/* 기존 키워드 */}
                             <div className="flex flex-wrap gap-1">
                               {group.rules.map(rule => (
                                 <span
                                   key={rule.id}
-                                  className="inline-flex items-center gap-1 px-2 py-1 bg-gray-700 rounded text-sm text-gray-300"
+                                  className="inline-flex items-center gap-1 px-2 py-1 bg-blue-100 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-800 rounded text-sm text-blue-700 dark:text-blue-300"
                                 >
                                   {rule.keyword}
                                   <button
                                     onClick={() => handleDeleteKeyword(rule.id, rule.keyword)}
-                                    className="text-gray-500 hover:text-red-400"
+                                    className="text-blue-400 hover:text-red-400"
                                   >
                                     ×
                                   </button>
@@ -1408,7 +1491,7 @@ function MappingRulesTab({ projectId }: { projectId?: string | null }) {
                                 value={newKeyword[group.registryId] || ''}
                                 onChange={(e) => setNewKeyword(prev => ({ ...prev, [group.registryId]: e.target.value }))}
                                 placeholder="새 키워드..."
-                                className="flex-1 px-2 py-1 bg-gray-700 border border-gray-600 rounded text-sm text-white placeholder-gray-500"
+                                className="flex-1 px-2 py-1 theme-bg-tertiary border theme-border rounded text-sm theme-text-primary placeholder-gray-500"
                                 onKeyDown={(e) => e.key === 'Enter' && handleAddKeyword(group.registryId)}
                               />
                               <button
@@ -1427,20 +1510,20 @@ function MappingRulesTab({ projectId }: { projectId?: string | null }) {
                 )}
               </div>
 
-              <p className="text-xs text-gray-500">
+              <p className="text-xs theme-text-secondary">
                 노드 이름에 키워드가 포함되면 해당 컴포넌트로 자동 매핑됩니다. (대소문자 무시)
               </p>
 
               {/* 초기화 버튼 */}
-              <div className="pt-2 border-t border-gray-700">
+              <div className="pt-2 border-t theme-border">
                 <button
                   onClick={handleReset}
                   disabled={loading}
-                  className="px-3 py-1.5 text-xs bg-gray-600 hover:bg-gray-500 text-white rounded disabled:opacity-50"
+                  className="px-3 py-1.5 text-xs theme-bg-tertiary theme-bg-hover theme-text-primary rounded disabled:opacity-50"
                 >
                   {loading ? '초기화 중...' : '기본값으로 초기화'}
                 </button>
-                <span className="ml-2 text-xs text-gray-500">모든 규칙을 삭제하고 기본값으로 복원합니다.</span>
+                <span className="ml-2 text-xs theme-text-secondary">모든 규칙을 삭제하고 기본값으로 복원합니다.</span>
               </div>
             </>
           )}
@@ -1481,7 +1564,7 @@ function MappingRulesTab({ projectId }: { projectId?: string | null }) {
   )
 }
 
-export default function SettingsModal({ isOpen, onClose, onSaveToken, onCssChange, projectId, projectName }: SettingsModalProps) {
+export default function SettingsModal({ isOpen, onClose, onSaveToken, onCssChange, onRegistryChange, projectId, projectName }: SettingsModalProps) {
   const [activeTab, setActiveTab] = useState<TabType>('basic')
 
   // 모달 열릴 때 기본 탭으로 리셋
@@ -1550,7 +1633,7 @@ export default function SettingsModal({ isOpen, onClose, onSaveToken, onCssChang
           {activeTab === 'basic' && (
             <BasicTab onSaveToken={onSaveToken} onClose={onClose} projectId={projectId} />
           )}
-          {activeTab === 'components' && <ComponentsTab projectId={projectId} />}
+          {activeTab === 'components' && <ComponentsTab projectId={projectId} onRegistryChange={onRegistryChange} />}
           {activeTab === 'css' && <CssTab projectId={projectId} onCssChange={onCssChange} />}
           {activeTab === 'mappingRules' && <MappingRulesTab projectId={projectId} />}
         </div>

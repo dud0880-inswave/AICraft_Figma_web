@@ -110,6 +110,36 @@ export async function deleteMapping(projectId: string, fileKey: string, nodeId: 
   if (!res.ok) throw new Error('Failed to delete mapping');
 }
 
+export async function clearAllMappings(projectId: string, fileKey: string, rootNodeId?: string | null): Promise<{ success: boolean; count: number }> {
+  const res = await fetch(`${API_BASE}/mappings/clear`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ projectId, fileKey, rootNodeId }),
+  });
+  if (!res.ok) throw new Error('Failed to clear mappings');
+  return res.json();
+}
+
+export interface RecommendedClass {
+  className: string;
+  frequency: number;
+  total: number;
+}
+
+export async function getRecommendedClasses(
+  projectId: string,
+  node: FigmaNodeForSignature,
+  parent: FigmaNodeForSignature | null
+): Promise<{ commonClasses: string[]; recommendedClasses: RecommendedClass[] }> {
+  const res = await fetch(`${API_BASE}/clusters/recommended-classes`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ projectId, node, parent }),
+  });
+  if (!res.ok) throw new Error('Failed to get recommended classes');
+  return res.json();
+}
+
 // ---- Figma Files API ----
 
 export interface FigmaFileRecord {
@@ -153,7 +183,10 @@ export async function createProject(name: string): Promise<Project> {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ name }),
   });
-  if (!res.ok) throw new Error('Failed to create project');
+  if (!res.ok) {
+    const err = await res.json();
+    throw new Error(err.error || 'Failed to create project');
+  }
   return res.json();
 }
 
@@ -163,7 +196,10 @@ export async function updateProject(id: string, name: string): Promise<Project> 
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ name }),
   });
-  if (!res.ok) throw new Error('Failed to update project');
+  if (!res.ok) {
+    const err = await res.json();
+    throw new Error(err.error || 'Failed to update project');
+  }
   return res.json();
 }
 
@@ -245,6 +281,16 @@ export async function updateFigmaFileCompleted(projectId: string, fileKey: strin
     body: JSON.stringify({ projectId, fileKey, nodeId, completed }),
   });
   if (!res.ok) throw new Error('Failed to update figma file completion status');
+}
+
+export async function refreshFigmaFile(projectId: string, fileKey: string, nodeId: string | null, data: object): Promise<{ deletedMappingsCount: number }> {
+  const res = await fetch(`${API_BASE}/figma-files/refresh`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ projectId, fileKey, nodeId, data }),
+  });
+  if (!res.ok) throw new Error('Failed to refresh figma file');
+  return res.json();
 }
 
 // ---- Figma File Data API (수정된 파일 구조 저장) ----

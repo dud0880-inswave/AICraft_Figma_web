@@ -108,7 +108,7 @@ export default function AutoMappingSuggestionModal({
           </div>
           <button
             onClick={onClose}
-            className="p-1 text-gray-400 hover:text-white rounded"
+            className="p-1 theme-text-secondary hover:theme-text-primary rounded"
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -130,7 +130,7 @@ export default function AutoMappingSuggestionModal({
                 onChange={toggleAll}
                 className="w-4 h-4 rounded theme-border theme-bg-tertiary text-blue-500 focus:ring-blue-500"
               />
-              <span className="text-sm text-gray-300">
+              <span className="text-sm theme-text-primary">
                 전체 ({selectedKeys.size}/{suggestions.length})
               </span>
             </label>
@@ -141,7 +141,7 @@ export default function AutoMappingSuggestionModal({
                 className={`text-xs px-2 py-1 rounded transition-colors ${
                   clusterAllSelected
                     ? 'bg-purple-600 text-white'
-                    : 'bg-purple-900/30 text-purple-300 hover:bg-purple-900/50'
+                    : 'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 hover:bg-purple-200 dark:hover:bg-purple-900/50'
                 }`}
               >
                 클러스터 {clusterAllSelected ? '해제' : '전체선택'} ({clusterKeys.filter(key => selectedKeys.has(key)).length}/{clusterKeys.length})
@@ -154,7 +154,7 @@ export default function AutoMappingSuggestionModal({
                 className={`text-xs px-2 py-1 rounded transition-colors ${
                   defaultRuleAllSelected
                     ? 'bg-green-600 text-white'
-                    : 'bg-green-900/30 text-green-300 hover:bg-green-900/50'
+                    : 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 hover:bg-green-200 dark:hover:bg-green-900/50'
                 }`}
               >
                 기본규칙 {defaultRuleAllSelected ? '해제' : '전체선택'} ({defaultRuleKeys.filter(key => selectedKeys.has(key)).length}/{defaultRuleKeys.length})
@@ -171,7 +171,7 @@ export default function AutoMappingSuggestionModal({
                   key={key}
                   className={`flex items-center gap-3 p-3 rounded-lg cursor-pointer transition-colors ${
                     selectedKeys.has(key)
-                      ? 'bg-blue-900/30 border border-blue-500/50'
+                      ? 'bg-blue-100 dark:bg-blue-900/30 border border-blue-500'
                       : 'theme-bg-tertiary border theme-border hover:opacity-80'
                   }`}
                 >
@@ -186,23 +186,23 @@ export default function AutoMappingSuggestionModal({
                       <span className="theme-text-primary font-medium truncate">
                         {suggestion.nodeName}
                       </span>
-                      <span className="text-xs px-1.5 py-0.5 theme-bg-secondary theme-text-secondary rounded">
+                      <span className="text-xs px-1.5 py-0.5 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded">
                         {suggestion.nodeType}
                       </span>
                       {suggestion.source === 'cluster' ? (
-                        <span className="text-xs px-1.5 py-0.5 bg-purple-900/50 text-purple-300 rounded">클러스터</span>
+                        <span className="text-xs px-1.5 py-0.5 bg-purple-100 dark:bg-purple-900/50 text-purple-700 dark:text-purple-300 rounded">클러스터</span>
                       ) : (
-                        <span className="text-xs px-1.5 py-0.5 bg-green-900/50 text-green-300 rounded">기본규칙</span>
+                        <span className="text-xs px-1.5 py-0.5 bg-green-100 dark:bg-green-900/50 text-green-700 dark:text-green-300 rounded">기본규칙</span>
                       )}
                     </div>
                     <div className="flex items-center gap-2 mt-1">
-                      <span className="text-sm text-blue-400">
+                      <span className="text-sm text-blue-600 dark:text-blue-400">
                         {suggestion.registryName}
                       </span>
                       {suggestion.source === 'cluster' ? (
-                        <span className="text-xs text-gray-500">({suggestion.sampleCount}회 매핑됨)</span>
+                        <span className="text-xs theme-text-secondary">({suggestion.sampleCount}회 매핑됨)</span>
                       ) : (
-                        <span className="text-xs text-gray-500">(키워드: {suggestion.matchedKeyword})</span>
+                        <span className="text-xs theme-text-secondary">(키워드: {suggestion.matchedKeyword})</span>
                       )}
                     </div>
                   </div>

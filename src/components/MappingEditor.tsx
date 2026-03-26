@@ -1,24 +1,38 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
 import type { FigmaNode } from '../types/figma'
-import type { RegistryItem, NodeMapping } from '../utils/api'
-import { fetchRegistry, fetchMapping, saveMapping, deleteMapping, fetchProjectSettings } from '../utils/api'
+import type { RegistryItem, NodeMapping, FigmaNodeForSignature } from '../utils/api'
+import { fetchRegistry, fetchMapping, saveMapping, deleteMapping, clearAllMappings, fetchProjectSettings, getRecommendedClasses, type RecommendedClass } from '../utils/api'
 import { type CssItem, type ComponentClassMapping } from './SettingsModal'
 import { findTextInChildren, collectAllTexts, collectTopLevelTexts } from '../utils/text-utils'
+import { findParentNode } from '../utils/tree-utils'
 
 interface MappingEditorProps {
   node: FigmaNode | null  // 단일 선택 (프리뷰용)
   nodes: FigmaNode[]  // 다중 선택 (일괄 적용용)
+  tree: FigmaNode | null  // 전체 트리 (parent 찾기용)
   fileKey: string | null
   rootNodeId: string | null  // 등록된 최상위 노드 ID
   projectId: string | null  // 프로젝트 ID (CSS 설정 로드용)
   cssRefreshKey?: number  // CSS 새로고침 트리거
+  registryRefreshKey?: number  // Registry 새로고침 트리거
   onRegistryLoad?: (registry: RegistryItem[]) => void
   onMappingChange?: () => void
 }
 
 
 
-export default function MappingEditor({ node, nodes, fileKey, rootNodeId, projectId, cssRefreshKey, onRegistryLoad, onMappingChange }: MappingEditorProps) {
+// FigmaNode → FigmaNodeForSignature 변환
+function convertNodeForSignature(node: FigmaNode): FigmaNodeForSignature {
+  return {
+    id: node.id,
+    name: node.name,
+    type: node.type,
+    componentProperties: node.componentProperties,
+    children: node.children?.map(convertNodeForSignature)
+  }
+}
+
+export default function MappingEditor({ node, nodes, tree, fileKey, rootNodeId, projectId, cssRefreshKey, registryRefreshKey, onRegistryLoad, onMappingChange }: MappingEditorProps) {
   const [registry, setRegistry] = useState<RegistryItem[]>([])
   const [mapping, setMapping] = useState<NodeMapping | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
@@ -34,6 +48,8 @@ export default function MappingEditor({ node, nodes, fileKey, rootNodeId, projec
   const [classSearchQuery, setClassSearchQuery] = useState('')
   const [newAttrKey, setNewAttrKey] = useState('')
   const [newAttrValue, setNewAttrValue] = useState('')
+  const [recommendedClasses, setRecommendedClasses] = useState<RecommendedClass[]>([])
+  const [commonClasses, setCommonClasses] = useState<string[]>([])
   const dropdownRef = useRef<HTMLDivElement>(null)
   const splitContainerRef = useRef<HTMLDivElement>(null)
 
@@ -82,11 +98,12 @@ export default function MappingEditor({ node, nodes, fileKey, rootNodeId, projec
       }
     }
     load()
-  }, [projectId])
+  }, [projectId, registryRefreshKey])
 
-  // 노드 변경 시 매핑 로드
+  // 노드 변경 시 매핑 로드 (다중 선택 시 첫 번째 노드)
   useEffect(() => {
-    if (!node || !fileKey || !projectId) {
+    const targetNode = node || nodes[0] || null
+    if (!targetNode || !fileKey || !projectId) {
       setMapping(null)
       return
     }
@@ -94,7 +111,7 @@ export default function MappingEditor({ node, nodes, fileKey, rootNodeId, projec
     const load = async () => {
       setLoading(true)
       try {
-        const m = await fetchMapping(projectId, fileKey, node.id, rootNodeId)
+        const m = await fetchMapping(projectId, fileKey, targetNode.id, rootNodeId)
         setMapping(m)
       } catch {
         setMapping(null)
@@ -103,7 +120,37 @@ export default function MappingEditor({ node, nodes, fileKey, rootNodeId, projec
       }
     }
     load()
-  }, [node?.id, fileKey, rootNodeId, projectId])
+  }, [node?.id, nodes[0]?.id, fileKey, rootNodeId, projectId])
+
+  // 추천 클래스 조회 (매핑된 노드만)
+  useEffect(() => {
+    const targetNode = node || nodes[0] || null
+    if (!projectId || !mapping?.registryId || !targetNode || !tree) {
+      setRecommendedClasses([])
+      setCommonClasses([])
+      return
+    }
+
+    const loadRecommended = async () => {
+      try {
+        // parent 찾기 (rootNodeId === nodeId인 경우 parent는 null)
+        const isRootNode = rootNodeId === targetNode.id
+        const parent = isRootNode ? null : findParentNode(tree, targetNode.id)
+
+        const { commonClasses, recommendedClasses } = await getRecommendedClasses(
+          projectId,
+          convertNodeForSignature(targetNode),
+          parent ? convertNodeForSignature(parent) : null
+        )
+        setCommonClasses(commonClasses)
+        setRecommendedClasses(recommendedClasses)
+      } catch {
+        setRecommendedClasses([])
+        setCommonClasses([])
+      }
+    }
+    loadRecommended()
+  }, [mapping?.registryId, projectId, node?.id, nodes[0]?.id, tree, rootNodeId])
 
   // 매핑 변경 시 바인딩된 클래스가 있는 CSS 파일 우선 선택, 없으면 첫 번째 파일
   useEffect(() => {
@@ -144,7 +191,8 @@ export default function MappingEditor({ node, nodes, fileKey, rootNodeId, projec
           status: 'mapped',
         })
       }
-      if (lastMapping && targetNodes.length === 1) {
+      // 다중 선택이어도 mapping 업데이트 (마지막 노드 기준)
+      if (lastMapping) {
         setMapping(lastMapping)
       }
       onMappingChange?.()
@@ -170,6 +218,28 @@ export default function MappingEditor({ node, nodes, fileKey, rootNodeId, projec
       onMappingChange?.()
     } catch {
       // ignore
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  // 파일 전체 매핑 초기화
+  const handleClearAllMappings = async () => {
+    if (!fileKey || !projectId) return
+
+    if (!confirm('현재 파일의 모든 매핑을 초기화하시겠습니까?\n이 작업은 되돌릴 수 없습니다.')) {
+      return
+    }
+
+    setSaving(true)
+    try {
+      const result = await clearAllMappings(projectId, fileKey, rootNodeId)
+      console.log(`${result.count}개의 매핑이 삭제되었습니다.`)
+      setMapping(null)
+      onMappingChange?.()
+    } catch (error) {
+      console.error('Failed to clear all mappings:', error)
+      alert('매핑 초기화에 실패했습니다.')
     } finally {
       setSaving(false)
     }
@@ -334,18 +404,23 @@ export default function MappingEditor({ node, nodes, fileKey, rootNodeId, projec
     item.name.toLowerCase().includes(searchQuery.toLowerCase())
   )
 
-  // CSS 클래스 검색 필터링 (선택된 클래스 최상단)
+  // CSS 클래스 검색 필터링 (선택된 클래스 > 추천 클래스 > 매핑된 클래스 > 나머지)
   const filteredClasses = useMemo(() => {
     const base = classSearchQuery
       ? allClassesInCss.filter(cls => cls.toLowerCase().includes(classSearchQuery.toLowerCase()))
       : allClassesInCss
     const selected = new Set(selectedClasses)
+    const recommended = new Set([
+      ...commonClasses,
+      ...recommendedClasses.map(r => r.className)
+    ])
+    const bound = new Set(boundClasses)
     return [...base].sort((a: string, b: string) => {
-      const aSelected = selected.has(a) ? 0 : 1
-      const bSelected = selected.has(b) ? 0 : 1
-      return aSelected - bSelected
+      const aPriority = selected.has(a) ? 0 : recommended.has(a) ? 1 : bound.has(a) ? 2 : 3
+      const bPriority = selected.has(b) ? 0 : recommended.has(b) ? 1 : bound.has(b) ? 2 : 3
+      return aPriority - bPriority
     })
-  }, [allClassesInCss, classSearchQuery, selectedClasses])
+  }, [allClassesInCss, classSearchQuery, selectedClasses, commonClasses, recommendedClasses, boundClasses])
 
   // 드롭다운 외부 클릭 시 닫기
   useEffect(() => {
@@ -396,16 +471,26 @@ export default function MappingEditor({ node, nodes, fileKey, rootNodeId, projec
       {/* 노드 정보 */}
       <div className="px-4 py-3 border-b theme-border flex-shrink-0">
         {displayNode ? (
-          <>
-            <h2 className="text-sm font-medium theme-text-primary truncate" title={displayNode.name}>
-              {nodes.length > 1 ? `${nodes.length}개 노드 선택됨` : displayNode.name}
-            </h2>
-            <p className="text-xs theme-text-secondary mt-0.5">
-              {nodes.length > 1
-                ? `일괄 적용 모드`
-                : `${displayNode.type} · ${displayNode.id}`}
-            </p>
-          </>
+          <div className="flex items-start justify-between">
+            <div className="flex-1 min-w-0">
+              <h2 className="text-sm font-medium theme-text-primary truncate" title={displayNode.name}>
+                {nodes.length > 1 ? `${nodes.length}개 노드 선택됨` : displayNode.name}
+              </h2>
+              <p className="text-xs theme-text-secondary mt-0.5">
+                {nodes.length > 1
+                  ? `일괄 적용 모드`
+                  : `${displayNode.type} · ${displayNode.id}`}
+              </p>
+            </div>
+            <button
+              onClick={handleClearAllMappings}
+              disabled={saving}
+              className="ml-2 px-2 py-1 text-xs bg-red-600 hover:bg-red-500 disabled:bg-gray-600 disabled:text-gray-400 text-white rounded whitespace-nowrap"
+              title="현재 파일의 모든 매핑을 초기화합니다"
+            >
+              매핑 초기화
+            </button>
+          </div>
         ) : (
           <p className="text-sm theme-text-secondary">노드를 선택하면 컴포넌트를 매핑할 수 있습니다</p>
         )}
@@ -452,13 +537,16 @@ export default function MappingEditor({ node, nodes, fileKey, rootNodeId, projec
               <input
                 type="text"
                 placeholder="컴포넌트 검색..."
-                value={searchQuery}
+                value={searchQuery || (mapping?.registryId ? registry.find(r => r.id === mapping.registryId)?.name || '' : '')}
                 onChange={(e) => {
                   setSearchQuery(e.target.value)
                   setDropdownOpen(true)
                   setHighlightedIndex(-1)
                 }}
-                onFocus={() => setDropdownOpen(true)}
+                onFocus={() => {
+                  setSearchQuery('')
+                  setDropdownOpen(true)
+                }}
                 onKeyDown={(e) => {
                   if (!dropdownOpen || filteredRegistry.length === 0) return
                   if (e.key === 'ArrowDown') {
@@ -953,21 +1041,37 @@ ${bodyCols}
                     {filteredClasses.map(cls => {
                       const isSelected = selectedClasses.includes(cls)
                       const isBound = boundClasses.includes(cls)
+                      const isCommon = commonClasses.includes(cls)
+                      const recommended = recommendedClasses.find(r => r.className === cls)
+                      const isRecommended = !!recommended
+
                       return (
                         <button
                           key={cls}
                           onClick={() => handleToggleClass(cls)}
                           disabled={saving}
-                          className={`px-2 py-1 text-xs rounded font-mono ${
+                          className={`px-2 py-1 text-xs rounded font-mono flex items-center gap-1 ${
                             isSelected
                               ? 'bg-blue-600 text-white'
                               : isBound
                                 ? 'bound-class-btn'
-                                : 'theme-bg-tertiary theme-text-secondary hover:opacity-80'
+                                : isRecommended
+                                  ? 'theme-bg-tertiary border border-yellow-500 theme-text-secondary hover:opacity-80'
+                                  : 'theme-bg-tertiary theme-text-secondary hover:opacity-80'
                           }`}
-                          title={isBound ? '컴포넌트에 바인딩된 클래스' : '바인딩되지 않은 클래스'}
+                          title={
+                            isCommon
+                              ? '공통 클래스 (모든 variant에 적용됨)'
+                              : isRecommended
+                                ? `추천 클래스 (${recommended.frequency}/${recommended.total})`
+                                : isBound
+                                  ? '컴포넌트에 바인딩된 클래스'
+                                  : '바인딩되지 않은 클래스'
+                          }
                         >
+                          {isRecommended && <span className="text-yellow-400">⭐</span>}
                           .{cls}
+                          {isRecommended && <span className="text-xs text-yellow-400">({recommended.frequency}/{recommended.total})</span>}
                         </button>
                       )
                     })}

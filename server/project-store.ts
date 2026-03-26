@@ -45,6 +45,22 @@ export class ProjectStore {
     };
   }
 
+  getByName(name: string): Project | null {
+    const row = this.db.prepare(`
+      SELECT id, name, created_at, updated_at
+      FROM projects
+      WHERE name = ?
+    `).get(name) as { id: string; name: string; created_at: string; updated_at: string } | undefined;
+
+    if (!row) return null;
+    return {
+      id: row.id,
+      name: row.name,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+    };
+  }
+
   create(name: string): Project {
     const id = randomUUID();
     const now = new Date().toISOString();

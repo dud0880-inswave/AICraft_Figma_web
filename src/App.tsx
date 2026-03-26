@@ -1,7 +1,7 @@
 import { useState, useCallback, useEffect, useRef } from 'react'
 import type { FigmaFile, FigmaNode, BoundingBox } from './types/figma'
 import type { RegistryItem, AutoMappingSuggestion, FigmaNodeForSignature } from './utils/api'
-import { saveFigmaFile, touchFigmaFile, fetchMappings, fetchFigmaFileData, saveFigmaFileData, saveMapping, fetchAutoMappingSuggestions, fetchDefaultRuleSuggestions, applyAutoMappingSuggestions, saveProjectSettings } from './utils/api'
+import { saveFigmaFile, touchFigmaFile, fetchMappings, fetchFigmaFileData, saveFigmaFileData, saveMapping, fetchAutoMappingSuggestions, fetchDefaultRuleSuggestions, applyAutoMappingSuggestions, saveProjectSettings, fetchProjectSettings, refreshFigmaFile } from './utils/api'
 import { parseFigmaUrl, fetchFigmaFile, fetchNodeImages } from './utils/figma-api'
 import { findNodeById, calculatePageBounds, groupNodes, ungroupNode, reorderNodes } from './utils/tree-utils'
 import Dashboard from './components/Dashboard'
@@ -59,6 +59,7 @@ export default function App() {
   const [showSettings, setShowSettings] = useState(false)
   const [showAddFileModal, setShowAddFileModal] = useState(false)
   const [dashboardKey, setDashboardKey] = useState(0)
+  const [refreshing, setRefreshing] = useState(false)
 
   // 패널 너비 상태
   const [leftPanelWidth, setLeftPanelWidth] = useState(288)  // 기본 w-72 (18rem = 288px)
@@ -69,6 +70,7 @@ export default function App() {
   const [convertTrigger, setConvertTrigger] = useState(0)  // 변환 트리거
   const [mappedNodeIds, setMappedNodeIds] = useState<Set<string>>(new Set())  // 매핑된 노드 ID
   const [cssRefreshKey, setCssRefreshKey] = useState(0)  // CSS 새로고침 트리거
+  const [registryRefreshKey, setRegistryRefreshKey] = useState(0)  // Registry 새로고침 트리거
   const containerRef = useRef<HTMLDivElement>(null)
 
   // 자동 매핑 제안 모달 상태
@@ -158,9 +160,8 @@ export default function App() {
             children: node.children?.filter(c => c.visible !== false).map(c => convertNode(c)),
           })
 
-          const nodesForSignature = state.targetNodeId
-            ? [convertNode(displayRoot)]
-            : displayRoot.children.map(c => convertNode(c))
+          // displayRoot 자체를 보내서 서버에서 트리 구조를 유지하며 parent 추적 가능하도록 함
+          const nodesForSignature = [convertNode(displayRoot)]
 
           // 클러스터 제안 + default rule 제안 병렬 조회 (프로젝트별 클러스터)
           const [clusterSuggestions, defaultSuggestions] = await Promise.all([
@@ -190,6 +191,16 @@ export default function App() {
       }))
     }
   }, [])
+
+  // 에러 메시지 자동 숨김 (3초 후)
+  useEffect(() => {
+    if (state.error) {
+      const timer = setTimeout(() => {
+        setState((s) => ({ ...s, error: null }))
+      }, 3000)
+      return () => clearTimeout(timer)
+    }
+  }, [state.error])
 
   // 이미지 로드 (노드 또는 페이지)
   useEffect(() => {
@@ -317,20 +328,116 @@ export default function App() {
     setView('dashboard')
   }, [state.projectId])
 
+  // 파일 새로고침
+  const handleRefreshFile = useCallback(async (fileKey: string, nodeId: string | null, projectId: string) => {
+    try {
+      // 1. 프로젝트 설정에서 토큰 가져오기
+      const settings = await fetchProjectSettings(projectId)
+      const token = settings['figma-token']
+      if (!token) {
+        throw new Error('Figma Access Token이 설정되어 있지 않습니다.')
+      }
+
+      // 2. Figma API로 최신 데이터 가져오기
+      let file = await fetchFigmaFile(fileKey, token, nodeId)
+      const documentToSave = nodeId && file.nodes?.[nodeId]
+        ? file.nodes[nodeId].document
+        : file.document
+
+      // 3. 서버에 업데이트 및 매핑 정리
+      const result = await refreshFigmaFile(projectId, fileKey, nodeId, documentToSave)
+      console.log(`[Refresh] ${result.deletedMappingsCount}개 매핑 삭제됨`)
+
+      // 4. 저장된 수정 데이터가 있으면 적용
+      const savedData = await fetchFigmaFileData(projectId, fileKey, nodeId)
+      if (savedData && savedData.data) {
+        file = { ...file, document: savedData.data as typeof file.document }
+      }
+
+      // 5. 현재 편집 중인 파일이면 state 업데이트
+      const isSameFile = state.fileKey === fileKey &&
+                         (state.targetNodeId === nodeId || (!state.targetNodeId && !nodeId))
+
+      if (isSameFile) {
+        const pages = file.document.children || []
+
+        // 바운딩 박스 재계산
+        const nodeBounds: Record<string, BoundingBox> = {}
+        const imageKey = state.targetNodeId || state.currentPageId
+
+        if (state.targetNodeId && state.currentPageId) {
+          const page = pages.find(p => p.id === state.currentPageId)
+          if (page) {
+            const targetNode = findNodeById(page, state.targetNodeId)
+            const bounds = targetNode?.absoluteRenderBounds || targetNode?.absoluteBoundingBox
+            if (bounds) {
+              nodeBounds[state.targetNodeId] = bounds
+            }
+          }
+        } else {
+          for (const page of pages) {
+            const bounds = calculatePageBounds(page)
+            if (bounds) {
+              nodeBounds[page.id] = bounds
+            }
+          }
+        }
+
+        // 6. 이미지 다시 로드
+        let newNodeImages = { ...state.nodeImages }
+        if (imageKey) {
+          try {
+            const imageResult = await fetchNodeImages(fileKey, token, [imageKey], 'png', 2)
+            const imageUrl = imageResult.images[imageKey]
+            if (imageUrl) {
+              newNodeImages[imageKey] = imageUrl
+            }
+          } catch (err) {
+            console.error('이미지 로드 실패:', err)
+          }
+        }
+
+        setState(s => ({
+          ...s,
+          file,
+          token,
+          nodeBounds,
+          nodeImages: newNodeImages,
+        }))
+        setConvertTrigger(t => t + 1)
+      }
+    } catch (err) {
+      console.error('Failed to refresh file:', err)
+      throw err
+    }
+  }, [state.fileKey, state.targetNodeId, state.currentPageId, state.nodeImages])
+
   // 대시보드에서 파일 선택
   const handleSelectFileFromDashboard = useCallback(async (fileKey: string, nodeId: string | null, projectId: string, projectName?: string) => {
-    if (!state.token) {
+    // 프로젝트 설정에서 토큰 불러오기
+    let token = state.token
+    try {
+      const settings = await fetchProjectSettings(projectId)
+      const projectToken = settings['figma-token']
+      if (projectToken) {
+        token = projectToken
+      }
+    } catch (e) {
+      console.error('Failed to fetch project settings:', e)
+    }
+
+    if (!token) {
       setSettingsProjectId(projectId)
       setSettingsProjectName(projectName || null)
       setShowSettings(true)
       return
     }
 
-    setState((s) => ({ ...s, loading: true, error: null }))
+    setState((s) => ({ ...s, loading: true, error: null, token }))
 
     try {
       // Figma에서 원본 파일 가져오기
-      let file = await fetchFigmaFile(fileKey, state.token, nodeId)
+      let file = await fetchFigmaFile(fileKey, token, nodeId)
 
       // 저장된 수정 데이터가 있으면 적용
       try {
@@ -434,9 +541,8 @@ export default function App() {
         ...(node.componentProperties && { componentProperties: node.componentProperties }),
         children: node.children?.filter(c => c.visible !== false).map(c => convertNode(c)),
       })
-      const nodesForSignature = state.targetNodeId
-        ? [convertNode(root)]
-        : (root.children || []).map(c => convertNode(c))
+      // root 자체를 보내서 서버에서 트리 구조를 유지하며 parent 추적 가능하도록 함
+      const nodesForSignature = [convertNode(root)]
       const [clusterSuggestions, defaultSuggestions] = await Promise.all([
         fetchAutoMappingSuggestions(nodesForSignature, [], state.projectId!).then(s => s.map(s => ({ ...s, source: 'cluster' as const }))),
         fetchDefaultRuleSuggestions(state.projectId!, nodesForSignature),
@@ -754,15 +860,27 @@ export default function App() {
         <Dashboard
           key={dashboardKey}
           onSelectFile={handleSelectFileFromDashboard}
-          onAddNewFile={(projectId) => {
-            setAddFileProjectId(projectId)
-            setShowAddFileModal(true)
+          onAddNewFile={async (projectId) => {
+            // 프로젝트 설정에서 토큰 확인
+            try {
+              const settings = await fetchProjectSettings(projectId)
+              const token = settings['figma-token']
+              if (!token) {
+                setState((s) => ({ ...s, error: 'Figma Access Token이 설정되어 있지 않습니다. 프로젝트 설정에서 토큰을 먼저 등록해주세요.' }))
+                return
+              }
+              setAddFileProjectId(projectId)
+              setShowAddFileModal(true)
+            } catch (err) {
+              setState((s) => ({ ...s, error: '프로젝트 설정을 불러오는데 실패했습니다.' }))
+            }
           }}
           onOpenSettings={(projectId, projectName) => {
             setSettingsProjectId(projectId)
             setSettingsProjectName(projectName)
             setShowSettings(true)
           }}
+          onRefreshFile={handleRefreshFile}
           initialProjectId={navigateToProjectId}
         />
         {state.error && (
@@ -794,6 +912,7 @@ export default function App() {
           }}
           onSaveToken={handleSaveToken}
           onCssChange={() => setCssRefreshKey(k => k + 1)}
+          onRegistryChange={() => setRegistryRefreshKey(k => k + 1)}
           projectId={settingsProjectId}
           projectName={settingsProjectName || undefined}
         />
@@ -831,9 +950,29 @@ export default function App() {
         </div>
         <div className="flex items-center gap-2">
           <button
+            onClick={async () => {
+              if (!state.fileKey || !state.projectId || refreshing) return
+              try {
+                setRefreshing(true)
+                await handleRefreshFile(state.fileKey, state.targetNodeId, state.projectId)
+              } catch (err) {
+                setState(s => ({ ...s, error: '파일을 새로고침하는데 실패했습니다.' }))
+              } finally {
+                setRefreshing(false)
+              }
+            }}
+            disabled={refreshing}
+            className="p-2 theme-text-secondary hover:text-blue-500 theme-bg-hover rounded disabled:opacity-50"
+            title="파일 새로고침"
+          >
+            <svg className={`w-5 h-5 ${refreshing ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            </svg>
+          </button>
+          <button
             onClick={handleAutoMappingFromEditor}
             disabled={autoMappingLoading}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-blue-400 hover:text-blue-300 theme-bg-hover-strong rounded disabled:opacity-50"
+            className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-blue-600 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-900/50 rounded disabled:opacity-50 transition-colors"
             title="자동 매핑 제안"
           >
             {autoMappingLoading ? '분석 중...' : '자동 매핑'}
@@ -854,7 +993,7 @@ export default function App() {
               setSettingsProjectName(state.projectName)
               setShowSettings(true)
             }}
-            className="p-2 theme-text-secondary theme-text-hover theme-bg-hover-strong rounded"
+            className="p-2 theme-text-secondary hover:text-blue-500 theme-bg-hover rounded"
             title="프로젝트 설정"
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -923,10 +1062,12 @@ export default function App() {
             <MappingEditor
               node={primarySelectedNode}
               nodes={selectedNodes}
+              tree={displayRootNode}
               fileKey={state.fileKey}
               rootNodeId={state.targetNodeId}
               projectId={state.projectId}
               cssRefreshKey={cssRefreshKey}
+              registryRefreshKey={registryRefreshKey}
               onRegistryLoad={setRegistry}
               onMappingChange={() => setConvertTrigger(t => t + 1)}
             />
@@ -950,6 +1091,7 @@ export default function App() {
                 visible={codeEditorVisible}
                 onToggle={() => setCodeEditorVisible(v => !v)}
                 convertTrigger={convertTrigger}
+                cssRefreshKey={cssRefreshKey}
                 onComplete={() => {
                   setDashboardKey(k => k + 1)
                   handleBackToProject()
@@ -975,6 +1117,7 @@ export default function App() {
         }}
         onSaveToken={handleSaveToken}
         onCssChange={() => setCssRefreshKey(k => k + 1)}
+        onRegistryChange={() => setRegistryRefreshKey(k => k + 1)}
         projectId={settingsProjectId}
         projectName={settingsProjectName || undefined}
       />
@@ -993,6 +1136,19 @@ export default function App() {
         onApply={handleApplyAutoMapping}
         loading={autoMappingLoading}
       />
+
+      {/* 새로고침 로딩 오버레이 */}
+      {refreshing && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-gray-800 px-6 py-4 rounded-lg text-white flex items-center gap-3">
+            <svg className="animate-spin h-5 w-5" fill="none" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+            </svg>
+            파일 새로고침 중...
+          </div>
+        </div>
+      )}
     </div>
   )
 }

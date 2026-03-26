@@ -37,8 +37,8 @@ input[type="number"] {
   --bg-primary: #ffffff;
   --bg-secondary: #f3f4f6;
   --bg-tertiary: #e5e7eb;
-  --bg-hover: rgba(0, 0, 0, 0.05);
-  --bg-hover-strong: rgba(0, 0, 0, 0.1);
+  --bg-hover: rgba(0, 0, 0, 0.08);
+  --bg-hover-strong: rgba(0, 0, 0, 0.15);
   --text-primary: #111827;
   --text-secondary: #4b5563;
   --text-muted: #9ca3af;
@@ -168,4 +168,160 @@ body {
 :root.light .mapped-component-box {
   background-color: #eff6ff;
   border-color: #93c5fd;
+}
+
+/* highlight.js 테마 - Atom One Dark & Light */
+.hljs {
+  background: transparent !important;
+  padding: 0;
+}
+
+/* 다크 모드 - Atom One Dark */
+:root.dark .hljs {
+  color: #abb2bf;
+}
+
+:root.dark .hljs-comment,
+:root.dark .hljs-quote {
+  color: #5c6370;
+  font-style: italic;
+}
+
+:root.dark .hljs-doctag,
+:root.dark .hljs-keyword,
+:root.dark .hljs-formula {
+  color: #c678dd;
+}
+
+:root.dark .hljs-section,
+:root.dark .hljs-name,
+:root.dark .hljs-selector-tag,
+:root.dark .hljs-deletion,
+:root.dark .hljs-subst {
+  color: #e06c75;
+}
+
+:root.dark .hljs-literal {
+  color: #56b6c2;
+}
+
+:root.dark .hljs-string,
+:root.dark .hljs-regexp,
+:root.dark .hljs-addition,
+:root.dark .hljs-attribute,
+:root.dark .hljs-meta .hljs-string {
+  color: #98c379;
+}
+
+:root.dark .hljs-attr,
+:root.dark .hljs-variable,
+:root.dark .hljs-template-variable,
+:root.dark .hljs-type,
+:root.dark .hljs-selector-class,
+:root.dark .hljs-selector-attr,
+:root.dark .hljs-selector-pseudo,
+:root.dark .hljs-number {
+  color: #d19a66;
+}
+
+:root.dark .hljs-symbol,
+:root.dark .hljs-bullet,
+:root.dark .hljs-link,
+:root.dark .hljs-meta,
+:root.dark .hljs-selector-id,
+:root.dark .hljs-title {
+  color: #61afef;
+}
+
+:root.dark .hljs-built_in,
+:root.dark .hljs-title.class_,
+:root.dark .hljs-class .hljs-title {
+  color: #e6c07b;
+}
+
+:root.dark .hljs-emphasis {
+  font-style: italic;
+}
+
+:root.dark .hljs-strong {
+  font-weight: bold;
+}
+
+:root.dark .hljs-link {
+  text-decoration: underline;
+}
+
+/* 라이트 모드 - Atom One Light */
+:root.light .hljs {
+  color: #383a42;
+}
+
+:root.light .hljs-comment,
+:root.light .hljs-quote {
+  color: #a0a1a7;
+  font-style: italic;
+}
+
+:root.light .hljs-doctag,
+:root.light .hljs-keyword,
+:root.light .hljs-formula {
+  color: #a626a4;
+}
+
+:root.light .hljs-section,
+:root.light .hljs-name,
+:root.light .hljs-selector-tag,
+:root.light .hljs-deletion,
+:root.light .hljs-subst {
+  color: #e45649;
+}
+
+:root.light .hljs-literal {
+  color: #0184bb;
+}
+
+:root.light .hljs-string,
+:root.light .hljs-regexp,
+:root.light .hljs-addition,
+:root.light .hljs-attribute,
+:root.light .hljs-meta .hljs-string {
+  color: #50a14f;
+}
+
+:root.light .hljs-attr,
+:root.light .hljs-variable,
+:root.light .hljs-template-variable,
+:root.light .hljs-type,
+:root.light .hljs-selector-class,
+:root.light .hljs-selector-attr,
+:root.light .hljs-selector-pseudo,
+:root.light .hljs-number {
+  color: #986801;
+}
+
+:root.light .hljs-symbol,
+:root.light .hljs-bullet,
+:root.light .hljs-link,
+:root.light .hljs-meta,
+:root.light .hljs-selector-id,
+:root.light .hljs-title {
+  color: #4078f2;
+}
+
+:root.light .hljs-built_in,
+:root.light .hljs-title.class_,
+:root.light .hljs-class .hljs-title {
+  color: #c18401;
+}
+
+:root.light .hljs-emphasis {
+  font-style: italic;
+}
+
+:root.light .hljs-strong {
+  font-weight: bold;
+}
+
+:root.light .hljs-link {
+  text-decoration: underline;
 }

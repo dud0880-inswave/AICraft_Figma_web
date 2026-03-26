@@ -13,30 +13,32 @@ export interface MappingCluster {
   customAttrs: Record<string, string>;
   sampleCount: number;
   source: 'generated' | 'imported';
+  variantMode: 'base' | 'full' | null;  // base: key만, full: value 포함, null: 기존(base 취급)
   projectId: string | null;
   createdAt: string;
   updatedAt: string;
 }
 
 export interface SignatureData {
-  name: string;
+  name?: string;
   type: string;
-  componentProperties?: Record<string, { value: string; type: string }>;
+  componentProperties?: Record<string, { value: string | boolean; type: string }>;
   parent?: ParentData | null;  // 직속 부모 (1단계만)
   children?: SignatureData[];
 }
 
 export interface ParentData {
-  name: string;
+  name?: string;
   type: string;
-  componentProperties?: Record<string, { value: string; type: string }>;
+  componentProperties?: Record<string, { value: string | boolean; type: string }>;
   // parent, children 제외 (무한 반복 방지)
 }
 
 export interface FigmaNodeLike {
   name: string;
   type: string;
-  componentProperties?: Record<string, { value: string; type: string }>;
+  visible?: boolean;
+  componentProperties?: Record<string, { value: string | boolean; type: string }>;
   children?: FigmaNodeLike[];
 }
 
@@ -54,34 +56,106 @@ export interface AutoMappingSuggestion {
 export class ClusterStore {
   constructor(private db: Database) {}
 
+  // componentProperties에서 value 제거, type과 기타 필드만 유지
+  private filterComponentProperties(props: Record<string, any> | undefined): Record<string, any> | undefined {
+    if (!props) return undefined;
+
+    const filtered: Record<string, any> = {};
+    for (const [key, prop] of Object.entries(props)) {
+      if (typeof prop === 'object' && prop !== null) {
+        // value 제거, 나머지 필드 유지
+        const { value, ...rest } = prop;
+        filtered[key] = rest;
+      } else {
+        filtered[key] = prop;
+      }
+    }
+
+    return Object.keys(filtered).length > 0 ? filtered : undefined;
+  }
+
   // 노드 구조에서 시그니처 데이터 생성
   // parent: 직속 부모 노드 (1단계만)
   // childDepth: 자식 포함 깊이 (기본 1단계만)
-  createSignatureData(node: FigmaNodeLike, parent: FigmaNodeLike | null = null, childDepth: number = 1): SignatureData {
+  // includeNodeName: 노드 이름 포함 여부 (기본 true)
+  // variantMode: 'base' = key만, 'full' = value 포함
+  createSignatureData(node: FigmaNodeLike, parent: FigmaNodeLike | null = null, childDepth: number = 1, includeNodeName: boolean = true, variantMode: 'base' | 'full' = 'base'): SignatureData {
     const data: SignatureData = {
-      name: node.name,
+      ...(includeNodeName ? { name: node.name } : {}),
       type: node.type,
     };
 
-    // componentProperties 포함 (인스턴스 variant 정보 등)
-    if (node.componentProperties && Object.keys(node.componentProperties).length > 0) {
-      data.componentProperties = node.componentProperties;
+    // componentProperties 처리
+    if (node.componentProperties) {
+      if (variantMode === 'full') {
+        // full 모드: VARIANT 등은 value 포함, TEXT는 value 제거
+        const filtered: Record<string, any> = {};
+        for (const [key, prop] of Object.entries(node.componentProperties)) {
+          if (typeof prop === 'object' && prop !== null && prop.type === 'TEXT') {
+            // TEXT 타입: value 제거 (동적 콘텐츠)
+            const { value, ...rest } = prop;
+            filtered[key] = rest;
+          } else {
+            // VARIANT 등: value 포함 (구조적 정보)
+            filtered[key] = prop;
+          }
+        }
+        if (Object.keys(filtered).length > 0) {
+          data.componentProperties = filtered;
+        }
+      } else {
+        // base 모드: 모든 value 제거
+        const filteredProps = this.filterComponentProperties(node.componentProperties);
+        if (filteredProps) {
+          data.componentProperties = filteredProps;
+        }
+      }
     }
 
     // 직속 부모 정보 추가 (1단계만, parent/children 제외)
     if (parent) {
-      const parentData: ParentData = { name: parent.name, type: parent.type };
-      if (parent.componentProperties && Object.keys(parent.componentProperties).length > 0) {
-        parentData.componentProperties = parent.componentProperties;
+      const parentData: ParentData = {
+        ...(includeNodeName ? { name: parent.name } : {}),
+        type: parent.type
+      };
+
+      if (parent.componentProperties) {
+        if (variantMode === 'full') {
+          // full 모드: VARIANT 등은 value 포함, TEXT는 value 제거
+          const filtered: Record<string, any> = {};
+          for (const [key, prop] of Object.entries(parent.componentProperties)) {
+            if (typeof prop === 'object' && prop !== null && prop.type === 'TEXT') {
+              // TEXT 타입: value 제거
+              const { value, ...rest } = prop;
+              filtered[key] = rest;
+            } else {
+              // VARIANT 등: value 포함
+              filtered[key] = prop;
+            }
+          }
+          if (Object.keys(filtered).length > 0) {
+            parentData.componentProperties = filtered;
+          }
+        } else {
+          // base 모드: 모든 value 제거
+          const parentFilteredProps = this.filterComponentProperties(parent.componentProperties);
+          if (parentFilteredProps) {
+            parentData.componentProperties = parentFilteredProps;
+          }
+        }
       }
+
       data.parent = parentData;
     } else {
       data.parent = null;
     }
 
-    // 자식 노드 처리 (depth가 남아있을 때만)
+    // 자식 노드 처리 (depth가 남아있을 때만, visible: false 제외)
     if (childDepth > 0 && node.children && node.children.length > 0) {
-      data.children = node.children.map(child => this.createSignatureData(child, node, childDepth - 1));
+      const visibleChildren = node.children.filter(child => child.visible !== false);
+      if (visibleChildren.length > 0) {
+        data.children = visibleChildren.map(child => this.createSignatureData(child, node, childDepth - 1, includeNodeName, variantMode));
+      }
     }
 
     return data;
@@ -94,8 +168,8 @@ export class ClusterStore {
   }
 
   // 노드에서 직접 시그니처 해시 생성
-  createNodeSignature(node: FigmaNodeLike, parent: FigmaNodeLike | null = null, childDepth: number = 1): string {
-    const data = this.createSignatureData(node, parent, childDepth);
+  createNodeSignature(node: FigmaNodeLike, parent: FigmaNodeLike | null = null, childDepth: number = 1, includeNodeName: boolean = true, variantMode: 'base' | 'full' = 'base'): string {
+    const data = this.createSignatureData(node, parent, childDepth, includeNodeName, variantMode);
     return this.createSignatureHash(data);
   }
 
@@ -158,13 +232,47 @@ export class ClusterStore {
     return rows.map(toCluster);
   }
 
-  // 클러스터 생성 또는 업데이트 (sample_count 증가) — source: 'generated'
+  // customAttrs 병합 (클래스 빈도 추적)
+  private mergeCustomAttrs(existing: Record<string, any>, newAttrs: Record<string, string>): Record<string, any> {
+    const merged: Record<string, any> = { ...existing };
+
+    // class 속성 병합 (빈도 추적)
+    if (newAttrs.class) {
+      const newClasses = newAttrs.class.trim().split(/\s+/).filter(Boolean);
+
+      if (typeof existing.class === 'object' && !Array.isArray(existing.class)) {
+        // 기존에 빈도 객체가 있음
+        merged.class = { ...existing.class };
+        for (const cls of newClasses) {
+          merged.class[cls] = (merged.class[cls] || 0) + 1;
+        }
+      } else {
+        // 첫 번째 샘플 - 빈도 객체 생성
+        merged.class = {};
+        for (const cls of newClasses) {
+          merged.class[cls] = 1;
+        }
+      }
+    }
+
+    // 다른 속성들은 새 값으로 덮어쓰기
+    for (const [key, value] of Object.entries(newAttrs)) {
+      if (key !== 'class') {
+        merged[key] = value;
+      }
+    }
+
+    return merged;
+  }
+
+  // 클러스터 생성 또는 업데이트 (sample_count 증가, 클래스 빈도 추적) — source: 'generated'
   upsert(
     signatureData: SignatureData,
     registryId: string,
     registryName: string,
     customAttrs: Record<string, string> = {},
-    projectId: string | null = null
+    projectId: string | null = null,
+    variantMode: 'base' | 'full' = 'base'
   ): MappingCluster {
     const signature = this.createSignatureHash(signatureData);
     // 프로젝트 + 시그니처 조합으로 조회
@@ -172,6 +280,9 @@ export class ClusterStore {
     const now = new Date().toISOString();
 
     if (existing) {
+      // 기존 클러스터 업데이트 - 클래스 빈도 병합
+      const mergedAttrs = this.mergeCustomAttrs(existing.customAttrs, customAttrs);
+
       this.db.prepare(`
         UPDATE mapping_clusters SET
           registry_id = ?,
@@ -179,29 +290,34 @@ export class ClusterStore {
           custom_attrs = ?,
           sample_count = sample_count + 1,
           source = 'generated',
+          variant_mode = ?,
           updated_at = ?
         WHERE id = ?
       `).run(
         registryId,
         registryName,
-        JSON.stringify(customAttrs),
+        JSON.stringify(mergedAttrs),
+        variantMode,
         now,
         existing.id
       );
       return this.get(existing.id)!;
     } else {
+      // 새 클러스터 생성 - 초기 빈도 설정
+      const initialAttrs = this.mergeCustomAttrs({}, customAttrs);
       const id = randomUUID();
       this.db.prepare(`
         INSERT INTO mapping_clusters
-          (id, signature, signature_data, registry_id, registry_name, custom_attrs, sample_count, source, project_id, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, 1, 'generated', ?, ?, ?)
+          (id, signature, signature_data, registry_id, registry_name, custom_attrs, sample_count, source, variant_mode, project_id, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, 1, 'generated', ?, ?, ?, ?)
       `).run(
         id,
         signature,
         JSON.stringify(signatureData),
         registryId,
         registryName,
-        JSON.stringify(customAttrs),
+        JSON.stringify(initialAttrs),
+        variantMode,
         projectId,
         now,
         now
@@ -252,6 +368,7 @@ interface RawCluster {
   custom_attrs: string;
   sample_count: number;
   source: 'generated' | 'imported';
+  variant_mode: 'base' | 'full' | null;
   project_id: string | null;
   created_at: string;
   updated_at: string;
@@ -267,6 +384,7 @@ function toCluster(r: RawCluster): MappingCluster {
     customAttrs: JSON.parse(r.custom_attrs),
     sampleCount: r.sample_count,
     source: r.source ?? 'generated',
+    variantMode: r.variant_mode ?? null,
     projectId: r.project_id,
     createdAt: r.created_at,
     updatedAt: r.updated_at,

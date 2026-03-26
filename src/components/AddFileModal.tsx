@@ -73,11 +73,11 @@ export default function AddFileModal({
         <form onSubmit={handleSubmit} className="p-6">
           {/* 토큰 입력 */}
           <div className="mb-4">
-            <label className="block text-sm font-medium text-gray-300 mb-2">
+            <label className="block text-sm font-medium theme-text-primary mb-2">
               Figma Access Token
             </label>
             {hasToken ? (
-              <div className="flex items-center text-sm text-green-400 bg-green-900/20 px-3 py-2 rounded-lg">
+              <div className="flex items-center text-sm text-green-600 dark:text-green-400 bg-green-100 dark:bg-green-900/20 px-3 py-2 rounded-lg">
                 <svg className="w-4 h-4 mr-2" fill="currentColor" viewBox="0 0 20 20">
                   <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
                 </svg>
@@ -85,7 +85,7 @@ export default function AddFileModal({
                 <button
                   type="button"
                   onClick={() => setToken('')}
-                  className="ml-auto text-xs text-gray-400 hover:text-gray-300"
+                  className="ml-auto text-xs theme-text-secondary theme-text-hover"
                 >
                   변경
                 </button>

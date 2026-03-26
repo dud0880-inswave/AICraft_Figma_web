@@ -114,6 +114,12 @@ export class MappingStore {
     return result.changes > 0;
   }
 
+  // ID로 매핑 삭제
+  deleteById(id: string): boolean {
+    const result = this.db.prepare('DELETE FROM node_mappings WHERE id = ?').run(id);
+    return result.changes > 0;
+  }
+
   // 파일+루트노드 기준 매핑 전체 삭제 (프로젝트별)
   deleteByFileKey(projectId: string, fileKey: string, rootNodeId?: string | null): number {
     if (rootNodeId !== undefined) {

@@ -6,23 +6,26 @@ interface DashboardProps {
   onSelectFile: (fileKey: string, nodeId: string | null, projectId: string, projectName?: string) => void
   onAddNewFile: (projectId: string) => void
   onOpenSettings: (projectId: string, projectName: string) => void
+  onRefreshFile: (fileKey: string, nodeId: string | null, projectId: string) => Promise<void>
   initialProjectId?: string | null  // 초기 선택할 프로젝트 ID
 }
 
 type ViewMode = 'projects' | 'files'
 
-export default function Dashboard({ onSelectFile, onAddNewFile, onOpenSettings, initialProjectId }: DashboardProps) {
+export default function Dashboard({ onSelectFile, onAddNewFile, onOpenSettings, onRefreshFile, initialProjectId }: DashboardProps) {
   const [viewMode, setViewMode] = useState<ViewMode>('projects')
   const [projects, setProjects] = useState<Project[]>([])
   const [selectedProject, setSelectedProject] = useState<Project | null>(null)
   const [files, setFiles] = useState<FigmaFileRecord[]>([])
   const [loading, setLoading] = useState(true)
   const [initialLoaded, setInitialLoaded] = useState(false)
+  const [refreshingFileKey, setRefreshingFileKey] = useState<string | null>(null)
 
   // 프로젝트 생성/수정 모달
   const [projectModalOpen, setProjectModalOpen] = useState(false)
   const [editingProject, setEditingProject] = useState<Project | null>(null)
   const [projectName, setProjectName] = useState('')
+  const [projectError, setProjectError] = useState('')
 
   useEffect(() => {
     loadProjects()
@@ -106,11 +109,13 @@ export default function Dashboard({ onSelectFile, onAddNewFile, onOpenSettings, 
       setEditingProject(null)
       setProjectName('')
     }
+    setProjectError('')
     setProjectModalOpen(true)
   }
 
   const handleSaveProject = async () => {
     if (!projectName.trim()) return
+    setProjectError('')
 
     try {
       if (editingProject) {
@@ -127,7 +132,8 @@ export default function Dashboard({ onSelectFile, onAddNewFile, onOpenSettings, 
       setProjectName('')
       setEditingProject(null)
     } catch (err) {
-      console.error('Failed to save project:', err)
+      const errorMessage = err instanceof Error ? err.message : '프로젝트 저장에 실패했습니다'
+      setProjectError(errorMessage)
     }
   }
 
@@ -260,7 +266,7 @@ export default function Dashboard({ onSelectFile, onAddNewFile, onOpenSettings, 
               <div className="flex items-center gap-2">
                 <button
                   onClick={() => selectedProject && onOpenSettings(selectedProject.id, selectedProject.name)}
-                  className="p-2 theme-text-secondary hover:theme-text-primary hover:bg-gray-700 dark:hover:bg-gray-700 light:hover:bg-gray-200 rounded"
+                  className="p-2 theme-text-secondary hover:text-blue-500 theme-bg-hover rounded"
                   title="프로젝트 설정"
                 >
                   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -337,6 +343,38 @@ export default function Dashboard({ onSelectFile, onAddNewFile, onOpenSettings, 
                           노드
                         </span>
                       )}
+                      {/* Refresh 버튼 */}
+                      <button
+                        onClick={async (e) => {
+                          e.stopPropagation()
+                          if (!selectedProject || refreshingFileKey) return
+                          const fileId = `${file.fileKey}-${file.nodeId || ''}`
+                          try {
+                            setRefreshingFileKey(fileId)
+                            await onRefreshFile(file.fileKey, file.nodeId, selectedProject.id)
+                            // 파일 목록 새로고침
+                            await loadProjectFiles(selectedProject)
+                          } catch (err) {
+                            console.error('Failed to refresh file:', err)
+                            alert('파일을 새로고침하는데 실패했습니다.')
+                          } finally {
+                            setRefreshingFileKey(null)
+                          }
+                        }}
+                        disabled={refreshingFileKey === `${file.fileKey}-${file.nodeId || ''}`}
+                        className="absolute top-2 right-10 p-1.5 bg-gray-900/80 text-gray-400 hover:text-blue-400 rounded opacity-0 group-hover:opacity-100 transition-opacity disabled:opacity-100"
+                        title="새로고침"
+                      >
+                        {refreshingFileKey === `${file.fileKey}-${file.nodeId || ''}` ? (
+                          <svg className="w-4 h-4 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                          </svg>
+                        ) : (
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                          </svg>
+                        )}
+                      </button>
                       {/* 삭제 버튼 */}
                       <button
                         onClick={(e) => handleDeleteFile(file.fileKey, file.nodeId, e)}
@@ -375,12 +413,15 @@ export default function Dashboard({ onSelectFile, onAddNewFile, onOpenSettings, 
             <input
               type="text"
               value={projectName}
-              onChange={(e) => setProjectName(e.target.value)}
+              onChange={(e) => { setProjectName(e.target.value); setProjectError(''); }}
               placeholder="프로젝트 이름"
-              className="w-full px-3 py-2 rounded border theme-border theme-bg-tertiary theme-text-primary mb-4"
+              className="w-full px-3 py-2 rounded border theme-border theme-bg-tertiary theme-text-primary mb-2"
               autoFocus
               onKeyDown={(e) => e.key === 'Enter' && handleSaveProject()}
             />
+            {projectError && (
+              <p className="text-sm text-red-500 mb-2">{projectError}</p>
+            )}
             <div className="flex justify-end gap-2">
               <button
                 onClick={() => setProjectModalOpen(false)}

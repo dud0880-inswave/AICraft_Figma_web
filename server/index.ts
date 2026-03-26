@@ -17,6 +17,70 @@ import { SettingsStore } from './settings-store.js';
 
 const PORT = 5181;
 
+// ============================================================
+// 헬퍼 함수: 클러스터에서 공통 클래스 추출 (Base 모드용)
+// ============================================================
+function extractCommonClassesFromCluster(cluster: any): Record<string, string> {
+  const result: Record<string, string> = {};
+
+  // class 속성 처리
+  if (cluster.customAttrs.class) {
+    if (typeof cluster.customAttrs.class === 'object' && !Array.isArray(cluster.customAttrs.class)) {
+      // 빈도 객체: { badge: 2, list: 2, info: 1, succ: 1 }
+      const commonClasses = Object.entries(cluster.customAttrs.class)
+        .filter(([_, count]) => count === cluster.sampleCount)
+        .map(([className]) => className);
+
+      if (commonClasses.length > 0) {
+        result.class = commonClasses.join(' ');
+      }
+    } else {
+      // 레거시: 문자열 그대로 사용
+      result.class = cluster.customAttrs.class;
+    }
+  }
+
+  // 다른 속성들은 그대로 복사
+  for (const [key, value] of Object.entries(cluster.customAttrs)) {
+    if (key !== 'class') {
+      result[key] = value;
+    }
+  }
+
+  return result;
+}
+
+// ============================================================
+// 헬퍼 함수: 클러스터에서 모든 클래스 추출 (Full 모드용)
+// ============================================================
+function extractAllClassesFromCluster(cluster: any): Record<string, string> {
+  const result: Record<string, string> = {};
+
+  // class 속성 처리
+  if (cluster.customAttrs.class) {
+    if (typeof cluster.customAttrs.class === 'object' && !Array.isArray(cluster.customAttrs.class)) {
+      // 빈도 객체: 모든 클래스 추출 (빈도 무시)
+      const allClasses = Object.keys(cluster.customAttrs.class);
+
+      if (allClasses.length > 0) {
+        result.class = allClasses.join(' ');
+      }
+    } else {
+      // 레거시: 문자열 그대로 사용
+      result.class = cluster.customAttrs.class;
+    }
+  }
+
+  // 다른 속성들은 그대로 복사
+  for (const [key, value] of Object.entries(cluster.customAttrs)) {
+    if (key !== 'class') {
+      result[key] = value;
+    }
+  }
+
+  return result;
+}
+
 // DB 초기화
 console.log('[Server] Initializing...');
 initDb();
@@ -66,6 +130,13 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
       const body = await parseBody(req);
       const { name } = body;
       if (!name) return badRequest(res, 'name required');
+
+      // 프로젝트 이름 중복 체크
+      const existing = projectStore.getByName(name);
+      if (existing) {
+        return json(res, { error: '이미 존재하는 프로젝트 이름입니다' }, 400);
+      }
+
       const project = projectStore.create(name);
 
       // 프로젝트 생성 시 초기 데이터 생성
@@ -87,6 +158,11 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
       const body = await parseBody(req);
       const { name } = body;
       if (!name) return badRequest(res, 'name required');
+      // 프로젝트 이름 중복 체크 (자기 자신 제외)
+      const existing = projectStore.getByName(name);
+      if (existing && existing.id !== id) {
+        return json(res, { error: '이미 존재하는 프로젝트 이름입니다' }, 400);
+      }
       const project = projectStore.update(id, name);
       if (!project) return notFound(res);
       return json(res, { ...project, fileCount: projectStore.getFileCount(id) });
@@ -232,6 +308,71 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
       return json(res, { success: true });
     }
 
+    // 파일의 모든 매핑 초기화
+    if (path === '/api/mappings/clear' && req.method === 'POST') {
+      const body = await parseBody(req);
+      const { projectId, fileKey, rootNodeId } = body as {
+        projectId: string;
+        fileKey: string;
+        rootNodeId?: string | null;
+      };
+      if (!projectId) return badRequest(res, 'projectId required');
+      if (!fileKey) return badRequest(res, 'fileKey required');
+
+      const count = mappingStore.deleteByFileKey(projectId, fileKey, rootNodeId || null);
+      return json(res, { success: true, count });
+    }
+
+    // 추천 클래스 조회 (시그니처 기반)
+    if (path === '/api/clusters/recommended-classes' && req.method === 'POST') {
+      const body = await parseBody(req);
+      const { projectId, node, parent } = body;
+
+      if (!projectId) return badRequest(res, 'projectId required');
+      if (!node) return badRequest(res, 'node required');
+
+      const settings = settingsStore.listByProject(projectId);
+      const includeNodeNameSetting = settings.find(s => s.key === 'cluster-include-node-name')?.value;
+      const includeNodeName = includeNodeNameSetting !== 'false';
+
+      // 1. Full 모드 시그니처로 먼저 조회
+      const signatureFull = clusterStore.createNodeSignature(node, parent || null, 1, includeNodeName, 'full');
+      let cluster = clusterStore.getBySignatureAndProject(signatureFull, projectId);
+
+      if (!cluster) {
+        // 2. Base 모드 시그니처로 조회
+        const signatureBase = clusterStore.createNodeSignature(node, parent || null, 1, includeNodeName, 'base');
+        cluster = clusterStore.getBySignatureAndProject(signatureBase, projectId);
+      }
+
+      if (!cluster) {
+        return json(res, { commonClasses: [], recommendedClasses: [] });
+      }
+
+      const commonClasses: string[] = [];
+      const recommendedClasses: Array<{ className: string; frequency: number; total: number }> = [];
+
+      if (cluster.customAttrs.class && typeof cluster.customAttrs.class === 'object' && !Array.isArray(cluster.customAttrs.class)) {
+        for (const [className, frequency] of Object.entries(cluster.customAttrs.class)) {
+          if (typeof frequency === 'number') {
+            if (frequency === cluster.sampleCount) {
+              commonClasses.push(className);
+            } else {
+              recommendedClasses.push({
+                className,
+                frequency,
+                total: cluster.sampleCount
+              });
+            }
+          }
+        }
+      }
+
+      recommendedClasses.sort((a, b) => b.frequency - a.frequency);
+
+      return json(res, { commonClasses, recommendedClasses });
+    }
+
     // ---- Figma Files API ----
     if (path === '/api/figma-files' && req.method === 'GET') {
       const files = figmaFilesStore.list();
@@ -259,6 +400,11 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
       figmaFileDataStore.delete(projectId, fileKey, nodeId || null);
 
       // 클러스터 재생성
+      // 프로젝트 설정에서 노드 이름 포함 여부 읽기
+      const settings = settingsStore.listByProject(projectId);
+      const includeNodeNameSetting = settings.find(s => s.key === 'cluster-include-node-name')?.value;
+      const includeNodeName = includeNodeNameSetting !== 'false'; // 기본값 true
+
       clusterStore.deleteGenerated(projectId);
       const remainingFiles = figmaFilesStore.listByProject(projectId).filter(f => f.completed);
       for (const file of remainingFiles) {
@@ -270,7 +416,15 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
         for (const mapping of mappedMappings) {
           const result = findNodeInDocument(document, mapping.figmaNodeId);
           if (!result) continue;
-          clusterStore.upsert(clusterStore.createSignatureData(result.node, result.parent), mapping.registryId!, mapping.registryName || '', mapping.customAttrs, projectId);
+          // 루트 노드는 parent를 null로 설정 (자동 매핑 비교 시와 동일하게)
+          const isRootNode = mapping.figmaRootNodeId === mapping.figmaNodeId || mapping.figmaRootNodeId === null;
+          const parent = isRootNode ? null : result.parent;
+
+          // 1. Base 모드 클러스터 생성
+          clusterStore.upsert(clusterStore.createSignatureData(result.node, parent, 1, includeNodeName, 'base'), mapping.registryId!, mapping.registryName || '', mapping.customAttrs, projectId, 'base');
+
+          // 2. Full 모드 클러스터 생성
+          clusterStore.upsert(clusterStore.createSignatureData(result.node, parent, 1, includeNodeName, 'full'), mapping.registryId!, mapping.registryName || '', mapping.customAttrs, projectId, 'full');
         }
       }
       return json(res, { success: true });
@@ -293,6 +447,42 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
       if (typeof completed !== 'boolean') return badRequest(res, 'completed required as boolean');
       figmaFilesStore.updateCompleted(projectId, fileKey, nodeId || null, completed);
       return json(res, { success: true });
+    }
+
+    if (path === '/api/figma-files/refresh' && req.method === 'POST') {
+      const body = await parseBody(req);
+      const { projectId, fileKey, nodeId, data } = body;
+      if (!projectId) return badRequest(res, 'projectId required');
+      if (!fileKey) return badRequest(res, 'fileKey required');
+      if (!data) return badRequest(res, 'data required');
+
+      // 1. figma_file_data 업데이트
+      figmaFileDataStore.save(projectId, fileKey, nodeId || null, data);
+
+      // 2. 새 데이터에서 모든 노드 ID 수집
+      const allNodeIds = new Set<string>();
+      function collectNodeIds(node: any): void {
+        if (node && node.id) {
+          allNodeIds.add(node.id);
+        }
+        if (node && node.children) {
+          node.children.forEach((child: any) => collectNodeIds(child));
+        }
+      }
+      collectNodeIds(data);
+
+      // 3. 존재하지 않는 노드의 매핑 삭제
+      const mappings = mappingStore.listByFile(projectId, fileKey, nodeId || null);
+      let deletedCount = 0;
+      for (const mapping of mappings) {
+        if (!allNodeIds.has(mapping.figmaNodeId)) {
+          mappingStore.deleteById(mapping.id);
+          deletedCount++;
+        }
+      }
+
+      console.log(`[Refresh] ${fileKey} - ${allNodeIds.size}개 노드, ${deletedCount}개 매핑 삭제`);
+      return json(res, { success: true, deletedMappingsCount: deletedCount });
     }
 
     // ---- Figma File Data API (프로젝트별) ----
@@ -338,6 +528,11 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
       const { projectId } = body as { projectId?: string };
 
       if (projectId) {
+        // 프로젝트 설정에서 노드 이름 포함 여부 읽기
+        const settings = settingsStore.listByProject(projectId);
+        const includeNodeNameSetting = settings.find(s => s.key === 'cluster-include-node-name')?.value;
+        const includeNodeName = includeNodeNameSetting !== 'false'; // 기본값 true
+
         clusterStore.deleteGenerated(projectId);
         const files = figmaFilesStore.listByProject(projectId).filter(f => f.completed);
 
@@ -353,8 +548,18 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
             const result = findNodeInDocument(document, mapping.figmaNodeId);
             if (!result) continue;
 
-            const signatureData = clusterStore.createSignatureData(result.node, result.parent);
-            clusterStore.upsert(signatureData, mapping.registryId!, mapping.registryName || '', mapping.customAttrs, projectId);
+            // 루트 노드는 parent를 null로 설정 (자동 매핑 비교 시와 동일하게)
+            const isRootNode = mapping.figmaRootNodeId === mapping.figmaNodeId || mapping.figmaRootNodeId === null;
+            const parent = isRootNode ? null : result.parent;
+
+            // 1. Base 모드 클러스터 생성 (componentProperties key만)
+            const signatureDataBase = clusterStore.createSignatureData(result.node, parent, 1, includeNodeName, 'base');
+            clusterStore.upsert(signatureDataBase, mapping.registryId!, mapping.registryName || '', mapping.customAttrs, projectId, 'base');
+            createdCount++;
+
+            // 2. Full 모드 클러스터 생성 (componentProperties value 포함)
+            const signatureDataFull = clusterStore.createSignatureData(result.node, parent, 1, includeNodeName, 'full');
+            clusterStore.upsert(signatureDataFull, mapping.registryId!, mapping.registryName || '', mapping.customAttrs, projectId, 'full');
             createdCount++;
           }
         }
@@ -380,20 +585,25 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
         return badRequest(res, 'projectId required');
       }
 
+      // 프로젝트 설정에서 노드 이름 포함 여부 읽기
+      const settings = settingsStore.listByProject(projectId);
+      const includeNodeNameSetting = settings.find(s => s.key === 'cluster-include-node-name')?.value;
+      const includeNodeName = includeNodeNameSetting !== 'false'; // 기본값 true
+
       const existingSet = new Set(existingMappingNodeIds);
-      const nodeSignatures: Array<{ nodeId: string; nodeName: string; nodeType: string; signature: string; node: FigmaNodeLike }> = [];
+      const nodeData: Array<{ nodeId: string; nodeName: string; nodeType: string; node: FigmaNodeLike; parent: FigmaNodeLike | null }> = [];
 
       const processNode = (node: FigmaNodeLike & { id: string }, parent: FigmaNodeLike | null = null) => {
         if (!existingSet.has(node.id)) {
-          const signature = clusterStore.createNodeSignature(node, parent);
-          nodeSignatures.push({
+          nodeData.push({
             nodeId: node.id,
             nodeName: node.name,
             nodeType: node.type,
-            signature,
             node,
+            parent,
           });
         }
+
         if (node.children) {
           for (const child of node.children as Array<FigmaNodeLike & { id: string }>) {
             processNode(child, node);
@@ -406,25 +616,55 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
       }
 
       const clusters = clusterStore.listByProject(projectId);
-      const clusterMap = new Map(clusters.map(c => [c.signature, c]));
+      const suggestionMap = new Map<string, AutoMappingSuggestion>();
 
-      const suggestions: AutoMappingSuggestion[] = [];
-      for (const ns of nodeSignatures) {
-        const cluster = clusterMap.get(ns.signature);
+      // 1단계: Base 모드 매핑
+      const baseClusters = clusters.filter(c => c.variantMode === 'base' || c.variantMode === null);
+      const baseClusterMap = new Map(baseClusters.map(c => [c.signature, c]));
+
+      for (const nd of nodeData) {
+        const signatureBase = clusterStore.createNodeSignature(nd.node, nd.parent, 1, includeNodeName, 'base');
+        const cluster = baseClusterMap.get(signatureBase);
+
         if (cluster) {
-          suggestions.push({
-            nodeId: ns.nodeId,
-            nodeName: ns.nodeName,
-            nodeType: ns.nodeType,
-            signature: ns.signature,
+          const commonCustomAttrs = extractCommonClassesFromCluster(cluster);
+          suggestionMap.set(nd.nodeId, {
+            nodeId: nd.nodeId,
+            nodeName: nd.nodeName,
+            nodeType: nd.nodeType,
+            signature: signatureBase,
             registryId: cluster.registryId,
             registryName: cluster.registryName,
-            customAttrs: cluster.customAttrs,
+            customAttrs: commonCustomAttrs,
             sampleCount: cluster.sampleCount,
           });
         }
       }
 
+      // 2단계: Full 모드 매핑 (덮어쓰기)
+      const fullClusters = clusters.filter(c => c.variantMode === 'full');
+      const fullClusterMap = new Map(fullClusters.map(c => [c.signature, c]));
+
+      for (const nd of nodeData) {
+        const signatureFull = clusterStore.createNodeSignature(nd.node, nd.parent, 1, includeNodeName, 'full');
+        const cluster = fullClusterMap.get(signatureFull);
+
+        if (cluster) {
+          const allCustomAttrs = extractAllClassesFromCluster(cluster);
+          suggestionMap.set(nd.nodeId, {
+            nodeId: nd.nodeId,
+            nodeName: nd.nodeName,
+            nodeType: nd.nodeType,
+            signature: signatureFull,
+            registryId: cluster.registryId,
+            registryName: cluster.registryName,
+            customAttrs: allCustomAttrs,
+            sampleCount: cluster.sampleCount,
+          });
+        }
+      }
+
+      const suggestions = Array.from(suggestionMap.values());
       return json(res, { suggestions });
     }
 

@@ -157,6 +157,15 @@ function createTables(db: Database.Database): void {
   db.exec(`CREATE INDEX IF NOT EXISTS idx_mapping_clusters_project ON mapping_clusters(project_id)`);
   db.exec(`CREATE INDEX IF NOT EXISTS idx_mapping_clusters_signature ON mapping_clusters(signature)`);
 
+  // variant_mode 컬럼 추가 (마이그레이션)
+  const clusterColumns = db.pragma("table_info('mapping_clusters')") as Array<{ name: string }>;
+  const hasVariantMode = clusterColumns.some(col => col.name === 'variant_mode');
+  if (!hasVariantMode) {
+    console.log('[DB Migration] Adding variant_mode column to mapping_clusters...');
+    db.exec(`ALTER TABLE mapping_clusters ADD COLUMN variant_mode TEXT`);
+    console.log('[DB Migration] variant_mode column added successfully');
+  }
+
   // figma_file_data (프로젝트별)
   db.exec(`
     CREATE TABLE IF NOT EXISTS figma_file_data (

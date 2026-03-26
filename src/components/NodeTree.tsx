@@ -223,11 +223,11 @@ function TreeItem({
 
         {/* 매핑 표시 */}
         {isMapped && (
-          <span className="w-2 h-2 rounded-full bg-green-500 mr-1.5 flex-shrink-0" title="매핑됨" />
+          <span className="w-2 h-2 rounded-full bg-blue-600 dark:bg-green-500 mr-1.5 flex-shrink-0" title="매핑됨" />
         )}
 
         {/* 노드 이름 */}
-        <span className={`truncate text-sm ${isMapped ? 'text-green-400' : ''} ${isDirectMatch ? 'bg-yellow-500/30 rounded px-0.5' : ''}`} title={node.name}>
+        <span className={`truncate text-sm ${isMapped ? 'text-blue-600 dark:text-green-400' : ''} ${isDirectMatch ? 'bg-yellow-500/30 rounded px-0.5' : ''}`} title={node.name}>
           {node.name}
         </span>
 

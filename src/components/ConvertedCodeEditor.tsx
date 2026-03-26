@@ -1,6 +1,10 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import type { FigmaNode } from '../types/figma'
 import { findTextInChildren, collectAllTexts, collectTopLevelTexts } from '../utils/text-utils'
+import hljs from 'highlight.js/lib/core'
+import xml from 'highlight.js/lib/languages/xml'
+
+hljs.registerLanguage('xml', xml)
 
 function formatXml(xml: string): string {
   const INDENT = '    '
@@ -62,6 +66,7 @@ interface ConvertedCodeEditorProps {
   onToggle: () => void
   document: object | null  // 전체 document 구조 (클러스터 생성용)
   convertTrigger: number  // 이 값이 변경되면 자동 변환
+  cssRefreshKey?: number  // CSS 새로고침 트리거
   onComplete?: () => void  // 완료 후 콜백
 }
 
@@ -130,6 +135,7 @@ export default function ConvertedCodeEditor({
   visible,
   onToggle,
   convertTrigger,
+  cssRefreshKey,
   onComplete,
 }: ConvertedCodeEditorProps) {
   const [convertedCode, setConvertedCode] = useState<string | null>(null)
@@ -143,7 +149,10 @@ export default function ConvertedCodeEditor({
   const [saving, setSaving] = useState(false)
   const [saveMessage, setSaveMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
   const [cssContents, setCssContents] = useState<string[]>([])
+  const [showFilenameModal, setShowFilenameModal] = useState(false)
+  const [inputFilename, setInputFilename] = useState('')
   const iframeRef = useRef<HTMLIFrameElement>(null)
+  const codeRef = useRef<HTMLElement>(null)
 
   // 프로젝트 설정에서 CSS 목록 로드
   useEffect(() => {
@@ -166,7 +175,7 @@ export default function ConvertedCodeEditor({
       }
     }
     loadCss()
-  }, [projectId])
+  }, [projectId, cssRefreshKey])
 
   // 완료 처리
   const handleComplete = async () => {
@@ -193,12 +202,22 @@ export default function ConvertedCodeEditor({
     }
   }
 
-  // XML 저장 처리
-  const handleSaveXml = async () => {
+  // XML 저장 모달 열기
+  const handleSaveXml = () => {
     if (!convertedCode || !rootNode) return
+    const defaultFilename = rootNode.name.replace(/[<>:"/\\|?*]/g, '_')
+    setInputFilename(defaultFilename)
+    setShowFilenameModal(true)
+  }
 
+  // XML 저장 실행
+  const handleConfirmSave = async () => {
+    if (!convertedCode || !inputFilename) return
+
+    setShowFilenameModal(false)
     setSaving(true)
     setSaveMessage(null)
+
     try {
       // 프로젝트 설정에서 XML export 경로 가져오기
       if (!projectId) {
@@ -223,8 +242,7 @@ export default function ConvertedCodeEditor({
         return
       }
 
-      // 파일명 생성: 노드 이름 기반
-      const filename = rootNode.name.replace(/[<>:"/\\|?*]/g, '_')
+      const filename = inputFilename.replace(/[<>:"/\\|?*]/g, '_')
       const result = await exportXml(convertedCode, filename, exportPath)
       setSaveMessage({ type: 'success', text: `저장 완료: ${result.path}` })
       setTimeout(() => setSaveMessage(null), 3000)
@@ -282,6 +300,17 @@ export default function ConvertedCodeEditor({
       return () => clearTimeout(timer)
     }
   }, [activeTab, convertedCode, iframeReady, cssContents])
+
+  // 코드 하이라이팅 적용
+  useEffect(() => {
+    if (convertedCode && codeRef.current && activeTab === 'code') {
+      // 기존 하이라이팅 제거
+      codeRef.current.removeAttribute('data-highlighted')
+      codeRef.current.className = 'language-xml'
+      // 새로운 하이라이팅 적용
+      hljs.highlightElement(codeRef.current)
+    }
+  }, [convertedCode, activeTab])
 
   // WebSquare 미리보기 렌더링 (iframe postMessage 방식)
   const renderPreview = useCallback(() => {
@@ -369,9 +398,17 @@ export default function ConvertedCodeEditor({
           }
 
           // 컴포넌트별 속성 처리
-          if (regItemNameLower === 'button') {
+          if (regItemNameLower === 'button' || regItemNameLower === 'span') {
             const text = n.characters || findTextInChildren(n)
             if (text) mergedProps.label = text
+          }
+          if (regItemNameLower === 'trigger') {
+            const text = n.characters || findTextInChildren(n)
+            const triggerPropsStr = Object.entries(mergedProps).map(([k, v]) => `${k}="${v}"`).join(' ')
+            const labelTag = text
+              ? `\n${indentStr}    <xf:label><![CDATA[${text}]]></xf:label>\n${indentStr}`
+              : ''
+            return `${indentStr}<${tagName} ${triggerPropsStr}>${labelTag}</${tagName}>`
           }
           if (regItemNameLower === 'anchor') {
             const text = n.characters || findTextInChildren(n)
@@ -690,16 +727,23 @@ ${innerCode}
               <div className="h-full flex flex-col p-4">
                 <div className="flex justify-end gap-3 mb-2">
                   <button
-                    onClick={() => {
-                      navigator.clipboard.writeText(convertedCode)
-                    }}
+                    onClick={handleSaveXml}
+                    disabled={saving}
+                    className="text-xs text-blue-400 hover:text-blue-300 disabled:opacity-50"
+                  >
+                    {saving ? '다운로드 중...' : '다운로드'}
+                  </button>
+                  <button
+                    onClick={() => navigator.clipboard.writeText(convertedCode)}
                     className="text-xs text-blue-400 hover:text-blue-300"
                   >
                     복사
                   </button>
                 </div>
-                <pre className="flex-1 p-3 theme-bg-primary border theme-border rounded text-sm font-mono theme-text-code-green overflow-auto whitespace-pre">
-                  {convertedCode}
+                <pre className="flex-1 p-3 theme-bg-primary border theme-border rounded text-sm font-mono overflow-auto whitespace-pre">
+                  <code ref={codeRef} className="language-xml">
+                    {convertedCode}
+                  </code>
                 </pre>
               </div>
             )}
@@ -771,19 +815,47 @@ ${innerCode}
       {convertedCode && (
         <div className="flex justify-end gap-2 px-4 py-2 border-t theme-border">
           <button
-            onClick={handleSaveXml}
-            disabled={saving}
-            className="px-4 py-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-sm font-medium rounded"
-          >
-            {saving ? '저장 중...' : '저장'}
-          </button>
-          <button
             onClick={handleComplete}
             disabled={completing}
             className="px-4 py-2 bg-green-600 hover:bg-green-500 disabled:opacity-50 text-white text-sm font-medium rounded"
           >
             {completing ? '처리 중...' : '완료'}
           </button>
+        </div>
+      )}
+
+      {/* 파일명 입력 모달 */}
+      {showFilenameModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="theme-bg-secondary rounded-lg w-full max-w-md p-6">
+            <h3 className="text-lg font-semibold theme-text-primary mb-4">
+              파일명 입력
+            </h3>
+            <input
+              type="text"
+              value={inputFilename}
+              onChange={(e) => setInputFilename(e.target.value)}
+              placeholder="파일명 (.xml 확장자 제외)"
+              className="w-full px-3 py-2 rounded border theme-border theme-bg-tertiary theme-text-primary mb-4"
+              autoFocus
+              onKeyDown={(e) => e.key === 'Enter' && handleConfirmSave()}
+            />
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => setShowFilenameModal(false)}
+                className="px-4 py-2 text-sm theme-text-secondary hover:theme-text-primary"
+              >
+                취소
+              </button>
+              <button
+                onClick={handleConfirmSave}
+                disabled={!inputFilename.trim()}
+                className="px-4 py-2 text-sm bg-blue-600 hover:bg-blue-500 text-white rounded disabled:opacity-50"
+              >
+                저장
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>
