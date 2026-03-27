@@ -32,3 +32,8 @@ Thumbs.db
 # Temp
 *.tmp
 *.temp
+
+# claude
+CLAUDE.md
+주간보고_*.md
+.claude/*

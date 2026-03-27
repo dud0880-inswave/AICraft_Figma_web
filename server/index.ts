@@ -59,11 +59,14 @@ function extractAllClassesFromCluster(cluster: any): Record<string, string> {
   // class 속성 처리
   if (cluster.customAttrs.class) {
     if (typeof cluster.customAttrs.class === 'object' && !Array.isArray(cluster.customAttrs.class)) {
-      // 빈도 객체: 모든 클래스 추출 (빈도 무시)
-      const allClasses = Object.keys(cluster.customAttrs.class);
+      // 빈도 객체: 가장 빈도가 높은 클래스 하나만 추출
+      const entries = Object.entries(cluster.customAttrs.class) as [string, number][];
 
-      if (allClasses.length > 0) {
-        result.class = allClasses.join(' ');
+      if (entries.length > 0) {
+        // 빈도 순으로 정렬하여 가장 높은 것 선택
+        entries.sort((a, b) => b[1] - a[1]);
+        const topClass = entries[0][0];
+        result.class = topClass;
       }
     } else {
       // 레거시: 문자열 그대로 사용

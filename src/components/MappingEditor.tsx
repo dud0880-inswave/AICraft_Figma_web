@@ -667,7 +667,7 @@ export default function MappingEditor({ node, nodes, tree, fileKey, rootNodeId, 
 
                 {/* th/td 전용: colspan, rowspan */}
                 {isThOrTd && (
-                  <div className="flex gap-4 mb-3 border-b theme-border">
+                  <div className="flex gap-4 mb-3 pb-3">
                     <div className="flex items-center gap-2">
                       <label className="text-xs theme-text-secondary font-mono">colspan</label>
                       <input
