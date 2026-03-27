@@ -20,7 +20,7 @@ const INITIAL_RULES: { registryName: string; keywords: string[] }[] = [
   { registryName: 'checkbox',      keywords: ['checkbox', '체크박스'] },
   { registryName: 'gridview',      keywords: ['gridview', 'grid', '그리드뷰', '그리드'] },
   { registryName: 'group',         keywords: ['group', '그룹'] },
-  { registryName: 'inputcalendar', keywords: ['inputcalendar', '달력'] },
+  { registryName: 'inputcalendar', keywords: ['inputcalendar', '달력', 'calendar'] },
   { registryName: 'input',         keywords: ['inputbox', 'input', '인풋박스', '인풋', '입력'] },
   { registryName: 'multiselect',   keywords: ['multiselect', '다중선택'] },
   { registryName: 'pagelist',      keywords: ['pagelist', '페이지리스트'] },

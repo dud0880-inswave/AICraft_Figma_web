@@ -6,6 +6,7 @@ export interface FigmaFile {
   thumbnailUrl: string
   version: string
   document: FigmaDocument
+  nodes?: Record<string, { document: FigmaDocument }>  // 특정 노드 조회 시 사용
 }
 
 export interface FigmaDocument {
