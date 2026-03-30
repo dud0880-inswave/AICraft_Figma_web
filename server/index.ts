@@ -1,6 +1,7 @@
 // ============================================================
 // Figma Viewer Backend Server
 // ============================================================
+import 'dotenv/config';
 import { createServer, IncomingMessage, ServerResponse } from 'http';
 import { randomUUID } from 'crypto';
 import { writeFileSync, existsSync, mkdirSync } from 'fs';
@@ -15,7 +16,9 @@ import { DefaultMappingRulesStore } from './default-mapping-rules-store.js';
 import { ProjectStore } from './project-store.js';
 import { SettingsStore } from './settings-store.js';
 
-const PORT = 5181;
+// 서버 설정
+const PORT = parseInt(process.env.PORT || '5181', 10);
+const ENABLE_DEBUG_JSON = process.env.ENABLE_DEBUG_JSON === 'true';
 
 // ============================================================
 // 헬퍼 함수: 클러스터에서 공통 클래스 추출 (Base 모드용)
@@ -26,13 +29,15 @@ function extractCommonClassesFromCluster(cluster: any): Record<string, string> {
   // class 속성 처리
   if (cluster.customAttrs.class) {
     if (typeof cluster.customAttrs.class === 'object' && !Array.isArray(cluster.customAttrs.class)) {
-      // 빈도 객체: { badge: 2, list: 2, info: 1, succ: 1 }
-      const commonClasses = Object.entries(cluster.customAttrs.class)
-        .filter(([_, count]) => count === cluster.sampleCount)
-        .map(([className]) => className);
+      // 빈도 객체: { "badge list info": 3, "badge list succ": 1 }
+      // 빈도 === sampleCount인 조합 찾기 (공통으로 사용된 조합)
+      const entries = Object.entries(cluster.customAttrs.class) as [string, number][];
+      const commonCombos = entries.filter(([_, count]) => count === cluster.sampleCount);
 
-      if (commonClasses.length > 0) {
-        result.class = commonClasses.join(' ');
+      if (commonCombos.length > 0) {
+        // 여러 개면 가장 빈도 높은 것 선택 (일반적으로 하나만 있을 것)
+        commonCombos.sort((a, b) => b[1] - a[1]);
+        result.class = commonCombos[0][0];
       }
     } else {
       // 레거시: 문자열 그대로 사용
@@ -51,7 +56,7 @@ function extractCommonClassesFromCluster(cluster: any): Record<string, string> {
 }
 
 // ============================================================
-// 헬퍼 함수: 클러스터에서 모든 클래스 추출 (Full 모드용)
+// 헬퍼 함수: 클러스터에서 가장 많이 사용된 클래스 조합 추출 (Full 모드용)
 // ============================================================
 function extractAllClassesFromCluster(cluster: any): Record<string, string> {
   const result: Record<string, string> = {};
@@ -59,14 +64,14 @@ function extractAllClassesFromCluster(cluster: any): Record<string, string> {
   // class 속성 처리
   if (cluster.customAttrs.class) {
     if (typeof cluster.customAttrs.class === 'object' && !Array.isArray(cluster.customAttrs.class)) {
-      // 빈도 객체: 가장 빈도가 높은 클래스 하나만 추출
+      // 빈도 객체: { "badge list info": 3, "badge list succ": 1 }
+      // 가장 빈도 높은 조합 선택
       const entries = Object.entries(cluster.customAttrs.class) as [string, number][];
 
       if (entries.length > 0) {
         // 빈도 순으로 정렬하여 가장 높은 것 선택
         entries.sort((a, b) => b[1] - a[1]);
-        const topClass = entries[0][0];
-        result.class = topClass;
+        result.class = entries[0][0];
       }
     } else {
       // 레거시: 문자열 그대로 사용
@@ -338,8 +343,8 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
       const includeNodeNameSetting = settings.find(s => s.key === 'cluster-include-node-name')?.value;
       const includeNodeName = includeNodeNameSetting !== 'false';
 
-      // 1. Full 모드 시그니처로 먼저 조회
-      const signatureFull = clusterStore.createNodeSignature(node, parent || null, 1, includeNodeName, 'full');
+      // 1. Full 모드 시그니처로 먼저 조회 (노드 단독, variant value 포함)
+      const signatureFull = clusterStore.createNodeSignature(node, null, 0, includeNodeName, 'full');
       let cluster = clusterStore.getBySignatureAndProject(signatureFull, projectId);
 
       if (!cluster) {
@@ -356,13 +361,14 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
       const recommendedClasses: Array<{ className: string; frequency: number; total: number }> = [];
 
       if (cluster.customAttrs.class && typeof cluster.customAttrs.class === 'object' && !Array.isArray(cluster.customAttrs.class)) {
-        for (const [className, frequency] of Object.entries(cluster.customAttrs.class)) {
+        // 클래스 조합 전체가 키: { "badge list info": 3, "badge list succ": 1 }
+        for (const [classCombo, frequency] of Object.entries(cluster.customAttrs.class)) {
           if (typeof frequency === 'number') {
             if (frequency === cluster.sampleCount) {
-              commonClasses.push(className);
+              commonClasses.push(classCombo);
             } else {
               recommendedClasses.push({
-                className,
+                className: classCombo,
                 frequency,
                 total: cluster.sampleCount
               });
@@ -426,8 +432,14 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
           // 1. Base 모드 클러스터 생성
           clusterStore.upsert(clusterStore.createSignatureData(result.node, parent, 1, includeNodeName, 'base'), mapping.registryId!, mapping.registryName || '', mapping.customAttrs, projectId, 'base');
 
-          // 2. Full 모드 클러스터 생성
-          clusterStore.upsert(clusterStore.createSignatureData(result.node, parent, 1, includeNodeName, 'full'), mapping.registryId!, mapping.registryName || '', mapping.customAttrs, projectId, 'full');
+          // 2. Full 모드 클러스터 생성 (노드 단독, variant value 포함) - variant 정보가 있는 경우만
+          const hasVariant = result.node.componentProperties &&
+            Object.values(result.node.componentProperties).some(prop =>
+              prop && typeof prop === 'object' && prop.type && prop.type !== 'TEXT'
+            );
+          if (hasVariant) {
+            clusterStore.upsert(clusterStore.createSignatureData(result.node, null, 0, includeNodeName, 'full'), mapping.registryId!, mapping.registryName || '', mapping.customAttrs, projectId, 'full');
+          }
         }
       }
       return json(res, { success: true });
@@ -560,10 +572,16 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
             clusterStore.upsert(signatureDataBase, mapping.registryId!, mapping.registryName || '', mapping.customAttrs, projectId, 'base');
             createdCount++;
 
-            // 2. Full 모드 클러스터 생성 (componentProperties value 포함)
-            const signatureDataFull = clusterStore.createSignatureData(result.node, parent, 1, includeNodeName, 'full');
-            clusterStore.upsert(signatureDataFull, mapping.registryId!, mapping.registryName || '', mapping.customAttrs, projectId, 'full');
-            createdCount++;
+            // 2. Full 모드 클러스터 생성 (노드 단독, variant value 포함) - variant 정보가 있는 경우만
+            const hasVariant = result.node.componentProperties &&
+              Object.values(result.node.componentProperties).some(prop =>
+                prop && typeof prop === 'object' && prop.type && prop.type !== 'TEXT'
+              );
+            if (hasVariant) {
+              const signatureDataFull = clusterStore.createSignatureData(result.node, null, 0, includeNodeName, 'full');
+              clusterStore.upsert(signatureDataFull, mapping.registryId!, mapping.registryName || '', mapping.customAttrs, projectId, 'full');
+              createdCount++;
+            }
           }
         }
         return json(res, { success: true, createdCount });
@@ -621,13 +639,28 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
       const clusters = clusterStore.listByProject(projectId);
       const suggestionMap = new Map<string, AutoMappingSuggestion>();
 
+      // 디버깅 데이터 수집
+      const debugData: any[] = [];
+
       // 1단계: Base 모드 매핑
       const baseClusters = clusters.filter(c => c.variantMode === 'base' || c.variantMode === null);
       const baseClusterMap = new Map(baseClusters.map(c => [c.signature, c]));
 
       for (const nd of nodeData) {
+        const signatureDataBase = clusterStore.createSignatureData(nd.node, nd.parent, 1, includeNodeName, 'base');
         const signatureBase = clusterStore.createNodeSignature(nd.node, nd.parent, 1, includeNodeName, 'base');
         const cluster = baseClusterMap.get(signatureBase);
+
+        const debugEntry: any = {
+          nodeId: nd.nodeId,
+          nodeName: nd.nodeName,
+          nodeType: nd.nodeType,
+          signatureBase: signatureBase.substring(0, 16),
+          signatureDataBase: signatureDataBase,
+          baseClusterMatched: null,
+          fullClusterMatched: null,
+          finalSuggestion: null,
+        };
 
         if (cluster) {
           const commonCustomAttrs = extractCommonClassesFromCluster(cluster);
@@ -641,7 +674,17 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
             customAttrs: commonCustomAttrs,
             sampleCount: cluster.sampleCount,
           });
+
+          debugEntry.baseClusterMatched = {
+            signature: signatureBase.substring(0, 16),
+            registryName: cluster.registryName,
+            customAttrs: commonCustomAttrs,
+            sampleCount: cluster.sampleCount,
+            variantMode: cluster.variantMode || 'null',
+          };
         }
+
+        debugData.push(debugEntry);
       }
 
       // 2단계: Full 모드 매핑 (덮어쓰기)
@@ -649,8 +692,15 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
       const fullClusterMap = new Map(fullClusters.map(c => [c.signature, c]));
 
       for (const nd of nodeData) {
-        const signatureFull = clusterStore.createNodeSignature(nd.node, nd.parent, 1, includeNodeName, 'full');
+        const signatureDataFull = clusterStore.createSignatureData(nd.node, null, 0, includeNodeName, 'full');
+        const signatureFull = clusterStore.createNodeSignature(nd.node, null, 0, includeNodeName, 'full');
         const cluster = fullClusterMap.get(signatureFull);
+
+        const debugEntry = debugData.find(d => d.nodeId === nd.nodeId);
+        if (debugEntry) {
+          debugEntry.signatureFull = signatureFull.substring(0, 16);
+          debugEntry.signatureDataFull = signatureDataFull;
+        }
 
         if (cluster) {
           const allCustomAttrs = extractAllClassesFromCluster(cluster);
@@ -664,6 +714,52 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
             customAttrs: allCustomAttrs,
             sampleCount: cluster.sampleCount,
           });
+
+          if (debugEntry) {
+            debugEntry.fullClusterMatched = {
+              signature: signatureFull.substring(0, 16),
+              registryName: cluster.registryName,
+              customAttrs: allCustomAttrs,
+              sampleCount: cluster.sampleCount,
+              variantMode: cluster.variantMode,
+            };
+          }
+        }
+
+        // 최종 제안 기록
+        if (debugEntry) {
+          const finalSuggestion = suggestionMap.get(nd.nodeId);
+          if (finalSuggestion) {
+            debugEntry.finalSuggestion = {
+              registryName: finalSuggestion.registryName,
+              customAttrs: finalSuggestion.customAttrs,
+              matchedMode: cluster ? 'full' : 'base',
+            };
+          }
+        }
+      }
+
+      // 디버깅 JSON 저장 (설정 활성화 시)
+      if (ENABLE_DEBUG_JSON) {
+        const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
+        const debugOutput = {
+          timestamp: new Date().toISOString(),
+          clusterStats: {
+            total: clusters.length,
+            base: baseClusters.length,
+            full: fullClusters.length,
+          },
+          nodeResults: debugData,
+        };
+
+        try {
+          const fs = await import('fs');
+          const path = await import('path');
+          const debugFilePath = path.join(process.cwd(), `signature-debug-${timestamp}.json`);
+          fs.writeFileSync(debugFilePath, JSON.stringify(debugOutput, null, 2), 'utf-8');
+          console.log(`[Debug] Signature debug data saved to: ${debugFilePath}`);
+        } catch (err) {
+          console.error('[Debug] Failed to save debug data:', err);
         }
       }
 
@@ -925,6 +1021,7 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
 
 server.listen(PORT, () => {
   console.log(`[Server] Figma Viewer API running on http://localhost:${PORT}`);
+  console.log(`[Server] Debug JSON generation: ${ENABLE_DEBUG_JSON ? 'ENABLED' : 'DISABLED'}`);
 });
 
 // Graceful shutdown

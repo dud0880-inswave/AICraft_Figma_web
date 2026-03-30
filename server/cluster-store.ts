@@ -232,26 +232,23 @@ export class ClusterStore {
     return rows.map(toCluster);
   }
 
-  // customAttrs 병합 (클래스 빈도 추적)
+  // customAttrs 병합 (클래스 조합 빈도 추적)
   private mergeCustomAttrs(existing: Record<string, any>, newAttrs: Record<string, string>): Record<string, any> {
     const merged: Record<string, any> = { ...existing };
 
-    // class 속성 병합 (빈도 추적)
+    // class 속성 병합 (조합 전체를 하나의 키로 빈도 추적)
     if (newAttrs.class) {
-      const newClasses = newAttrs.class.trim().split(/\s+/).filter(Boolean);
+      const classCombo = newAttrs.class.trim(); // 전체 조합
 
       if (typeof existing.class === 'object' && !Array.isArray(existing.class)) {
         // 기존에 빈도 객체가 있음
         merged.class = { ...existing.class };
-        for (const cls of newClasses) {
-          merged.class[cls] = (merged.class[cls] || 0) + 1;
-        }
+        merged.class[classCombo] = (merged.class[classCombo] || 0) + 1;
       } else {
         // 첫 번째 샘플 - 빈도 객체 생성
-        merged.class = {};
-        for (const cls of newClasses) {
-          merged.class[cls] = 1;
-        }
+        merged.class = {
+          [classCombo]: 1
+        };
       }
     }
 
