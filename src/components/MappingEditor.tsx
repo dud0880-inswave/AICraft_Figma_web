@@ -932,18 +932,18 @@ ${bodyCols}
 
                 return (
                   <div className="mt-3">
-                    <div className="text-xs text-gray-400 mb-2">헤더 텍스트 ({topTexts.length}개):</div>
-                    <div className="p-2 bg-gray-900 border border-gray-600 rounded mb-2">
+                    <div className="text-xs theme-text-secondary mb-2">헤더 텍스트 ({topTexts.length}개):</div>
+                    <div className="p-2 theme-bg-tertiary border theme-border rounded mb-2">
                       {topTexts.length > 0 ? (
                         <div className="flex flex-wrap gap-1">
                           {topTexts.map((text, idx) => (
-                            <span key={idx} className="px-2 py-1 bg-blue-900/50 text-blue-300 text-xs rounded">
+                            <span key={idx} className="px-2 py-1 bg-blue-500/20 text-blue-600 dark:bg-blue-900/50 dark:text-blue-300 text-xs rounded">
                               {text}
                             </span>
                           ))}
                         </div>
                       ) : (
-                        <span className="text-gray-500 text-sm">텍스트 없음 (기본 3컬럼)</span>
+                        <span className="theme-text-secondary text-sm">텍스트 없음 (기본 3컬럼)</span>
                       )}
                     </div>
                     <pre className="p-3 theme-bg-primary border theme-border rounded text-sm font-mono theme-text-code-green overflow-x-auto whitespace-pre">
