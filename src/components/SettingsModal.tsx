@@ -1012,7 +1012,7 @@ function CssTab({ projectId, onCssChange }: { projectId?: string | null; onCssCh
                         >
                           <span>{comp.name}</span>
                           {classCount > 0 && (
-                            <span className="text-xs bg-blue-600 px-1.5 py-0.5 rounded">{classCount}</span>
+                            <span className="text-xs bg-blue-600 text-white px-1.5 py-0.5 rounded">{classCount}</span>
                           )}
                         </button>
                       )
@@ -1367,7 +1367,7 @@ function MappingRulesTab({ projectId }: { projectId?: string | null }) {
 
       {/* 상태 메시지 */}
       {status && (
-        <div className={`text-sm px-3 py-2 rounded ${status.type === 'success' ? 'bg-green-900/30 text-green-400' : 'bg-red-900/30 text-red-400'}`}>
+        <div className={`text-sm px-3 py-2 rounded ${status.type === 'success' ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'}`}>
           {status.text}
           <button onClick={() => setStatus(null)} className="ml-2 opacity-60 hover:opacity-100">×</button>
         </div>

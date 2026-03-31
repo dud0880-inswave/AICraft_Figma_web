@@ -147,6 +147,7 @@ export default function App() {
       setState((s) => ({ ...s, loading: false }))
       setShowAddFileModal(false)
       setAddFileProjectId(null)
+      setNavigateToProjectId(projectId) // 프로젝트 선택 상태 유지
       setDashboardKey((k) => k + 1) // 대시보드 새로고침
 
       // 자동 매핑 제안 확인
