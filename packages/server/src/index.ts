@@ -1,11 +1,12 @@
 // ============================================================
 // Figma Viewer Backend Server
 // ============================================================
-import 'dotenv/config';
+import { config as dotenvConfig } from 'dotenv';
 import { createServer, IncomingMessage, ServerResponse } from 'http';
 import { randomUUID } from 'crypto';
 import { writeFileSync, existsSync, mkdirSync } from 'fs';
-import { join } from 'path';
+import { join, resolve, dirname } from 'path';
+import { fileURLToPath } from 'url';
 import { initDb, closeDb, getDb } from './db.js';
 import { RegistryStore } from './registry-store.js';
 import { MappingStore } from './mapping-store.js';
@@ -16,8 +17,29 @@ import { DefaultMappingRulesStore } from './default-mapping-rules-store.js';
 import { ProjectStore } from './project-store.js';
 import { SettingsStore } from './settings-store.js';
 
+// __dirname 설정 (ESM 환경)
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+
+// 서버 설정 파일 로드 (config/server.env 또는 .env)
+// 패키지 내 config 디렉토리 또는 프로젝트 루트의 .env 파일을 찾음
+const serverEnvPath = resolve(__dirname, '..', 'config', 'server.env');
+const rootEnvPath = resolve(process.cwd(), '.env');
+
+if (existsSync(serverEnvPath)) {
+  dotenvConfig({ path: serverEnvPath });
+  console.log('[Config] Loaded from config/server.env');
+} else if (existsSync(rootEnvPath)) {
+  dotenvConfig({ path: rootEnvPath });
+  console.log('[Config] Loaded from .env (fallback)');
+} else {
+  console.log('[Config] No config file found, using defaults');
+}
+
 // 서버 설정
 const PORT = parseInt(process.env.PORT || '5181', 10);
+const HOST = process.env.HOST || '0.0.0.0';
+const CORS_ORIGINS = process.env.CORS_ORIGINS || '*';
 const ENABLE_DEBUG_JSON = process.env.ENABLE_DEBUG_JSON === 'true';
 
 // ============================================================
@@ -48,7 +70,7 @@ function extractCommonClassesFromCluster(cluster: any): Record<string, string> {
   // 다른 속성들은 그대로 복사
   for (const [key, value] of Object.entries(cluster.customAttrs)) {
     if (key !== 'class') {
-      result[key] = value;
+      result[key] = value as string;
     }
   }
 
@@ -82,7 +104,7 @@ function extractAllClassesFromCluster(cluster: any): Record<string, string> {
   // 다른 속성들은 그대로 복사
   for (const [key, value] of Object.entries(cluster.customAttrs)) {
     if (key !== 'class') {
-      result[key] = value;
+      result[key] = value as string;
     }
   }
 
@@ -107,8 +129,16 @@ console.log('[Server] Stores created.');
 // HTTP Server
 // ============================================================
 const server = createServer(async (req: IncomingMessage, res: ServerResponse) => {
-  // CORS
-  res.setHeader('Access-Control-Allow-Origin', '*');
+  // CORS - config에서 설정된 오리진 허용
+  const origin = req.headers.origin || '*';
+  if (CORS_ORIGINS === '*') {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+  } else {
+    const allowedOrigins = CORS_ORIGINS.split(',').map(o => o.trim());
+    if (allowedOrigins.includes(origin)) {
+      res.setHeader('Access-Control-Allow-Origin', origin);
+    }
+  }
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
 
@@ -1075,8 +1105,9 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
   }
 });
 
-server.listen(PORT, () => {
-  console.log(`[Server] Figma Viewer API running on http://localhost:${PORT}`);
+server.listen(PORT, HOST, () => {
+  console.log(`[Server] Figma Viewer API running on http://${HOST}:${PORT}`);
+  console.log(`[Server] CORS allowed origins: ${CORS_ORIGINS}`);
   console.log(`[Server] Debug JSON generation: ${ENABLE_DEBUG_JSON ? 'ENABLED' : 'DISABLED'}`);
 });
 

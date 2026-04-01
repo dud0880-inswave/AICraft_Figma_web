@@ -1,4 +1,4 @@
-# Figma Viewer
+# AICraft Figma Viewer
 
 Figma 파일을 WebSquare 컴포넌트로 변환하는 도구입니다.
 
@@ -10,6 +10,26 @@ Figma 파일을 WebSquare 컴포넌트로 변환하는 도구입니다.
 - XML 코드 자동 생성
 - 클러스터 기반 자동 매핑 제안
 
+## 프로젝트 구조 (모노레포)
+
+```
+AICraft_Figma/
+├── packages/
+│   ├── server/           # 백엔드 (독립 배포 가능)
+│   │   ├── src/          # TypeScript 소스
+│   │   ├── config/       # 환경 설정 (server.env)
+│   │   ├── data/         # SQLite DB (자동 생성)
+│   │   └── package.json
+│   │
+│   └── client/           # 프론트엔드 (독립 배포 가능)
+│       ├── src/          # React 소스
+│       ├── public/       # 정적 파일
+│       └── package.json
+│
+├── package.json          # 워크스페이스 루트
+└── README.md
+```
+
 ## 시작하기
 
 ### 설치
@@ -18,36 +38,82 @@ Figma 파일을 WebSquare 컴포넌트로 변환하는 도구입니다.
 npm install
 ```
 
-### 환경 설정
-
-프로젝트 루트에 `.env` 파일을 생성하여 서버 설정을 관리할 수 있습니다:
+### 실행 (개발)
 
 ```bash
-# .env 파일 예시
-PORT=5181                    # 서버 포트 (기본값: 5181)
-ENABLE_DEBUG_JSON=false      # 디버깅 JSON 생성 활성화 (기본값: false)
+# 서버 + 클라이언트 동시 실행
+npm run dev
+
+# 개별 실행
+npm run dev:server   # 백엔드 (localhost:5181)
+npm run dev:client   # 프론트엔드 (localhost:5180)
 ```
 
-`.env.example` 파일을 참고하여 설정하세요.
-
-### 실행
+### 빌드
 
 ```bash
-# 프론트엔드 + 백엔드 동시 실행
-npm run dev:all
+# 전체 빌드
+npm run build
 
-# 또는 개별 실행
-npm run dev      # 프론트엔드 (localhost:5180)
-npm run server   # 백엔드 (localhost:5181)
+# 개별 빌드
+npm run build:server
+npm run build:client
 ```
 
-서버 시작 시 다음 로그를 통해 설정을 확인할 수 있습니다:
-```
-[Server] Figma Viewer API running on http://localhost:5181
-[Server] Debug JSON generation: DISABLED
+### 테스트
+
+```bash
+npm run test
 ```
 
-### Figma Access Token
+## 환경 설정
+
+### 서버 설정 (packages/server/config/server.env)
+
+```env
+PORT=5181
+HOST=0.0.0.0
+CORS_ORIGINS=*
+ENABLE_DEBUG_JSON=false
+```
+
+### 클라이언트 설정 (packages/client/public/config.json)
+
+```json
+{
+  "serverHost": "192.168.0.100",
+  "serverPort": 5181,
+  "appTitle": "AICraft Figma Viewer"
+}
+```
+
+- `serverHost`: 빈 문자열이면 상대 경로 사용 (개발용)
+- `serverPort`: API 서버 포트
+
+## 독립 배포
+
+### 서버 배포
+
+```bash
+# packages/server 폴더만 복사
+scp -r packages/server user@server:/path/to/app
+
+# 서버에서
+cd /path/to/app
+npm install
+npm run start
+```
+
+### 클라이언트 배포
+
+```bash
+cd packages/client
+npm install
+npm run build
+# dist/ 폴더를 웹서버에 배포
+```
+
+## Figma Access Token
 
 1. Figma 설정 > Account > Personal access tokens에서 토큰 생성
 2. 앱 설정에서 토큰 입력
@@ -55,22 +121,8 @@ npm run server   # 백엔드 (localhost:5181)
 ## 기술 스택
 
 - **Frontend**: React, TypeScript, Vite, TailwindCSS
-- **Backend**: Node.js, better-sqlite3, dotenv
+- **Backend**: Node.js, better-sqlite3, tsx
 - **API**: Figma REST API
-
-## 프로젝트 구조
-
-```
-├── src/                 # 프론트엔드 소스
-│   ├── components/      # React 컴포넌트
-│   ├── utils/           # API 클라이언트, 유틸리티
-│   └── types/           # TypeScript 타입 정의
-├── server/              # 백엔드 소스
-│   ├── index.ts         # HTTP 서버
-│   ├── db.ts            # SQLite 초기화
-│   └── *-store.ts       # 데이터 스토어
-└── data/                # SQLite DB 파일 (gitignore)
-```
 
 ## 자동 매핑 기능
 
@@ -82,34 +134,14 @@ npm run server   # 백엔드 (localhost:5181)
 - componentProperties의 키 구조만 사용
 - 부모 노드 정보 포함
 - 일반적인 패턴 매칭에 사용
-- 공통으로 사용된 클래스만 적용 (빈도 = 샘플 수)
 
 **2. Full 모드 (정확한 변형 매칭)**
-- componentProperties의 VARIANT 값 포함 (TEXT 값 제외)
+- componentProperties의 VARIANT 값 포함
 - 노드 단독으로 시그니처 생성
 - 동일한 변형(variant)을 가진 노드 매칭
-- 가장 많이 사용된 클래스 조합 적용
-
-### 클래스 조합 빈도 추적
-
-클래스는 조합 단위로 추적되어 정확한 스타일을 유지합니다:
-
-```json
-// 클래스 빈도 예시
-{
-  "badge list info": 3,    // 3회 사용
-  "badge list succ": 1     // 1회 사용
-}
-```
-
-가장 많이 사용된 조합이 자동으로 적용됩니다.
 
 ### 사용 방법
 
 1. 파일 A에서 노드 매핑 후 "완료" 클릭 → 클러스터 생성
 2. 새 파일 추가 시 동일 구조 노드 자동 감지
 3. 자동 매핑 제안 모달에서 선택 적용
-
-### 디버깅
-
-`.env` 파일에서 `ENABLE_DEBUG_JSON=true`로 설정하면 자동 매핑 실행 시 `signature-debug-{timestamp}.json` 파일이 생성되어 매칭 과정을 확인할 수 있습니다.

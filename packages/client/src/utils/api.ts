@@ -2,7 +2,11 @@
 // Backend API Client
 // ============================================================
 
-const API_BASE = 'http://localhost:5181/api';
+import { getApiBaseUrl } from '../config';
+
+// API_BASE는 config.json에서 런타임에 로드됩니다
+// 앱 시작 시 loadConfig()가 먼저 호출되어야 합니다
+const getApiBase = () => getApiBaseUrl();
 
 export interface RegistryItem {
   id: string;
@@ -32,20 +36,20 @@ export interface NodeMapping {
 // ---- Registry API (프로젝트별) ----
 
 export async function fetchRegistry(projectId: string): Promise<RegistryItem[]> {
-  const res = await fetch(`${API_BASE}/projects/${projectId}/registry`);
+  const res = await fetch(`${getApiBase()}/projects/${projectId}/registry`);
   if (!res.ok) throw new Error('Failed to fetch registry');
   return res.json();
 }
 
 export async function fetchRegistryItem(id: string): Promise<RegistryItem | null> {
-  const res = await fetch(`${API_BASE}/registry/${id}`);
+  const res = await fetch(`${getApiBase()}/registry/${id}`);
   if (res.status === 404) return null;
   if (!res.ok) throw new Error('Failed to fetch registry item');
   return res.json();
 }
 
 export async function createRegistryItem(projectId: string, data: { name: string; tagName: string; properties?: Record<string, string> }): Promise<RegistryItem> {
-  const res = await fetch(`${API_BASE}/projects/${projectId}/registry`, {
+  const res = await fetch(`${getApiBase()}/projects/${projectId}/registry`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
@@ -58,7 +62,7 @@ export async function createRegistryItem(projectId: string, data: { name: string
 }
 
 export async function updateRegistryItem(id: string, data: { name?: string; tagName?: string; properties?: Record<string, string> }): Promise<RegistryItem> {
-  const res = await fetch(`${API_BASE}/registry/${id}`, {
+  const res = await fetch(`${getApiBase()}/registry/${id}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
@@ -68,7 +72,7 @@ export async function updateRegistryItem(id: string, data: { name?: string; tagN
 }
 
 export async function deleteRegistryItem(id: string): Promise<void> {
-  const res = await fetch(`${API_BASE}/registry/${id}`, {
+  const res = await fetch(`${getApiBase()}/registry/${id}`, {
     method: 'DELETE',
   });
   if (!res.ok) throw new Error('Failed to delete registry item');
@@ -77,7 +81,7 @@ export async function deleteRegistryItem(id: string): Promise<void> {
 // ---- Mapping API (프로젝트별) ----
 
 export async function fetchMappings(projectId: string, fileKey: string, rootNodeId?: string | null): Promise<NodeMapping[]> {
-  let url = `${API_BASE}/mappings?projectId=${encodeURIComponent(projectId)}&fileKey=${encodeURIComponent(fileKey)}`;
+  let url = `${getApiBase()}/mappings?projectId=${encodeURIComponent(projectId)}&fileKey=${encodeURIComponent(fileKey)}`;
   if (rootNodeId) url += `&rootNodeId=${encodeURIComponent(rootNodeId)}`;
   const res = await fetch(url);
   if (!res.ok) throw new Error('Failed to fetch mappings');
@@ -85,7 +89,7 @@ export async function fetchMappings(projectId: string, fileKey: string, rootNode
 }
 
 export async function fetchMapping(projectId: string, fileKey: string, nodeId: string, rootNodeId?: string | null): Promise<NodeMapping | null> {
-  let url = `${API_BASE}/mappings/${encodeURIComponent(fileKey)}/${encodeURIComponent(nodeId)}?projectId=${encodeURIComponent(projectId)}`;
+  let url = `${getApiBase()}/mappings/${encodeURIComponent(fileKey)}/${encodeURIComponent(nodeId)}?projectId=${encodeURIComponent(projectId)}`;
   if (rootNodeId) url += `&rootNodeId=${encodeURIComponent(rootNodeId)}`;
   const res = await fetch(url);
   if (res.status === 404) return null;
@@ -94,7 +98,7 @@ export async function fetchMapping(projectId: string, fileKey: string, nodeId: s
 }
 
 export async function saveMapping(mapping: Omit<NodeMapping, 'id' | 'createdAt' | 'updatedAt'>): Promise<NodeMapping> {
-  const res = await fetch(`${API_BASE}/mappings`, {
+  const res = await fetch(`${getApiBase()}/mappings`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(mapping),
@@ -104,14 +108,14 @@ export async function saveMapping(mapping: Omit<NodeMapping, 'id' | 'createdAt' 
 }
 
 export async function deleteMapping(projectId: string, fileKey: string, nodeId: string, rootNodeId?: string | null): Promise<void> {
-  let url = `${API_BASE}/mappings/${encodeURIComponent(fileKey)}/${encodeURIComponent(nodeId)}?projectId=${encodeURIComponent(projectId)}`;
+  let url = `${getApiBase()}/mappings/${encodeURIComponent(fileKey)}/${encodeURIComponent(nodeId)}?projectId=${encodeURIComponent(projectId)}`;
   if (rootNodeId) url += `&rootNodeId=${encodeURIComponent(rootNodeId)}`;
   const res = await fetch(url, { method: 'DELETE' });
   if (!res.ok) throw new Error('Failed to delete mapping');
 }
 
 export async function clearAllMappings(projectId: string, fileKey: string, rootNodeId?: string | null): Promise<{ success: boolean; count: number }> {
-  const res = await fetch(`${API_BASE}/mappings/clear`, {
+  const res = await fetch(`${getApiBase()}/mappings/clear`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ projectId, fileKey, rootNodeId }),
@@ -131,7 +135,7 @@ export async function getRecommendedClasses(
   node: FigmaNodeForSignature,
   parent: FigmaNodeForSignature | null
 ): Promise<{ commonClasses: string[]; recommendedClasses: RecommendedClass[] }> {
-  const res = await fetch(`${API_BASE}/clusters/recommended-classes`, {
+  const res = await fetch(`${getApiBase()}/clusters/recommended-classes`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ projectId, node, parent }),
@@ -165,20 +169,20 @@ export interface Project {
 }
 
 export async function fetchProjects(): Promise<Project[]> {
-  const res = await fetch(`${API_BASE}/projects`);
+  const res = await fetch(`${getApiBase()}/projects`);
   if (!res.ok) throw new Error('Failed to fetch projects');
   return res.json();
 }
 
 export async function fetchProject(id: string): Promise<Project | null> {
-  const res = await fetch(`${API_BASE}/projects/${id}`);
+  const res = await fetch(`${getApiBase()}/projects/${id}`);
   if (res.status === 404) return null;
   if (!res.ok) throw new Error('Failed to fetch project');
   return res.json();
 }
 
 export async function createProject(name: string): Promise<Project> {
-  const res = await fetch(`${API_BASE}/projects`, {
+  const res = await fetch(`${getApiBase()}/projects`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ name }),
@@ -191,7 +195,7 @@ export async function createProject(name: string): Promise<Project> {
 }
 
 export async function updateProject(id: string, name: string): Promise<Project> {
-  const res = await fetch(`${API_BASE}/projects/${id}`, {
+  const res = await fetch(`${getApiBase()}/projects/${id}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ name }),
@@ -204,14 +208,14 @@ export async function updateProject(id: string, name: string): Promise<Project> 
 }
 
 export async function deleteProject(id: string): Promise<void> {
-  const res = await fetch(`${API_BASE}/projects/${id}`, {
+  const res = await fetch(`${getApiBase()}/projects/${id}`, {
     method: 'DELETE',
   });
   if (!res.ok) throw new Error('Failed to delete project');
 }
 
 export async function fetchProjectFiles(projectId: string): Promise<FigmaFileRecord[]> {
-  const res = await fetch(`${API_BASE}/projects/${projectId}/files`);
+  const res = await fetch(`${getApiBase()}/projects/${projectId}/files`);
   if (!res.ok) throw new Error('Failed to fetch project files');
   return res.json();
 }
@@ -219,13 +223,13 @@ export async function fetchProjectFiles(projectId: string): Promise<FigmaFileRec
 // ---- Settings API ----
 
 export async function fetchProjectSettings(projectId: string): Promise<Record<string, string>> {
-  const res = await fetch(`${API_BASE}/projects/${projectId}/settings`);
+  const res = await fetch(`${getApiBase()}/projects/${projectId}/settings`);
   if (!res.ok) throw new Error('Failed to fetch project settings');
   return res.json();
 }
 
 export async function saveProjectSettings(projectId: string, settings: Record<string, string>): Promise<void> {
-  const res = await fetch(`${API_BASE}/projects/${projectId}/settings`, {
+  const res = await fetch(`${getApiBase()}/projects/${projectId}/settings`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ settings }),
@@ -234,7 +238,7 @@ export async function saveProjectSettings(projectId: string, settings: Record<st
 }
 
 export async function fetchFigmaFiles(): Promise<FigmaFileRecord[]> {
-  const res = await fetch(`${API_BASE}/figma-files`);
+  const res = await fetch(`${getApiBase()}/figma-files`);
   if (!res.ok) throw new Error('Failed to fetch figma files');
   return res.json();
 }
@@ -246,7 +250,7 @@ export async function saveFigmaFile(
   thumbnailUrl: string | undefined,
   projectId: string
 ): Promise<FigmaFileRecord> {
-  const res = await fetch(`${API_BASE}/figma-files`, {
+  const res = await fetch(`${getApiBase()}/figma-files`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ fileKey, nodeId, name, thumbnailUrl, projectId }),
@@ -259,14 +263,14 @@ export async function deleteFigmaFile(projectId: string, fileKey: string, nodeId
   const params = new URLSearchParams({ projectId, fileKey });
   if (nodeId) params.append('nodeId', nodeId);
 
-  const res = await fetch(`${API_BASE}/figma-files?${params}`, {
+  const res = await fetch(`${getApiBase()}/figma-files?${params}`, {
     method: 'DELETE',
   });
   if (!res.ok) throw new Error('Failed to delete figma file');
 }
 
 export async function touchFigmaFile(projectId: string, fileKey: string, nodeId: string | null): Promise<void> {
-  const res = await fetch(`${API_BASE}/figma-files/touch`, {
+  const res = await fetch(`${getApiBase()}/figma-files/touch`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ projectId, fileKey, nodeId }),
@@ -275,7 +279,7 @@ export async function touchFigmaFile(projectId: string, fileKey: string, nodeId:
 }
 
 export async function updateFigmaFileCompleted(projectId: string, fileKey: string, nodeId: string | null, completed: boolean): Promise<void> {
-  const res = await fetch(`${API_BASE}/figma-files/complete`, {
+  const res = await fetch(`${getApiBase()}/figma-files/complete`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ projectId, fileKey, nodeId, completed }),
@@ -284,7 +288,7 @@ export async function updateFigmaFileCompleted(projectId: string, fileKey: strin
 }
 
 export async function refreshFigmaFile(projectId: string, fileKey: string, nodeId: string | null, data: object): Promise<{ deletedMappingsCount: number }> {
-  const res = await fetch(`${API_BASE}/figma-files/refresh`, {
+  const res = await fetch(`${getApiBase()}/figma-files/refresh`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ projectId, fileKey, nodeId, data }),
@@ -306,13 +310,13 @@ export async function fetchFigmaFileData(projectId: string, fileKey: string, nod
   const params = new URLSearchParams({ projectId, fileKey });
   if (nodeId) params.append('nodeId', nodeId);
 
-  const res = await fetch(`${API_BASE}/figma-file-data?${params}`);
+  const res = await fetch(`${getApiBase()}/figma-file-data?${params}`);
   if (!res.ok) throw new Error('Failed to fetch figma file data');
   return res.json();
 }
 
 export async function saveFigmaFileData(projectId: string, fileKey: string, nodeId: string | null, data: object): Promise<void> {
-  const res = await fetch(`${API_BASE}/figma-file-data`, {
+  const res = await fetch(`${getApiBase()}/figma-file-data`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ projectId, fileKey, nodeId, data }),
@@ -324,7 +328,7 @@ export async function deleteFigmaFileData(projectId: string, fileKey: string, no
   const params = new URLSearchParams({ projectId, fileKey });
   if (nodeId) params.append('nodeId', nodeId);
 
-  const res = await fetch(`${API_BASE}/figma-file-data?${params}`, {
+  const res = await fetch(`${getApiBase()}/figma-file-data?${params}`, {
     method: 'DELETE',
   });
   if (!res.ok) throw new Error('Failed to delete figma file data');
@@ -366,14 +370,14 @@ export interface FigmaNodeForSignature {
 }
 
 export async function fetchClusters(projectId?: string): Promise<MappingCluster[]> {
-  const url = projectId ? `${API_BASE}/clusters?projectId=${projectId}` : `${API_BASE}/clusters`;
+  const url = projectId ? `${getApiBase()}/clusters?projectId=${projectId}` : `${getApiBase()}/clusters`;
   const res = await fetch(url);
   if (!res.ok) throw new Error('Failed to fetch clusters');
   return res.json();
 }
 
 export async function generateClusters(projectId: string): Promise<{ success: boolean; createdCount: number }> {
-  const res = await fetch(`${API_BASE}/clusters/generate`, {
+  const res = await fetch(`${getApiBase()}/clusters/generate`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ projectId }),
@@ -387,7 +391,7 @@ export async function fetchAutoMappingSuggestions(
   existingMappingNodeIds: string[] = [],
   projectId: string
 ): Promise<AutoMappingSuggestion[]> {
-  const res = await fetch(`${API_BASE}/clusters/suggest`, {
+  const res = await fetch(`${getApiBase()}/clusters/suggest`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ nodes, existingMappingNodeIds, projectId }),
@@ -401,7 +405,7 @@ export async function fetchDefaultRuleSuggestions(
   projectId: string,
   nodes: FigmaNodeForSignature[]
 ): Promise<AutoMappingSuggestion[]> {
-  const res = await fetch(`${API_BASE}/projects/${projectId}/default-mapping-rules/suggest`, {
+  const res = await fetch(`${getApiBase()}/projects/${projectId}/default-mapping-rules/suggest`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ nodes }),
@@ -424,7 +428,7 @@ export async function applyAutoMappingSuggestions(
   }>,
   rootNodeId?: string | null
 ): Promise<{ success: boolean; appliedCount: number }> {
-  const res = await fetch(`${API_BASE}/clusters/apply`, {
+  const res = await fetch(`${getApiBase()}/clusters/apply`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ fileKey, rootNodeId, projectId, suggestions }),
@@ -447,13 +451,13 @@ export interface MappingRulesJson {
 }
 
 export async function exportMappingRules(projectId: string): Promise<MappingRulesJson> {
-  const res = await fetch(`${API_BASE}/projects/${projectId}/mapping-rules/export`);
+  const res = await fetch(`${getApiBase()}/projects/${projectId}/mapping-rules/export`);
   if (!res.ok) throw new Error('Failed to export mapping rules');
   return res.json();
 }
 
 export async function importMappingRules(projectId: string, data: MappingRulesJson): Promise<{ defaultAdded: number; clusterUpdated: number }> {
-  const res = await fetch(`${API_BASE}/projects/${projectId}/mapping-rules/import`, {
+  const res = await fetch(`${getApiBase()}/projects/${projectId}/mapping-rules/import`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
@@ -480,19 +484,19 @@ export interface DefaultMappingRuleGrouped {
 }
 
 export async function fetchDefaultMappingRules(projectId: string): Promise<DefaultMappingRule[]> {
-  const res = await fetch(`${API_BASE}/projects/${projectId}/default-mapping-rules`);
+  const res = await fetch(`${getApiBase()}/projects/${projectId}/default-mapping-rules`);
   if (!res.ok) throw new Error('Failed to fetch default mapping rules');
   return res.json();
 }
 
 export async function fetchDefaultMappingRulesGrouped(projectId: string): Promise<DefaultMappingRuleGrouped[]> {
-  const res = await fetch(`${API_BASE}/projects/${projectId}/default-mapping-rules?grouped=true`);
+  const res = await fetch(`${getApiBase()}/projects/${projectId}/default-mapping-rules?grouped=true`);
   if (!res.ok) throw new Error('Failed to fetch default mapping rules');
   return res.json();
 }
 
 export async function createDefaultMappingRule(projectId: string, data: { registryId: string; keyword: string }): Promise<DefaultMappingRule> {
-  const res = await fetch(`${API_BASE}/projects/${projectId}/default-mapping-rules`, {
+  const res = await fetch(`${getApiBase()}/projects/${projectId}/default-mapping-rules`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
@@ -505,14 +509,14 @@ export async function createDefaultMappingRule(projectId: string, data: { regist
 }
 
 export async function deleteDefaultMappingRule(id: string): Promise<void> {
-  const res = await fetch(`${API_BASE}/default-mapping-rules/${id}`, {
+  const res = await fetch(`${getApiBase()}/default-mapping-rules/${id}`, {
     method: 'DELETE',
   });
   if (!res.ok) throw new Error('Failed to delete default mapping rule');
 }
 
 export async function resetDefaultMappingRules(projectId: string): Promise<{ count: number }> {
-  const res = await fetch(`${API_BASE}/projects/${projectId}/default-mapping-rules/reset`, {
+  const res = await fetch(`${getApiBase()}/projects/${projectId}/default-mapping-rules/reset`, {
     method: 'POST',
   });
   if (!res.ok) throw new Error('Failed to reset default mapping rules');
@@ -526,7 +530,7 @@ export async function exportXml(
   filename: string,
   exportPath: string
 ): Promise<{ success: boolean; path: string }> {
-  const res = await fetch(`${API_BASE}/export-xml`, {
+  const res = await fetch(`${getApiBase()}/export-xml`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ xml, filename, exportPath }),
