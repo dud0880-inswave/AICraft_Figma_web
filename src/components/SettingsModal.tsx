@@ -551,7 +551,7 @@ function ComponentsTab({ projectId, onRegistryChange }: { projectId?: string | n
             </button>
           )}
         </div>
-        <div className="max-h-64 overflow-auto">
+        <div className={`overflow-auto ${editingId || showAddForm ? 'max-h-[320px]' : 'max-h-[590px]'}`}>
           {registry.length === 0 ? (
             <div className="px-3 py-4 text-center theme-text-secondary text-sm">
               등록된 컴포넌트가 없습니다
@@ -617,6 +617,7 @@ function CssTab({ projectId, onCssChange }: { projectId?: string | null; onCssCh
   const [selectedComponentId, setSelectedComponentId] = useState<string | null>(null)
   const [selectedCssId, setSelectedCssId] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
+  const [classSearchQuery, setClassSearchQuery] = useState('')
 
   // 프로젝트 설정 로드/저장 헬퍼
   const loadCssListFromSettings = async (): Promise<CssItem[]> => {
@@ -971,7 +972,7 @@ function CssTab({ projectId, onCssChange }: { projectId?: string | null; onCssCh
                       }}
                       className={`px-4 py-2 text-sm whitespace-nowrap border-b-2 transition-colors flex items-center gap-2 ${
                         isSelected
-                          ? 'border-blue-500 text-blue-400 bg-blue-900/20'
+                          ? 'border-blue-500 text-blue-600 dark:text-blue-400 bg-blue-100 dark:bg-blue-900/50'
                           : 'border-transparent theme-text-secondary theme-text-hover theme-bg-hover'
                       }`}
                     >
@@ -982,7 +983,7 @@ function CssTab({ projectId, onCssChange }: { projectId?: string | null; onCssCh
                         {css.classNames?.length || 0}
                       </span>
                       {mappingCount > 0 && (
-                        <span className="text-xs text-green-400">({mappingCount} 매핑)</span>
+                        <span className="text-xs text-green-600 dark:text-green-400">({mappingCount} 매핑)</span>
                       )}
                     </button>
                   )
@@ -993,20 +994,20 @@ function CssTab({ projectId, onCssChange }: { projectId?: string | null; onCssCh
             {selectedCssId && selectedCss ? (
               <div className="flex gap-3">
                 {/* 컴포넌트 목록 */}
-                <div className="w-1/3 border theme-border rounded-lg overflow-hidden">
-                  <div className="px-3 py-2 theme-bg-tertiary border-b theme-border">
+                <div className="w-2/5 border theme-border rounded-lg overflow-hidden">
+                  <div className="px-3 h-9 theme-bg-tertiary border-b theme-border flex items-center">
                     <span className="text-xs theme-text-secondary">컴포넌트</span>
                   </div>
-                  <div className="max-h-48 overflow-auto">
+                  <div className="h-[460px] max-h-[460px] overflow-auto">
                     {registry.map(comp => {
                       const classCount = (componentClassMapping[selectedCssId]?.[comp.id] || []).length
                       return (
                         <button
                           key={comp.id}
-                          onClick={() => setSelectedComponentId(comp.id)}
+                          onClick={() => { setSelectedComponentId(comp.id); setClassSearchQuery(''); }}
                           className={`w-full px-3 py-2 text-left text-sm border-b theme-border last:border-b-0 flex items-center justify-between ${
                             selectedComponentId === comp.id
-                              ? 'bg-blue-900/50 text-blue-400'
+                              ? 'bg-blue-100 dark:bg-blue-900/50 text-blue-600 dark:text-blue-400'
                               : 'theme-text-primary theme-bg-hover'
                           }`}
                         >
@@ -1022,32 +1023,56 @@ function CssTab({ projectId, onCssChange }: { projectId?: string | null; onCssCh
 
                 {/* 클래스 목록 */}
                 <div className="flex-1 border theme-border rounded-lg overflow-hidden">
-                  <div className="px-3 py-2 theme-bg-tertiary border-b theme-border">
-                    <span className="text-xs theme-text-secondary">
+                  <div className="px-3 h-9 theme-bg-tertiary border-b theme-border flex items-center justify-between gap-2 overflow-hidden">
+                    <span className="text-xs theme-text-secondary truncate min-w-0">
                       {selectedComponent
                         ? `${selectedCss.name} → ${selectedComponent.name}`
                         : `${selectedCss.name}의 클래스 (${selectedCss.classNames?.length || 0}개)`}
                     </span>
+                    {selectedComponentId && (
+                      <input
+                        type="text"
+                        value={classSearchQuery}
+                        onChange={(e) => setClassSearchQuery(e.target.value)}
+                        placeholder="검색..."
+                        className="w-24 flex-shrink-0 px-2 py-1 text-xs theme-bg-secondary border theme-border rounded focus:outline-none focus:border-blue-500 theme-text-primary"
+                      />
+                    )}
                   </div>
-                  <div className="max-h-48 overflow-auto p-2">
+                  <div className="h-[460px] max-h-[460px] overflow-auto p-2">
                     {selectedComponentId ? (
                       <div className="flex flex-wrap gap-1">
-                        {(selectedCss.classNames || []).map(cls => {
-                          const isAssigned = assignedClasses.includes(cls)
-                          return (
-                            <button
-                              key={cls}
-                              onClick={() => toggleClassForComponent(selectedCssId, selectedComponentId, cls)}
-                              className={`px-2 py-1 text-xs rounded font-mono ${
-                                isAssigned
-                                  ? 'bg-blue-600 text-white'
-                                  : 'theme-bg-tertiary theme-text-secondary theme-bg-hover'
-                              }`}
-                            >
-                              .{cls}
-                            </button>
-                          )
-                        })}
+                        {(() => {
+                          const allClasses = selectedCss.classNames || []
+                          // 검색 필터 적용
+                          const filtered = classSearchQuery
+                            ? allClasses.filter(cls => cls.toLowerCase().includes(classSearchQuery.toLowerCase()))
+                            : allClasses
+                          // 선택된 클래스 최상위 정렬
+                          const sorted = [...filtered].sort((a, b) => {
+                            const aAssigned = assignedClasses.includes(a)
+                            const bAssigned = assignedClasses.includes(b)
+                            if (aAssigned && !bAssigned) return -1
+                            if (!aAssigned && bAssigned) return 1
+                            return 0
+                          })
+                          return sorted.map(cls => {
+                            const isAssigned = assignedClasses.includes(cls)
+                            return (
+                              <button
+                                key={cls}
+                                onClick={() => toggleClassForComponent(selectedCssId, selectedComponentId, cls)}
+                                className={`px-2 py-1 text-xs rounded font-mono ${
+                                  isAssigned
+                                    ? 'bg-blue-600 text-white'
+                                    : 'theme-bg-tertiary theme-text-secondary theme-bg-hover'
+                                }`}
+                              >
+                                .{cls}
+                              </button>
+                            )
+                          })
+                        })()}
                       </div>
                     ) : (
                       <div className="text-center theme-text-secondary text-sm py-4">
@@ -1117,7 +1142,7 @@ function CssTab({ projectId, onCssChange }: { projectId?: string | null; onCssCh
             + 직접 추가
           </button>
         </div>
-        <div className="max-h-48 overflow-auto">
+        <div className="h-[430px] overflow-auto">
           {cssList.length === 0 ? (
             <div className="px-3 py-4 text-center theme-text-secondary text-sm">
               등록된 CSS가 없습니다
@@ -1126,14 +1151,14 @@ function CssTab({ projectId, onCssChange }: { projectId?: string | null; onCssCh
             cssList.map((item) => (
               <div
                 key={item.id}
-                className="flex items-center justify-between px-3 py-2 border-b theme-border last:border-b-0 theme-bg-hover"
+                className="flex items-center justify-between px-3 py-2 border-b theme-border theme-bg-hover"
               >
                 <div className="flex items-center gap-2 min-w-0 flex-1">
                   <svg className="w-4 h-4 text-blue-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                   </svg>
                   <span className="text-sm theme-text-primary truncate">{item.name}</span>
-                  <span className="text-xs text-green-400">
+                  <span className="text-xs text-green-600 dark:text-green-400">
                     {item.classNames?.length || 0} 클래스
                   </span>
                 </div>
@@ -1176,7 +1201,7 @@ function CssTab({ projectId, onCssChange }: { projectId?: string | null; onCssCh
 // ---- 매핑룰 탭 ----
 type MappingRulesSubView = 'default' | 'export'
 
-function MappingRulesTab({ projectId }: { projectId?: string | null }) {
+function MappingRulesTab({ projectId, onCssChange }: { projectId?: string | null; onCssChange?: () => void }) {
   const [subView, setSubView] = useState<MappingRulesSubView>('default')
   const [status, setStatus] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
   const [loading, setLoading] = useState(false)
@@ -1329,10 +1354,14 @@ function MappingRulesTab({ projectId }: { projectId?: string | null }) {
       try {
         setLoading(true)
         const data = JSON.parse(ev.target?.result as string) as MappingRulesJson
-        if (data.version !== 1) throw new Error('지원하지 않는 버전')
-        const result = await importMappingRules(projectId, data)
-        setStatus({ type: 'success', text: `가져오기 완료 — 기본규칙 ${result.defaultAdded}개 추가, 커스텀룰 ${result.clusterUpdated}개 적용` })
+        if (data.version !== 1 && data.version !== 2) throw new Error('지원하지 않는 버전')
+        const result = await importMappingRules(projectId, data) as { defaultAdded: number; clusterUpdated: number; cssImported?: boolean }
+        const cssMsg = result.cssImported ? ', CSS 설정 적용됨' : ''
+        setStatus({ type: 'success', text: `가져오기 완료 — 기본규칙 ${result.defaultAdded}개 추가, 커스텀룰 ${result.clusterUpdated}개 적용${cssMsg}` })
         await loadData()
+        if (result.cssImported && onCssChange) {
+          onCssChange()
+        }
       } catch (err) {
         setStatus({ type: 'error', text: err instanceof Error ? err.message : '가져오기 실패' })
       } finally {
@@ -1417,7 +1446,7 @@ function MappingRulesTab({ projectId }: { projectId?: string | null }) {
                         value={newKeyword[selectedNewComponent] || ''}
                         onChange={(e) => setNewKeyword(prev => ({ ...prev, [selectedNewComponent]: e.target.value }))}
                         placeholder="첫 번째 키워드 입력"
-                        className="flex-1 px-3 py-2 theme-bg-tertiary border theme-border rounded text-sm theme-text-primary"
+                        className="flex-1 px-3 py-2 theme-bg-secondary border theme-border rounded text-sm theme-text-primary"
                         onKeyDown={(e) => e.key === 'Enter' && handleAddNewComponent()}
                       />
                       <button
@@ -1432,7 +1461,7 @@ function MappingRulesTab({ projectId }: { projectId?: string | null }) {
               )}
 
               {/* 규칙 목록 */}
-              <div className="border theme-border rounded-lg max-h-64 overflow-y-auto">
+              <div className="border theme-border rounded-lg h-[468px] max-h-[468px] overflow-y-auto">
                 {defaultRules.length === 0 ? (
                   <div className="px-3 py-4 text-center theme-text-secondary text-sm">
                     등록된 기본 매핑 규칙이 없습니다
@@ -1471,7 +1500,7 @@ function MappingRulesTab({ projectId }: { projectId?: string | null }) {
                               {group.rules.map(rule => (
                                 <span
                                   key={rule.id}
-                                  className="inline-flex items-center gap-1 px-2 py-1 bg-blue-100 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-800 rounded text-sm text-blue-700 dark:text-blue-300"
+                                  className="inline-flex items-center gap-1 px-2 py-1 bg-blue-100 dark:bg-blue-800/50 border border-blue-200 dark:border-blue-600 rounded text-sm text-blue-700 dark:text-blue-200"
                                 >
                                   {rule.keyword}
                                   <button
@@ -1491,7 +1520,7 @@ function MappingRulesTab({ projectId }: { projectId?: string | null }) {
                                 value={newKeyword[group.registryId] || ''}
                                 onChange={(e) => setNewKeyword(prev => ({ ...prev, [group.registryId]: e.target.value }))}
                                 placeholder="새 키워드..."
-                                className="flex-1 px-2 py-1 theme-bg-tertiary border theme-border rounded text-sm theme-text-primary placeholder-gray-500"
+                                className="flex-1 px-2 py-1 theme-bg-secondary border theme-border rounded text-sm theme-text-primary placeholder-gray-500"
                                 onKeyDown={(e) => e.key === 'Enter' && handleAddKeyword(group.registryId)}
                               />
                               <button
@@ -1592,7 +1621,7 @@ export default function SettingsModal({ isOpen, onClose, onSaveToken, onCssChang
       />
 
       {/* 모달 */}
-      <div className="relative theme-bg-secondary rounded-lg shadow-xl w-full max-w-lg mx-4 max-h-[85vh] flex flex-col">
+      <div className="relative theme-bg-secondary rounded-lg shadow-xl w-full max-w-lg mx-4 h-[90vh] flex flex-col">
         {/* 헤더 */}
         <div className="flex items-center justify-between px-6 pt-6 pb-4">
           <div>
@@ -1635,7 +1664,7 @@ export default function SettingsModal({ isOpen, onClose, onSaveToken, onCssChang
           )}
           {activeTab === 'components' && <ComponentsTab projectId={projectId} onRegistryChange={onRegistryChange} />}
           {activeTab === 'css' && <CssTab projectId={projectId} onCssChange={onCssChange} />}
-          {activeTab === 'mappingRules' && <MappingRulesTab projectId={projectId} />}
+          {activeTab === 'mappingRules' && <MappingRulesTab projectId={projectId} onCssChange={onCssChange} />}
         </div>
       </div>
     </div>

@@ -441,6 +441,9 @@ export interface MappingRulesJson {
   projectId?: string;
   defaultMappingRules: Array<{ registryName: string; keyword: string }>;
   customMappingRules: Array<{ signature: string; registryName: string; customAttrs: Record<string, string>; sampleCount: number }>;
+  // v2: CSS 정보 추가
+  cssList?: Array<{ id: string; name: string; content: string; classNames: string[] }>;
+  componentClassMapping?: Record<string, Record<string, string[]>>;
 }
 
 export async function exportMappingRules(projectId: string): Promise<MappingRulesJson> {

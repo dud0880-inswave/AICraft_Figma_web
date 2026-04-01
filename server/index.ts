@@ -915,12 +915,37 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
         sampleCount: c.sampleCount,
       }));
 
+      // CSS 정보 가져오기
+      const settings = settingsStore.getAsObject(projectId);
+      const cssList = settings['css-list'] ? JSON.parse(settings['css-list']) : [];
+      const componentClassMappingRaw = settings['css-class-mapping'] ? JSON.parse(settings['css-class-mapping']) : {};
+
+      // componentId → componentName 변환 (다른 프로젝트에서 import 시 호환성)
+      const registryList = registryStore.listByProject(projectId);
+      const idToName: Record<string, string> = {};
+      for (const r of registryList) {
+        idToName[r.id] = r.name;
+      }
+
+      const componentClassMapping: Record<string, Record<string, string[]>> = {};
+      for (const [cssId, compMap] of Object.entries(componentClassMappingRaw)) {
+        componentClassMapping[cssId] = {};
+        for (const [compId, classes] of Object.entries(compMap as Record<string, string[]>)) {
+          const compName = idToName[compId];
+          if (compName) {
+            componentClassMapping[cssId][compName] = classes;
+          }
+        }
+      }
+
       return json(res, {
-        version: 1,
+        version: 2,
         exportedAt: new Date().toISOString(),
         projectId,
         defaultMappingRules: defaultRules,
         customMappingRules: clusters,
+        cssList,
+        componentClassMapping,
       });
     }
 
@@ -928,14 +953,17 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
     if (path.match(/^\/api\/projects\/[^/]+\/mapping-rules\/import$/) && req.method === 'POST') {
       const projectId = path.replace('/api/projects/', '').replace('/mapping-rules/import', '');
       const body = await parseBody(req);
-      const { defaultMappingRules = [], customMappingRules = [] } = body as {
+      const { defaultMappingRules = [], customMappingRules = [], cssList, componentClassMapping } = body as {
         version?: number;
         defaultMappingRules?: Array<{ registryName: string; keyword: string }>;
         customMappingRules?: Array<{ signature: string; registryName: string; customAttrs?: Record<string, string>; sampleCount?: number }>;
+        cssList?: Array<{ id: string; name: string; content: string; classNames: string[] }>;
+        componentClassMapping?: Record<string, Record<string, string[]>>;
       };
 
       let defaultAdded = 0;
       let clusterUpdated = 0;
+      let cssImported = false;
 
       // defaultMappingRules: keyword 중복이면 skip
       for (const rule of defaultMappingRules) {
@@ -968,7 +996,35 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
         clusterUpdated++;
       }
 
-      return json(res, { success: true, defaultAdded, clusterUpdated });
+      // CSS 정보 저장 (v2)
+      if (cssList && cssList.length > 0) {
+        settingsStore.setMultiple(projectId, { 'css-list': JSON.stringify(cssList) });
+        cssImported = true;
+      }
+      if (componentClassMapping && Object.keys(componentClassMapping).length > 0) {
+        // componentName → componentId 변환 (현재 프로젝트의 registry 기준)
+        const registryList = registryStore.listByProject(projectId);
+        const nameToId: Record<string, string> = {};
+        for (const r of registryList) {
+          nameToId[r.name] = r.id;
+        }
+
+        const convertedMapping: Record<string, Record<string, string[]>> = {};
+        for (const [cssId, compMap] of Object.entries(componentClassMapping)) {
+          convertedMapping[cssId] = {};
+          for (const [compName, classes] of Object.entries(compMap as Record<string, string[]>)) {
+            const compId = nameToId[compName];
+            if (compId) {
+              convertedMapping[cssId][compId] = classes;
+            }
+          }
+        }
+
+        settingsStore.setMultiple(projectId, { 'css-class-mapping': JSON.stringify(convertedMapping) });
+        cssImported = true;
+      }
+
+      return json(res, { success: true, defaultAdded, clusterUpdated, cssImported });
     }
 
     // ---- XML Export API ----
