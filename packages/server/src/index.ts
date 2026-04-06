@@ -45,63 +45,27 @@ const ENABLE_DEBUG_JSON = process.env.ENABLE_DEBUG_JSON === 'true';
 // ============================================================
 // 헬퍼 함수: 클러스터에서 공통 클래스 추출 (Base 모드용)
 // ============================================================
-function extractCommonClassesFromCluster(cluster: any): Record<string, string> {
+// mode: 'common' → sampleCount와 동일한 빈도의 클래스만 (Base 모드용)
+// mode: 'all'    → 빈도 상위 1개 선택 (Full 모드용)
+function extractClassesFromCluster(cluster: any, mode: 'common' | 'all'): Record<string, string> {
   const result: Record<string, string> = {};
 
-  // class 속성 처리
   if (cluster.customAttrs.class) {
     if (typeof cluster.customAttrs.class === 'object' && !Array.isArray(cluster.customAttrs.class)) {
-      // 빈도 객체: { "badge list info": 3, "badge list succ": 1 }
-      // 빈도 === sampleCount인 조합 찾기 (공통으로 사용된 조합)
       const entries = Object.entries(cluster.customAttrs.class) as [string, number][];
-      const commonCombos = entries.filter(([_, count]) => count === cluster.sampleCount);
+      const candidates = mode === 'common'
+        ? entries.filter(([_, count]) => count === cluster.sampleCount)
+        : entries;
 
-      if (commonCombos.length > 0) {
-        // 여러 개면 가장 빈도 높은 것 선택 (일반적으로 하나만 있을 것)
-        commonCombos.sort((a, b) => b[1] - a[1]);
-        result.class = commonCombos[0][0];
+      if (candidates.length > 0) {
+        candidates.sort((a, b) => b[1] - a[1]);
+        result.class = candidates[0][0];
       }
     } else {
-      // 레거시: 문자열 그대로 사용
       result.class = cluster.customAttrs.class;
     }
   }
 
-  // 다른 속성들은 그대로 복사
-  for (const [key, value] of Object.entries(cluster.customAttrs)) {
-    if (key !== 'class') {
-      result[key] = value as string;
-    }
-  }
-
-  return result;
-}
-
-// ============================================================
-// 헬퍼 함수: 클러스터에서 가장 많이 사용된 클래스 조합 추출 (Full 모드용)
-// ============================================================
-function extractAllClassesFromCluster(cluster: any): Record<string, string> {
-  const result: Record<string, string> = {};
-
-  // class 속성 처리
-  if (cluster.customAttrs.class) {
-    if (typeof cluster.customAttrs.class === 'object' && !Array.isArray(cluster.customAttrs.class)) {
-      // 빈도 객체: { "badge list info": 3, "badge list succ": 1 }
-      // 가장 빈도 높은 조합 선택
-      const entries = Object.entries(cluster.customAttrs.class) as [string, number][];
-
-      if (entries.length > 0) {
-        // 빈도 순으로 정렬하여 가장 높은 것 선택
-        entries.sort((a, b) => b[1] - a[1]);
-        result.class = entries[0][0];
-      }
-    } else {
-      // 레거시: 문자열 그대로 사용
-      result.class = cluster.customAttrs.class;
-    }
-  }
-
-  // 다른 속성들은 그대로 복사
   for (const [key, value] of Object.entries(cluster.customAttrs)) {
     if (key !== 'class') {
       result[key] = value as string;
@@ -112,9 +76,7 @@ function extractAllClassesFromCluster(cluster: any): Record<string, string> {
 }
 
 // DB 초기화
-console.log('[Server] Initializing...');
 initDb();
-console.log('[Server] Creating stores...');
 const registryStore = new RegistryStore(getDb());
 const projectStore = new ProjectStore(getDb());
 const settingsStore = new SettingsStore(getDb());
@@ -123,7 +85,6 @@ const mappingStore = new MappingStore(getDb());
 const figmaFileDataStore = new FigmaFileDataStore(getDb());
 const clusterStore = new ClusterStore(getDb());
 const defaultMappingRulesStore = new DefaultMappingRulesStore(getDb());
-console.log('[Server] Stores created.');
 
 // ============================================================
 // HTTP Server
@@ -501,34 +462,24 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
       if (!fileKey) return badRequest(res, 'fileKey required');
       if (!data) return badRequest(res, 'data required');
 
+      const collectNodeIds = (node: any, acc: Set<string>): void => {
+        if (node?.id) acc.add(node.id);
+        if (node?.children) node.children.forEach((c: any) => collectNodeIds(c, acc));
+      };
+
       // 1. 이전 데이터에서 노드 ID 수집 (변경 감지용)
       const prevData = figmaFileDataStore.get(projectId, fileKey, nodeId || null);
       // prevData가 없으면 최초 refresh → 비교 기준 없음, 신규 노드 없음으로 처리
       const isFirstRefresh = !prevData;
       const prevNodeIds = new Set<string>();
-      if (prevData) {
-        const prevDoc = JSON.parse(prevData.data);
-        function collectPrevNodeIds(node: any): void {
-          if (node && node.id) prevNodeIds.add(node.id);
-          if (node && node.children) node.children.forEach((c: any) => collectPrevNodeIds(c));
-        }
-        collectPrevNodeIds(prevDoc);
-      }
+      if (prevData) collectNodeIds(JSON.parse(prevData.data), prevNodeIds);
 
       // 2. figma_file_data 업데이트
       figmaFileDataStore.save(projectId, fileKey, nodeId || null, data);
 
       // 3. 새 데이터에서 모든 노드 ID 수집
       const allNodeIds = new Set<string>();
-      function collectNodeIds(node: any): void {
-        if (node && node.id) {
-          allNodeIds.add(node.id);
-        }
-        if (node && node.children) {
-          node.children.forEach((child: any) => collectNodeIds(child));
-        }
-      }
-      collectNodeIds(data);
+      collectNodeIds(data, allNodeIds);
 
       // 4. 추가된 노드 ID 계산 (이전에 없던 노드, 최초 refresh는 빈 배열)
       const newNodeIds: string[] = [];
@@ -715,7 +666,7 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
         };
 
         if (cluster) {
-          const commonCustomAttrs = extractCommonClassesFromCluster(cluster);
+          const commonCustomAttrs = extractClassesFromCluster(cluster, 'common');
           suggestionMap.set(nd.nodeId, {
             nodeId: nd.nodeId,
             nodeName: nd.nodeName,
@@ -755,7 +706,7 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
         }
 
         if (cluster) {
-          const allCustomAttrs = extractAllClassesFromCluster(cluster);
+          const allCustomAttrs = extractClassesFromCluster(cluster, 'all');
           suggestionMap.set(nd.nodeId, {
             nodeId: nd.nodeId,
             nodeName: nd.nodeName,
