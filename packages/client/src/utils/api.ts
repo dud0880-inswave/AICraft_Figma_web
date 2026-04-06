@@ -287,7 +287,7 @@ export async function updateFigmaFileCompleted(projectId: string, fileKey: strin
   if (!res.ok) throw new Error('Failed to update figma file completion status');
 }
 
-export async function refreshFigmaFile(projectId: string, fileKey: string, nodeId: string | null, data: object): Promise<{ deletedMappingsCount: number }> {
+export async function refreshFigmaFile(projectId: string, fileKey: string, nodeId: string | null, data: object): Promise<{ deletedMappingsCount: number; newNodeIds: string[] }> {
   const res = await fetch(`${getApiBase()}/figma-files/refresh`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },

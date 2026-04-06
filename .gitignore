@@ -6,7 +6,7 @@ dist/
 packages/*/dist/
 
 # Database
-data/
+data*/
 packages/*/data/
 
 # Environment & Config
@@ -43,3 +43,5 @@ Thumbs.db
 CLAUDE.md
 주간보고_*.md
 .claude/*
+
+signature*.json

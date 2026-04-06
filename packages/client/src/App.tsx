@@ -53,6 +53,7 @@ const initialState: AppState = {
   error: null,
 }
 
+
 export default function App() {
   const [state, setState] = useState<AppState>(initialState)
   const [view, setView] = useState<AppView>('dashboard')
@@ -347,7 +348,8 @@ export default function App() {
 
       // 3. 서버에 업데이트 및 매핑 정리
       const result = await refreshFigmaFile(projectId, fileKey, nodeId, documentToSave)
-      console.log(`[Refresh] ${result.deletedMappingsCount}개 매핑 삭제됨`)
+      console.log(`[Refresh] ${result.deletedMappingsCount}개 매핑 삭제됨, ${result.newNodeIds.length}개 신규 노드`)
+      const newNodeIdSet = new Set(result.newNodeIds)
 
       // 4. 저장된 수정 데이터가 있으면 적용
       const savedData = await fetchFigmaFileData(projectId, fileKey, nodeId)
@@ -406,6 +408,65 @@ export default function App() {
           nodeImages: newNodeImages,
         }))
         setConvertTrigger(t => t + 1)
+      }
+
+      // 7. 새로 추가된 노드에 대해서만 auto-mapping 제안
+      if (newNodeIdSet.size > 0) {
+        try {
+          const convertNode = (node: FigmaNode): FigmaNodeForSignature => ({
+            id: node.id,
+            name: node.name,
+            type: node.type,
+            ...(node.componentProperties && { componentProperties: node.componentProperties }),
+            children: node.children?.filter(c => c.visible !== false).map(c => convertNode(c)),
+          })
+
+          const displayRoot = nodeId
+            ? (() => {
+                const pages = documentToSave.children || []
+                for (const page of pages as FigmaNode[]) {
+                  const found = findNodeById(page, nodeId)
+                  if (found) return found
+                }
+                return documentToSave as unknown as FigmaNode
+              })()
+            : documentToSave as unknown as FigmaNode
+
+          const nodesForSignature = [convertNode(displayRoot)]
+
+          // 새 노드가 아닌 모든 노드를 existingMappingNodeIds로 넘겨 제외
+          const allIds: string[] = []
+          const collectAllIds = (node: FigmaNodeForSignature) => {
+            allIds.push(node.id)
+            node.children?.forEach(collectAllIds)
+          }
+          nodesForSignature.forEach(collectAllIds)
+          const nonNewIds = allIds.filter(id => !newNodeIdSet.has(id))
+
+          // keyword 제안은 새 노드만 flat하게 전달 (부모 포함 시 기존 매핑 덮어씀 방지)
+          const newNodesList: FigmaNodeForSignature[] = []
+          const collectNewNodes = (n: FigmaNodeForSignature) => {
+            if (newNodeIdSet.has(n.id)) newNodesList.push(n)
+            n.children?.forEach(collectNewNodes)
+          }
+          nodesForSignature.forEach(collectNewNodes)
+
+          const [clusterSuggestions, defaultSuggestions] = await Promise.all([
+            fetchAutoMappingSuggestions(nodesForSignature, nonNewIds, projectId).then(s => s.map(s => ({ ...s, source: 'cluster' as const }))),
+            fetchDefaultRuleSuggestions(projectId, newNodesList),
+          ])
+
+          const merged = [...clusterSuggestions, ...defaultSuggestions]
+          if (merged.length > 0) {
+            setAutoMappingSuggestions(merged)
+            setPendingFileKey(fileKey)
+            setPendingNodeId(nodeId)
+            setPendingProjectId(projectId)
+            setShowAutoMappingModal(true)
+          }
+        } catch (e) {
+          console.error('Failed to fetch auto mapping suggestions for new nodes:', e)
+        }
       }
     } catch (err) {
       console.error('Failed to refresh file:', err)

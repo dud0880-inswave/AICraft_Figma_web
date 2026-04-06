@@ -501,10 +501,24 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
       if (!fileKey) return badRequest(res, 'fileKey required');
       if (!data) return badRequest(res, 'data required');
 
-      // 1. figma_file_data 업데이트
+      // 1. 이전 데이터에서 노드 ID 수집 (변경 감지용)
+      const prevData = figmaFileDataStore.get(projectId, fileKey, nodeId || null);
+      // prevData가 없으면 최초 refresh → 비교 기준 없음, 신규 노드 없음으로 처리
+      const isFirstRefresh = !prevData;
+      const prevNodeIds = new Set<string>();
+      if (prevData) {
+        const prevDoc = JSON.parse(prevData.data);
+        function collectPrevNodeIds(node: any): void {
+          if (node && node.id) prevNodeIds.add(node.id);
+          if (node && node.children) node.children.forEach((c: any) => collectPrevNodeIds(c));
+        }
+        collectPrevNodeIds(prevDoc);
+      }
+
+      // 2. figma_file_data 업데이트
       figmaFileDataStore.save(projectId, fileKey, nodeId || null, data);
 
-      // 2. 새 데이터에서 모든 노드 ID 수집
+      // 3. 새 데이터에서 모든 노드 ID 수집
       const allNodeIds = new Set<string>();
       function collectNodeIds(node: any): void {
         if (node && node.id) {
@@ -516,7 +530,15 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
       }
       collectNodeIds(data);
 
-      // 3. 존재하지 않는 노드의 매핑 삭제
+      // 4. 추가된 노드 ID 계산 (이전에 없던 노드, 최초 refresh는 빈 배열)
+      const newNodeIds: string[] = [];
+      if (!isFirstRefresh) {
+        for (const id of allNodeIds) {
+          if (!prevNodeIds.has(id)) newNodeIds.push(id);
+        }
+      }
+
+      // 5. 존재하지 않는 노드의 매핑 삭제
       const mappings = mappingStore.listByFile(projectId, fileKey, nodeId || null);
       let deletedCount = 0;
       for (const mapping of mappings) {
@@ -526,8 +548,8 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
         }
       }
 
-      console.log(`[Refresh] ${fileKey} - ${allNodeIds.size}개 노드, ${deletedCount}개 매핑 삭제`);
-      return json(res, { success: true, deletedMappingsCount: deletedCount });
+      console.log(`[Refresh] ${fileKey} - ${allNodeIds.size}개 노드, ${deletedCount}개 매핑 삭제, ${newNodeIds.length}개 신규 노드`);
+      return json(res, { success: true, deletedMappingsCount: deletedCount, newNodeIds });
     }
 
     // ---- Figma File Data API (프로젝트별) ----
