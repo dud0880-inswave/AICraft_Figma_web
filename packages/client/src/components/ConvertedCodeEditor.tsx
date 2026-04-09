@@ -54,7 +54,9 @@ function formatXml(xml: string): string {
 
 
 import type { RegistryItem } from '../utils/api'
-import { fetchMappings, updateFigmaFileCompleted, generateClusters, exportXml, saveFigmaFileData, fetchProjectSettings } from '../utils/api'
+import { fetchMappings, updateFigmaFileCompleted, generateClusters, exportXml, saveFigmaFileData, fetchProjectSettings, fetchNodeSvgs } from '../utils/api'
+import { extractInlineStyle } from '../utils/figma-style'
+
 
 interface ConvertedCodeEditorProps {
   fileKey: string | null
@@ -68,6 +70,7 @@ interface ConvertedCodeEditorProps {
   convertTrigger: number  // 이 값이 변경되면 자동 변환
   cssRefreshKey?: number  // CSS 새로고침 트리거
   onComplete?: () => void  // 완료 후 콜백
+  token?: string  // Figma API 토큰 (SVG 내보내기용)
 }
 
 // 테이블 내 tr당 th/td 최대 개수 카운트
@@ -137,6 +140,7 @@ export default function ConvertedCodeEditor({
   convertTrigger,
   cssRefreshKey,
   onComplete,
+  token,
 }: ConvertedCodeEditorProps) {
   const [convertedCode, setConvertedCode] = useState<string | null>(null)
   const [converting, setConverting] = useState(false)
@@ -343,8 +347,29 @@ export default function ConvertedCodeEditor({
       const allMappings = await fetchMappings(projectId, fileKey, nodeId)
       const mappingMap = new Map(allMappings.map(m => [m.figmaNodeId, m]))
 
+
+      // image 매핑 노드 SVG 프리페치 (서버 경유)
+      const imageSvgMap = new Map<string, string>()
+      if (fileKey && projectId) {
+        const imageNodeIds: string[] = []
+        for (const [nid, mapping] of mappingMap) {
+          const reg = mapping.registryId ? registry.find(r => r.id === mapping.registryId) : null
+          if (reg?.name.toLowerCase() === 'image') imageNodeIds.push(nid)
+        }
+        if (imageNodeIds.length > 0) {
+          try {
+            const svgs = await fetchNodeSvgs(projectId, fileKey, imageNodeIds)
+            for (const [id, svg] of Object.entries(svgs)) {
+              imageSvgMap.set(id, svg)
+            }
+          } catch (e) {
+            console.warn('[Image] SVG fetch 실패:', e)
+          }
+        }
+      }
+
       // 트리 순회하며 계층 구조로 코드 생성
-      const traverse = (n: FigmaNode, depth: number): string => {
+      const traverse = (n: FigmaNode, depth: number, parent?: FigmaNode): string => {
         // hidden 요소는 XML에서 제외
         if (n.visible === false) return ''
 
@@ -356,7 +381,7 @@ export default function ConvertedCodeEditor({
 
         // 자식 노드들의 코드 먼저 생성
         const childrenCode = n.children
-          ? n.children.map(child => traverse(child, depth + 1)).filter(Boolean).join('\n')
+          ? n.children.map(child => traverse(child, depth + 1, n)).filter(Boolean).join('\n')
           : ''
 
         // 매핑된 노드인 경우
@@ -384,16 +409,157 @@ export default function ConvertedCodeEditor({
             delete mergedProps.id
           }
 
+          // class 없거나 table/gridview이면 컴포넌트별 인라인 스타일 적용
+          // customAttrs에 style 키가 있으면 (빈 값 포함) 인라인 스타일 생성 skip
+          const hasCustomStyleKey = nodeMapping?.customAttrs && 'style' in nodeMapping.customAttrs
+          // eslint-disable-next-line no-constant-condition
+          if (!hasCustomStyleKey && (!mergedProps.class || ['table', 'gridview'].includes(regItemNameLower))) {
+            const inlineStyle = extractInlineStyle(n, regItemNameLower, parent)
+            if (inlineStyle) {
+              const existingStyle = mergedProps.style ? `${mergedProps.style};` : ''
+              mergedProps.style = `${existingStyle}${inlineStyle}`
+            }
+          }
+
+
           // textbox 특수 처리 - label 속성으로 텍스트 설정 (하위 노드까지 탐색)
           if (regItemNameLower === 'textbox') {
-            const rawText = n.characters || findTextInChildren(n)
+            const textNode = n.type === 'TEXT' ? n : (function findText(node: FigmaNode): FigmaNode | null {
+              if (node.type === 'TEXT') return node
+              for (const c of node.children ?? []) { const f = findText(c); if (f) return f }
+              return null
+            })(n)
+
+            // characterStyleOverrides로 mixed style 감지 → 구간별 분리
+            console.log('[Textbox]', n.id, n.name, {
+              hasTextNode: !!textNode,
+              chars: (textNode?.characters || n.characters || '').substring(0, 30),
+              charsLen: (textNode?.characters || n.characters || '').length,
+              overridesLen: textNode?.characterStyleOverrides?.length,
+              tableKeys: textNode?.styleOverrideTable ? Object.keys(textNode.styleOverrideTable) : null,
+              lineTypes: textNode?.lineTypes,
+            })
+            const overrides = textNode?.characterStyleOverrides
+            const overrideTable = textNode?.styleOverrideTable
+            const chars = textNode?.characters || n.characters || ''
+            if (overrides && overrideTable && overrides.length === chars.length) {
+              // override 구간 분할
+              const segments: { text: string; overrideKey: string }[] = []
+              let currentKey = String(overrides[0] ?? 0)
+              let currentText = chars[0] || ''
+              for (let i = 1; i < overrides.length; i++) {
+                const key = String(overrides[i] ?? 0)
+                if (key === currentKey) {
+                  currentText += chars[i]
+                } else {
+                  segments.push({ text: currentText, overrideKey: currentKey })
+                  currentKey = key
+                  currentText = chars[i]
+                }
+              }
+              if (currentText) segments.push({ text: currentText, overrideKey: currentKey })
+
+              console.log('[Textbox segments]', n.id, segments.map(s => ({ key: s.overrideKey, text: s.text.substring(0, 20) })))
+
+              // 복수 구간이면 분리
+              if (segments.length > 1) {
+                const baseStyle = textNode?.style
+                const baseFill = textNode?.fills?.find(f => f.type === 'SOLID' && f.visible !== false)
+
+                const buildSegmentStyle = (seg: { text: string; overrideKey: string }) => {
+                  const ov = seg.overrideKey !== '0' ? overrideTable[seg.overrideKey] : null
+                  const parts: string[] = ['white-space:nowrap']
+                  const family = ov?.fontFamily || baseStyle?.fontFamily
+                  const size = ov?.fontSize || baseStyle?.fontSize
+                  const weight = ov?.fontWeight || baseStyle?.fontWeight
+                  const lhPct = ov?.lineHeightPercentFontSize || baseStyle?.lineHeightPercentFontSize
+                  const ls = ov?.letterSpacing ?? baseStyle?.letterSpacing
+                  if (family) parts.push(`font-family:${family}`)
+                  if (size) parts.push(`font-size:${size}px`)
+                  if (weight) parts.push(`font-weight:${weight}`)
+                  if (lhPct) parts.push(`line-height:${lhPct}%`)
+                  if (ls) parts.push(`letter-spacing:${ls}px`)
+                  // color: override fills 우선
+                  const ovFills = (ov as Record<string, unknown>)?.fills as Array<{ type: string; visible?: boolean; color?: { r: number; g: number; b: number; a: number } }> | undefined
+                  const fill = ovFills?.find(f => f.type === 'SOLID' && f.visible !== false) || baseFill
+                  if (fill?.color) {
+                    const { r, g, b } = fill.color
+                    parts.push(`color:rgb(${Math.round(r * 255)},${Math.round(g * 255)},${Math.round(b * 255)})`)
+                  }
+                  return parts.join(';')
+                }
+
+                // 줄별 lineTypes
+                const lineTypes = textNode?.lineTypes ?? []
+
+                // \n 기준으로 줄 단위 그룹 생성 (줄 번호 추적)
+                type LineSeg = { text: string; overrideKey: string }
+                const lines: { segs: LineSeg[]; lineIndex: number }[] = [{ segs: [], lineIndex: 0 }]
+                let currentLineIndex = 0
+                for (const seg of segments) {
+                  const subLines = seg.text.split('\n')
+                  for (let si = 0; si < subLines.length; si++) {
+                    if (si > 0) {
+                      currentLineIndex++
+                      lines.push({ segs: [], lineIndex: currentLineIndex })
+                    }
+                    const text = subLines[si].trim()
+                    if (text.length > 0) {
+                      lines[lines.length - 1].segs.push({ text, overrideKey: seg.overrideKey })
+                    }
+                  }
+                }
+                // 빈 줄 제거
+                const nonEmptyLines = lines.filter(l => l.segs.length > 0)
+
+                // 줄별로 태그 생성
+                const lineTags = nonEmptyLines.map(line => {
+                  const lineType = lineTypes[line.lineIndex]
+                  const isBullet = lineType === 'UNORDERED'
+
+                  const textboxes = line.segs.map((seg, segIdx) => {
+                    const style = buildSegmentStyle(seg)
+                    let label = seg.text.replace(/"/g, '&quot;')
+                    // 해당 줄이 UNORDERED면 첫 segment에 불릿
+                    if (segIdx === 0 && isBullet) label = `• ${label}`
+                    return `${indentStr}        <w2:textbox style="${style}" label="${label}"></w2:textbox>`
+                  }).join('\n')
+
+                  // 한 줄에 segment 1개면 row 그룹 불필요
+                  if (line.segs.length === 1) {
+                    return textboxes.replace(/^ {8}/, '    ')
+                  }
+                  return `${indentStr}    <xf:group style="display:flex;flex-direction:row;align-items:baseline;gap:4px;background-color:transparent">\n${textboxes}\n${indentStr}    </xf:group>`
+                }).join('\n')
+
+                const groupStyle = mergedProps.style || ''
+                // 여러 줄이면 column, 한 줄이면 row
+                const direction = nonEmptyLines.length > 1 ? 'column' : 'row'
+                const wrapStyle = `display:flex;flex-direction:${direction};align-items:flex-start;background-color:transparent${groupStyle ? ';' + groupStyle : ''}`
+                return `${indentStr}<xf:group style="${wrapStyle}">\n${lineTags}\n${indentStr}</xf:group>`
+              }
+            }
+
+            // 단일 스타일 또는 override 없음 → 기존 로직
+            const rawText = textNode?.characters || n.characters || findTextInChildren(n)
             if (rawText) {
-              const textContent = rawText
-                .split('\n')
-                .map(line => line.trim())
+              const lines = rawText.split('\n')
+              const lineTypes = textNode?.lineTypes ?? []
+              const textContent = lines
+                .map((line, i) => {
+                  const trimmed = line.trim()
+                  if (!trimmed) return ''
+                  const type = lineTypes[i]
+                  if (type === 'UNORDERED') return `• ${trimmed}`
+                  if (type === 'ORDERED') return `${i + 1}. ${trimmed}`
+                  return trimmed
+                })
                 .filter(Boolean)
                 .join('&lt;br/&gt;')
-              mergedProps.label = textContent
+              mergedProps.label = textContent.replace(/"/g, '&quot;')
+              if (textContent.includes('&lt;br/&gt;')) {
+                mergedProps.escape = 'false'
+              }
             }
           }
 
@@ -404,11 +570,11 @@ export default function ConvertedCodeEditor({
           }
           if (regItemNameLower === 'trigger') {
             const text = n.characters || findTextInChildren(n)
-            const triggerPropsStr = Object.entries(mergedProps).map(([k, v]) => `${k}="${v}"`).join(' ')
+            const propsStr = Object.entries(mergedProps).map(([k, v]) => `${k}="${v}"`).join(' ')
             const labelTag = text
               ? `\n${indentStr}    <xf:label><![CDATA[${text}]]></xf:label>\n${indentStr}`
               : ''
-            return `${indentStr}<${tagName} ${triggerPropsStr}>${labelTag}</${tagName}>`
+            return `${indentStr}<${tagName} ${propsStr}>${labelTag}</${tagName}>`
           }
           if (regItemNameLower === 'anchor') {
             const text = n.characters || findTextInChildren(n)
@@ -421,6 +587,17 @@ export default function ConvertedCodeEditor({
           if (regItemNameLower === 'input') {
             const text = n.characters || findTextInChildren(n)
             if (text) mergedProps.placeholder = text
+          }
+
+          // image 특수 처리 - SVG를 base64로 src에 지정
+          if (regItemNameLower === 'image') {
+            const svgContent = imageSvgMap.get(n.id)
+            if (svgContent) {
+              const svgBase64 = btoa(unescape(encodeURIComponent(svgContent.replace(/[\r\n]/g, '')))).replace(/[\r\n]/g, '')
+              mergedProps.src = `data:image/svg+xml;base64,${svgBase64}`
+            } else {
+              mergedProps.src = ''
+            }
           }
 
           // select / multiselect 특수 처리

@@ -33,7 +33,30 @@ export interface FigmaNode {
   style?: TypeStyle
   componentId?: string
   componentProperties?: Record<string, { value: string; type: string }>
+  opacity?: number
   layoutMode?: 'NONE' | 'HORIZONTAL' | 'VERTICAL'
+  primaryAxisAlignItems?: 'MIN' | 'CENTER' | 'MAX' | 'SPACE_BETWEEN'
+  counterAxisAlignItems?: 'MIN' | 'CENTER' | 'MAX' | 'BASELINE' | 'STRETCH'
+  layoutAlign?: 'MIN' | 'CENTER' | 'MAX' | 'STRETCH' | 'INHERIT'
+  layoutGrow?: number
+  itemSpacing?: number
+  paddingLeft?: number
+  paddingRight?: number
+  paddingTop?: number
+  paddingBottom?: number
+  lineTypes?: string[]
+  lineIndentations?: number[]
+  characterStyleOverrides?: number[]
+  styleOverrideTable?: Record<string, TypeStyle & { fontStyle?: string; isOverrideOverTextStyle?: boolean; semanticWeight?: string }>
+  strokeDashes?: number[]
+  layoutSizingHorizontal?: 'FIXED' | 'FILL' | 'HUG'
+  layoutSizingVertical?: 'FIXED' | 'FILL' | 'HUG'
+  clipsContent?: boolean
+  textAutoResize?: 'NONE' | 'HEIGHT' | 'WIDTH_AND_HEIGHT'
+  individualStrokeWeights?: { top: number; right: number; bottom: number; left: number }
+  strokeAlign?: string
+  layoutPositioning?: 'AUTO' | 'ABSOLUTE'
+  rectangleCornerRadii?: [number, number, number, number]
 }
 
 export interface BoundingBox {
@@ -80,6 +103,7 @@ export interface TypeStyle {
   letterSpacing?: number
   lineHeightPx?: number
   lineHeightPercent?: number
+  lineHeightPercentFontSize?: number
 }
 
 export interface FigmaImageResponse {

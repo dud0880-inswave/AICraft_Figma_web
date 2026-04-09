@@ -119,6 +119,7 @@ export default function App() {
 
       const file = await fetchFigmaFile(fileKey, token, nodeId)
 
+
       const pages = file.document.children || []
       let displayRoot: FigmaNode | null = null
 
@@ -132,6 +133,14 @@ export default function App() {
 
         if (targetNode) {
           displayRoot = targetNode
+          // 해당 노드 JSON 파일로 저장
+          const jsonBlob = new Blob([JSON.stringify(targetNode, null, 2)], { type: 'application/json' })
+          const downloadUrl = URL.createObjectURL(jsonBlob)
+          const a = document.createElement('a')
+          a.href = downloadUrl
+          a.download = `figma-${fileKey}-${nodeId.replace(':', '-')}.json`
+          a.click()
+          URL.revokeObjectURL(downloadUrl)
           // 노드 이미지 가져오기
           const images = await fetchNodeImages(fileKey, token, [nodeId], 'png', 1)
           const thumbnailUrl = images.images[nodeId] || undefined
@@ -1130,6 +1139,7 @@ export default function App() {
               projectId={state.projectId}
               cssRefreshKey={cssRefreshKey}
               registryRefreshKey={registryRefreshKey}
+              token={state.token}
               onRegistryLoad={setRegistry}
               onMappingChange={() => setConvertTrigger(t => t + 1)}
             />
@@ -1154,6 +1164,7 @@ export default function App() {
                 onToggle={() => setCodeEditorVisible(v => !v)}
                 convertTrigger={convertTrigger}
                 cssRefreshKey={cssRefreshKey}
+                token={state.token}
                 onComplete={() => {
                   setDashboardKey(k => k + 1)
                   handleBackToProject()

@@ -42,6 +42,7 @@ const INITIAL_COMPONENTS: ComponentData[] = [
   { name: "searchbox", tagName: "w2:Searchbox", properties: {} },
   { name: "group", tagName: "xf:group", properties: {} },
   { name: "anchor", tagName: "w2:anchor", properties: { outerDiv: "false" } },
+  { name: "image", tagName: "xf:image", properties: {} },
 ];
 
 export class RegistryStore {

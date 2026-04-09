@@ -63,7 +63,13 @@ export async function fetchFigmaFile(fileKey: string, token: string, nodeId?: st
     throw new Error(`Figma API 오류: ${response.status} - ${error}`)
   }
 
-  return response.json()
+  // \u2028(Shift+Enter) / \u2029 → \n 치환
+  // 이모지(surrogate pair) → XML 수치 참조로 이스케이프
+  const text = await response.text()
+  const sanitized = text
+    .replace(/[\u2028\u2029]/g, '\\n')
+    .replace(/[\u{10000}-\u{10FFFF}]/gu, (ch) => `&#x${ch.codePointAt(0)!.toString(16)};`)
+  return JSON.parse(sanitized)
 }
 
 export async function fetchNodeImages(

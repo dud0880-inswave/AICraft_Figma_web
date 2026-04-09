@@ -593,6 +593,124 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
       }
     }
 
+    // 단일값 클러스터 여부 확인 (매핑 변경 후 전체 적용 팝업용)
+    if (path === '/api/clusters/check-unique' && req.method === 'POST') {
+      const body = await parseBody(req);
+      const { projectId, node, parent } = body as {
+        projectId: string;
+        node: FigmaNodeLike & { id: string };
+        parent: FigmaNodeLike | null;
+      };
+      if (!projectId || !node) return badRequest(res, 'projectId and node required');
+
+      const settings = settingsStore.listByProject(projectId);
+      const includeNodeName = settings.find(s => s.key === 'cluster-include-node-name')?.value !== 'false';
+
+      // full 시그니처로 먼저 조회 (더 구체적)
+      const sigFull = clusterStore.createNodeSignature(node, null, 0, includeNodeName, 'full');
+      let clusters = clusterStore.listAllBySignatureAndProject(sigFull, projectId);
+      let signature = sigFull;
+      let mode: 'full' | 'base' = 'full';
+
+      // full에 없으면 base 시그니처 조회 (더 일반적)
+      if (clusters.length === 0) {
+        const sigBase = clusterStore.createNodeSignature(node, parent, 1, includeNodeName, 'base');
+        clusters = clusterStore.listAllBySignatureAndProject(sigBase, projectId);
+        signature = sigBase;
+        mode = 'base';
+      }
+
+      if (clusters.length !== 1) {
+        return json(res, { isUnique: false });
+      }
+
+      const cluster = clusters[0];
+
+      // customAttrs.class 조합이 1가지인지 확인
+      const classAttr = cluster.customAttrs.class;
+      const isClassUnique = !classAttr
+        || typeof classAttr === 'string'
+        || (typeof classAttr === 'object' && !Array.isArray(classAttr) && Object.keys(classAttr).length === 1);
+
+      if (!isClassUnique) {
+        return json(res, { isUnique: false });
+      }
+
+      // 프로젝트 내 동일 시그니처를 가진 노드 수 추정 (file_data 스캔, mode에 맞는 시그니처만 계산)
+      const allFileData = figmaFileDataStore.listByProject(projectId);
+      let affectedCount = 0;
+      for (const fd of allFileData) {
+        const doc = JSON.parse(fd.data);
+        const scanNodes = (n: any, parentNode: any = null): void => {
+          if (n?.id) {
+            const sig = mode === 'full'
+              ? clusterStore.createNodeSignature(n, null, 0, includeNodeName, 'full')
+              : clusterStore.createNodeSignature(n, parentNode, 1, includeNodeName, 'base');
+            if (sig === signature) affectedCount++;
+          }
+          if (n?.children) n.children.forEach((c: any) => scanNodes(c, n));
+        };
+        scanNodes(doc);
+      }
+
+      return json(res, { isUnique: true, signature, mode, cluster, affectedCount });
+    }
+
+    // 시그니처 기반 전체 매핑 적용
+    if (path === '/api/mappings/apply-by-signature' && req.method === 'POST') {
+      const body = await parseBody(req);
+      const { projectId, signature, mode: applyMode, mapping: mappingData } = body as {
+        projectId: string;
+        signature: string;
+        mode: 'full' | 'base';
+        mapping: {
+          registryId: string;
+          registryName: string;
+          registryTag?: string;
+          customAttrs: Record<string, string>;
+        };
+      };
+      if (!projectId || !signature || !mappingData) return badRequest(res, 'projectId, signature, mapping required');
+
+      const settings = settingsStore.listByProject(projectId);
+      const includeNodeName = settings.find(s => s.key === 'cluster-include-node-name')?.value !== 'false';
+
+      const allFileData = figmaFileDataStore.listByProject(projectId);
+      let appliedCount = 0;
+
+      for (const fd of allFileData) {
+        const doc = JSON.parse(fd.data);
+        const scanAndApply = (n: any, parentNode: any = null): void => {
+          if (n?.id) {
+            const sig = applyMode === 'full'
+              ? clusterStore.createNodeSignature(n, null, 0, includeNodeName, 'full')
+              : clusterStore.createNodeSignature(n, parentNode, 1, includeNodeName, 'base');
+            if (sig === signature) {
+              mappingStore.save({
+                projectId,
+                figmaFileKey: fd.fileKey,
+                figmaRootNodeId: fd.nodeId,
+                figmaNodeId: n.id,
+                figmaNodeName: n.name,
+                figmaNodeType: n.type,
+                registryId: mappingData.registryId,
+                registryName: mappingData.registryName,
+                registryTag: mappingData.registryTag || '',
+                customAttrs: mappingData.customAttrs,
+                status: 'mapped',
+              });
+              appliedCount++;
+            }
+          }
+          if (n?.children) n.children.forEach((c: any) => scanAndApply(c, n));
+        };
+        scanAndApply(doc);
+      }
+
+      console.log(`[ApplyBySignature] ${signature.substring(0, 8)}... → ${appliedCount}개 적용`);
+      return json(res, { success: true, appliedCount });
+    }
+
     // 자동 매핑 제안 (프로젝트별)
     if (path === '/api/clusters/suggest' && req.method === 'POST') {
       const body = await parseBody(req);
@@ -618,7 +736,7 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
       const nodeData: Array<{ nodeId: string; nodeName: string; nodeType: string; node: FigmaNodeLike; parent: FigmaNodeLike | null }> = [];
 
       const processNode = (node: FigmaNodeLike & { id: string }, parent: FigmaNodeLike | null = null) => {
-        if (!existingSet.has(node.id)) {
+        if (!existingSet.has(node.id) && node.type !== 'VECTOR') {
           nodeData.push({
             nodeId: node.id,
             nodeName: node.name,
@@ -766,6 +884,23 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
         }
       }
 
+      // button/trigger로 매핑된 노드의 하위 요소는 제안에서 제외
+      const noChildrenComponents = new Set(['button', 'trigger'])
+      const descendantIdsToExclude = new Set<string>()
+      const collectDescendants = (node: FigmaNodeLike) => {
+        for (const child of (node.children ?? []) as FigmaNodeLike[]) {
+          descendantIdsToExclude.add((child as any).id)
+          collectDescendants(child)
+        }
+      }
+      for (const nd of nodeData) {
+        const suggestion = suggestionMap.get(nd.nodeId)
+        if (suggestion && noChildrenComponents.has(suggestion.registryName.toLowerCase())) {
+          collectDescendants(nd.node)
+        }
+      }
+      for (const id of descendantIdsToExclude) suggestionMap.delete(id)
+
       const suggestions = Array.from(suggestionMap.values());
       return json(res, { suggestions });
     }
@@ -882,7 +1017,9 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
         customAttrs: Record<string, string>; sampleCount: number; matchedKeyword: string;
       }> = [];
 
+      const noChildrenComponents = new Set(['button', 'trigger'])
       const processNode = (node: NodeLike) => {
+        if (node.type === 'VECTOR') return
         const match = defaultMappingRulesStore.match(projectId, node.name);
         if (match) {
           const registry = registryStore.get(match.registryId);
@@ -892,6 +1029,8 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
               signature: '', registryId: match.registryId, registryName: registry.name,
               customAttrs: {}, sampleCount: 0, matchedKeyword: match.matchedKeyword,
             });
+            // button/trigger는 하위 요소 매핑 제외
+            if (noChildrenComponents.has(registry.name.toLowerCase())) return
           }
         }
         if (node.children) {
@@ -1068,6 +1207,41 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
     // ---- Health ----
     if (path === '/api/health') {
       return json(res, { status: 'ok' });
+    }
+
+    // ---- Node SVG fetch API ----
+    if (path === '/api/node-svgs' && req.method === 'POST') {
+      const body = await parseBody(req);
+      const { projectId, fileKey, nodeIds } = body;
+      if (!projectId || !fileKey || !nodeIds?.length) return badRequest(res, 'projectId, fileKey, nodeIds required');
+
+      const settings = settingsStore.listByProject(projectId);
+      const token = settings.find(s => s.key === 'figma-token')?.value;
+      if (!token) return badRequest(res, 'figma-token not configured');
+
+      // Figma API로 SVG URL 가져오기
+      const ids = (nodeIds as string[]).join(',');
+      const figmaUrl = `https://api.figma.com/v1/images/${fileKey}?ids=${encodeURIComponent(ids)}&format=svg`;
+      const figmaRes = await fetch(figmaUrl, { headers: { 'X-Figma-Token': token } });
+      if (!figmaRes.ok) {
+        const err = await figmaRes.text();
+        return json(res, { error: `Figma API error: ${figmaRes.status} - ${err}` }, 500);
+      }
+      const figmaData = await figmaRes.json() as { images: Record<string, string | null> };
+
+      // SVG URL에서 실제 SVG 콘텐츠 fetch
+      const svgMap: Record<string, string> = {};
+      await Promise.all(
+        Object.entries(figmaData.images).map(async ([id, url]) => {
+          if (!url) return;
+          try {
+            const svgRes = await fetch(url);
+            if (svgRes.ok) svgMap[id] = await svgRes.text();
+          } catch { /* skip */ }
+        })
+      );
+
+      return json(res, { svgs: svgMap });
     }
 
     // 404

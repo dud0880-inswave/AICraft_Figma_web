@@ -224,6 +224,14 @@ export class ClusterStore {
     return rows.map(toCluster);
   }
 
+  // 특정 시그니처의 프로젝트 내 모든 클러스터 (단일값 여부 확인용)
+  listAllBySignatureAndProject(signature: string, projectId: string): MappingCluster[] {
+    const rows = this.db.prepare(
+      'SELECT * FROM mapping_clusters WHERE signature = ? AND project_id = ?'
+    ).all(signature, projectId) as RawCluster[];
+    return rows.map(toCluster);
+  }
+
   // 프로젝트별 클러스터 목록
   listByProject(projectId: string): MappingCluster[] {
     const rows = this.db.prepare(

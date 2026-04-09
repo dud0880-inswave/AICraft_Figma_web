@@ -1,10 +1,12 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
 import type { FigmaNode } from '../types/figma'
 import type { RegistryItem, NodeMapping, FigmaNodeForSignature } from '../utils/api'
-import { fetchRegistry, fetchMapping, saveMapping, deleteMapping, clearAllMappings, fetchProjectSettings, getRecommendedClasses, type RecommendedClass } from '../utils/api'
+import { fetchRegistry, fetchMapping, saveMapping, deleteMapping, clearAllMappings, fetchProjectSettings, getRecommendedClasses, checkUniqueCluster, applyMappingBySignature, type RecommendedClass, type UniqueClusterCheck } from '../utils/api'
 import { type CssItem, type ComponentClassMapping } from './SettingsModal'
 import { findTextInChildren, collectAllTexts, collectTopLevelTexts } from '../utils/text-utils'
 import { findParentNode } from '../utils/tree-utils'
+import { extractInlineStyle } from '../utils/figma-style'
+
 
 interface MappingEditorProps {
   node: FigmaNode | null  // 단일 선택 (프리뷰용)
@@ -15,6 +17,7 @@ interface MappingEditorProps {
   projectId: string | null  // 프로젝트 ID (CSS 설정 로드용)
   cssRefreshKey?: number  // CSS 새로고침 트리거
   registryRefreshKey?: number  // Registry 새로고침 트리거
+  token?: string  // Figma API 토큰 (SVG 내보내기용)
   onRegistryLoad?: (registry: RegistryItem[]) => void
   onMappingChange?: () => void
 }
@@ -32,7 +35,7 @@ function convertNodeForSignature(node: FigmaNode): FigmaNodeForSignature {
   }
 }
 
-export default function MappingEditor({ node, nodes, tree, fileKey, rootNodeId, projectId, cssRefreshKey, registryRefreshKey, onRegistryLoad, onMappingChange }: MappingEditorProps) {
+export default function MappingEditor({ node, nodes, tree, fileKey, rootNodeId, projectId, cssRefreshKey, registryRefreshKey, token, onRegistryLoad, onMappingChange }: MappingEditorProps) {
   const [registry, setRegistry] = useState<RegistryItem[]>([])
   const [mapping, setMapping] = useState<NodeMapping | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
@@ -50,8 +53,56 @@ export default function MappingEditor({ node, nodes, tree, fileKey, rootNodeId, 
   const [newAttrValue, setNewAttrValue] = useState('')
   const [recommendedClasses, setRecommendedClasses] = useState<RecommendedClass[]>([])
   const [commonClasses, setCommonClasses] = useState<string[]>([])
+  const [undoStack, setUndoStack] = useState<(NodeMapping | null)[]>([])
+  const [uniqueCheck, setUniqueCheck] = useState<UniqueClusterCheck & { savedMapping: NodeMapping } | null>(null)
   const dropdownRef = useRef<HTMLDivElement>(null)
   const splitContainerRef = useRef<HTMLDivElement>(null)
+
+  const pushUndo = (state: NodeMapping | null) => {
+    setUndoStack(prev => [...prev.slice(-9), state])
+  }
+
+
+  const checkAndPromptUnique = async (savedMapping: NodeMapping) => {
+    if (!projectId || !node || !tree) return
+    try {
+      const parent = findParentNode(tree, node.id)
+      const toSig = (n: typeof node) => ({
+        id: n.id, name: n.name, type: n.type,
+        componentProperties: n.componentProperties,
+        children: n.children?.map(c => convertNodeForSignature(c)),
+      })
+      const result = await checkUniqueCluster(projectId, toSig(node), parent ? toSig(parent) : null)
+      if (result.isUnique && result.affectedCount && result.affectedCount > 1) {
+        setUniqueCheck({ ...result, savedMapping })
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  const handleUndo = async () => {
+    if (undoStack.length === 0 || !fileKey || !projectId) return
+    const prev = undoStack[undoStack.length - 1]
+    setUndoStack(s => s.slice(0, -1))
+    const targetNode = nodes.length > 0 ? nodes[0] : node
+    if (!targetNode) return
+    setSaving(true)
+    try {
+      if (prev === null) {
+        await deleteMapping(projectId, fileKey, targetNode.id, rootNodeId)
+        setMapping(null)
+      } else {
+        const restored = await saveMapping(prev)
+        setMapping(restored)
+      }
+      onMappingChange?.()
+    } catch {
+      // ignore
+    } finally {
+      setSaving(false)
+    }
+  }
 
   // CSS 목록 및 매핑 로드 (프로젝트 설정에서)
   useEffect(() => {
@@ -103,6 +154,7 @@ export default function MappingEditor({ node, nodes, tree, fileKey, rootNodeId, 
   // 노드 변경 시 매핑 로드 (다중 선택 시 첫 번째 노드)
   useEffect(() => {
     const targetNode = node || nodes[0] || null
+    setUndoStack([])
     if (!targetNode || !fileKey || !projectId) {
       setMapping(null)
       return
@@ -173,6 +225,7 @@ export default function MappingEditor({ node, nodes, tree, fileKey, rootNodeId, 
     const targetNodes = nodes.length > 0 ? nodes : (node ? [node] : [])
     if (targetNodes.length === 0) return
 
+    pushUndo(mapping)
     setSaving(true)
     try {
       let lastMapping: NodeMapping | null = null
@@ -194,6 +247,55 @@ export default function MappingEditor({ node, nodes, tree, fileKey, rootNodeId, 
       // 다중 선택이어도 mapping 업데이트 (마지막 노드 기준)
       if (lastMapping) {
         setMapping(lastMapping)
+        if (targetNodes.length === 1) checkAndPromptUnique(lastMapping)
+      }
+      onMappingChange?.()
+    } catch {
+      // ignore
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  // 인라인 스타일 삭제/복원 토글
+  const handleToggleStyle = async () => {
+    if (!fileKey || !projectId || !mapping) return
+    const targetNodes = nodes.length > 0 ? nodes : (node ? [node] : [])
+    if (targetNodes.length === 0) return
+
+    pushUndo(mapping)
+    setSaving(true)
+    try {
+      let lastMapping: NodeMapping | null = null
+      for (const n of targetNodes) {
+        const nodeMapping = await fetchMapping(projectId, fileKey, n.id, rootNodeId)
+        if (nodeMapping) {
+          const newAttrs = { ...nodeMapping.customAttrs }
+          if ('style' in newAttrs) {
+            delete newAttrs.style
+          } else {
+            newAttrs.style = ''
+          }
+          lastMapping = await saveMapping({
+            projectId,
+            figmaFileKey: fileKey,
+            figmaRootNodeId: rootNodeId,
+            figmaNodeId: n.id,
+            figmaNodeName: n.name,
+            figmaNodeType: n.type,
+            registryId: nodeMapping.registryId,
+            registryName: nodeMapping.registryName,
+            registryTag: nodeMapping.registryTag || '',
+            customAttrs: newAttrs,
+            status: 'mapped',
+          })
+        }
+      }
+      if (lastMapping && targetNodes.length === 1) {
+        setMapping(lastMapping)
+      } else if (node) {
+        const m = await fetchMapping(projectId, fileKey, node.id, rootNodeId)
+        setMapping(m)
       }
       onMappingChange?.()
     } catch {
@@ -209,6 +311,7 @@ export default function MappingEditor({ node, nodes, tree, fileKey, rootNodeId, 
     const targetNodes = nodes.length > 0 ? nodes : (node ? [node] : [])
     if (targetNodes.length === 0) return
 
+    pushUndo(mapping)
     setSaving(true)
     try {
       for (const n of targetNodes) {
@@ -251,6 +354,7 @@ export default function MappingEditor({ node, nodes, tree, fileKey, rootNodeId, 
     const targetNodes = nodes.length > 0 ? nodes : (node ? [node] : [])
     if (targetNodes.length === 0) return
 
+    pushUndo(mapping)
     setSaving(true)
     try {
       let lastMapping: NodeMapping | null = null
@@ -280,6 +384,7 @@ export default function MappingEditor({ node, nodes, tree, fileKey, rootNodeId, 
       }
       if (lastMapping && targetNodes.length === 1) {
         setMapping(lastMapping)
+        checkAndPromptUnique(lastMapping)
       } else {
         // 다중 선택 시 첫 번째 노드의 매핑 다시 로드
         if (node) {
@@ -301,6 +406,7 @@ export default function MappingEditor({ node, nodes, tree, fileKey, rootNodeId, 
     const targetNodes = nodes.length > 0 ? nodes : (node ? [node] : [])
     if (targetNodes.length === 0) return
 
+    pushUndo(mapping)
     setSaving(true)
     try {
       let lastMapping: NodeMapping | null = null
@@ -329,6 +435,7 @@ export default function MappingEditor({ node, nodes, tree, fileKey, rootNodeId, 
 
       if (lastMapping && targetNodes.length === 1) {
         setMapping(lastMapping)
+        checkAndPromptUnique(lastMapping)
       } else if (node) {
         const m = await fetchMapping(projectId, fileKey, node.id, rootNodeId)
         setMapping(m)
@@ -350,6 +457,7 @@ export default function MappingEditor({ node, nodes, tree, fileKey, rootNodeId, 
     const targetNodes = nodes.length > 0 ? nodes : (node ? [node] : [])
     if (targetNodes.length === 0) return
 
+    pushUndo(mapping)
     setSaving(true)
     try {
       let lastMapping: NodeMapping | null = null
@@ -375,6 +483,7 @@ export default function MappingEditor({ node, nodes, tree, fileKey, rootNodeId, 
 
       if (lastMapping && targetNodes.length === 1) {
         setMapping(lastMapping)
+        checkAndPromptUnique(lastMapping)
       } else if (node) {
         const m = await fetchMapping(projectId, fileKey, node.id, rootNodeId)
         setMapping(m)
@@ -433,6 +542,18 @@ export default function MappingEditor({ node, nodes, tree, fileKey, rootNodeId, 
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [])
 
+  // Ctrl+Z 단축키
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
+        e.preventDefault()
+        handleUndo()
+      }
+    }
+    document.addEventListener('keydown', handleKeyDown)
+    return () => document.removeEventListener('keydown', handleKeyDown)
+  }, [undoStack, fileKey, projectId, node, nodes, rootNodeId])
+
   // 스플리터 드래그 핸들링
   useEffect(() => {
     if (!isDragging) return
@@ -467,6 +588,7 @@ export default function MappingEditor({ node, nodes, tree, fileKey, rootNodeId, 
   const displayNode = node || nodes[0] || null
 
   return (
+    <>
     <div className="h-full theme-bg-secondary flex flex-col">
       {/* 노드 정보 */}
       <div className="px-4 py-3 border-b theme-border flex-shrink-0">
@@ -501,15 +623,27 @@ export default function MappingEditor({ node, nodes, tree, fileKey, rootNodeId, 
         <div className="px-4 py-3 border-b theme-border flex-shrink-0">
           <div className="flex items-center justify-between mb-2">
             <span className="text-xs text-gray-400">변환 컴포넌트</span>
-            {mapping && (
-              <button
-                onClick={handleClearMapping}
-                disabled={saving}
-                className="text-xs text-red-400 hover:text-red-300"
-              >
-                해제
-              </button>
-            )}
+            <div className="flex items-center gap-2">
+              {undoStack.length > 0 && (
+                <button
+                  onClick={handleUndo}
+                  disabled={saving}
+                  title="실행 취소 (Ctrl+Z)"
+                  className="text-xs text-gray-400 hover:text-gray-200"
+                >
+                  ↩ {undoStack.length}
+                </button>
+              )}
+              {mapping && (
+                <button
+                  onClick={handleClearMapping}
+                  disabled={saving}
+                  className="text-xs text-red-400 hover:text-red-300"
+                >
+                  해제
+                </button>
+              )}
+            </div>
           </div>
 
           {loading ? (
@@ -593,9 +727,12 @@ export default function MappingEditor({ node, nodes, tree, fileKey, rootNodeId, 
                           setHighlightedIndex(-1)
                         }}
                         onMouseEnter={() => setHighlightedIndex(idx)}
-                        className={`w-full px-3 py-2 text-left text-sm theme-bg-hover ${
-                          idx === highlightedIndex ? 'bg-blue-800/60 text-blue-300' :
-                          mapping?.registryId === item.id ? 'bg-blue-900/50 text-blue-400' : 'theme-text-primary'
+                        className={`w-full px-3 py-2 text-left text-sm ${
+                          idx === highlightedIndex
+                            ? 'bg-blue-50 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300'
+                            : mapping?.registryId === item.id
+                              ? 'bg-blue-100 text-blue-800 font-medium dark:bg-blue-900/60 dark:text-blue-300'
+                              : 'text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-700'
                         }`}
                       >
                         {item.name}
@@ -607,6 +744,22 @@ export default function MappingEditor({ node, nodes, tree, fileKey, rootNodeId, 
                 </div>
               )}
             </div>
+
+            {/* 인라인 스타일 삭제/복원 버튼 */}
+            {mapping && (
+              <button
+                type="button"
+                onClick={handleToggleStyle}
+                disabled={saving}
+                className={`mt-2 w-full px-3 py-1.5 text-xs rounded border ${
+                  'style' in (mapping.customAttrs ?? {})
+                    ? 'border-blue-500 text-blue-400 hover:bg-blue-900/30'
+                    : 'theme-border text-gray-400 hover:text-red-400 hover:border-red-400'
+                }`}
+              >
+                {'style' in (mapping.customAttrs ?? {}) ? '스타일 복원' : '스타일 삭제'}
+              </button>
+            )}
 
             {/* 속성 추가 영역 */}
             {mapping && (() => {
@@ -620,6 +773,7 @@ export default function MappingEditor({ node, nodes, tree, fileKey, rootNodeId, 
                 const targetNodes = nodes.length > 0 ? nodes : (node ? [node] : [])
                 if (targetNodes.length === 0) return
 
+                pushUndo(mapping)
                 setSaving(true)
                 try {
                   let lastMapping: NodeMapping | null = null
@@ -784,6 +938,20 @@ export default function MappingEditor({ node, nodes, tree, fileKey, rootNodeId, 
                 const text = displayNode?.characters || findTextInChildren(displayNode)
                 if (text) mergedProps.placeholder = text
               }
+
+
+              // class 없으면 컴포넌트별 인라인 스타일 적용
+              // customAttrs에 style 키가 있으면 (빈 값 포함) 인라인 스타일 생성 skip
+              const hasCustomStyleKey = mapping?.customAttrs && 'style' in mapping.customAttrs
+              if (!hasCustomStyleKey && !mergedProps.class && displayNode) {
+                const parentOfDisplay = tree ? findParentNode(tree, displayNode.id) : undefined
+                const inlineStyle = extractInlineStyle(displayNode, selectedItemNameLower, parentOfDisplay ?? undefined)
+                if (inlineStyle) {
+                  const existingStyle = mergedProps.style ? `${mergedProps.style};` : ''
+                  mergedProps.style = `${existingStyle}${inlineStyle}`
+                }
+              }
+
 
               if (selectedItemNameLower === 'checkbox') {
                 const texts = collectAllTexts(displayNode)
@@ -1097,5 +1265,47 @@ ${bodyCols}
         </div>
       </div>
     </div>
+    {/* 단일값 클러스터 전체 적용 팝업 */}
+    {uniqueCheck && (
+      <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div className="theme-bg-secondary rounded-lg w-full max-w-sm p-5">
+          <h3 className="text-sm font-semibold theme-text-primary mb-2">동일 구조 노드에 매핑 적용</h3>
+          <p className="text-xs theme-text-secondary mb-4">
+            이 노드와 동일한 구조를 가진 <span className="text-blue-400 font-medium">{uniqueCheck.affectedCount}개</span> 노드에
+            같은 매핑을 적용할까요?
+          </p>
+          <div className="flex justify-end gap-2">
+            <button
+              onClick={() => setUniqueCheck(null)}
+              className="px-3 py-1.5 text-xs theme-text-secondary hover:theme-text-primary"
+            >
+              이 노드만
+            </button>
+            <button
+              onClick={async () => {
+                if (!uniqueCheck.signature || !projectId) return
+                try {
+                  const result = await applyMappingBySignature(projectId, uniqueCheck.signature, uniqueCheck.mode ?? 'base', {
+                    registryId: uniqueCheck.savedMapping.registryId!,
+                    registryName: uniqueCheck.savedMapping.registryName!,
+                    registryTag: uniqueCheck.savedMapping.registryTag,
+                    customAttrs: uniqueCheck.savedMapping.customAttrs,
+                  })
+                  setUniqueCheck(null)
+                  onMappingChange?.()
+                  alert(`${result.appliedCount}개 노드에 매핑이 적용되었습니다.`)
+                } catch {
+                  alert('전체 적용에 실패했습니다.')
+                }
+              }}
+              className="px-3 py-1.5 text-xs bg-blue-600 hover:bg-blue-500 text-white rounded"
+            >
+              전체 적용
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
+    </>
   )
 }

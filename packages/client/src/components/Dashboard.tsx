@@ -440,6 +440,7 @@ export default function Dashboard({ onSelectFile, onAddNewFile, onOpenSettings, 
           </div>
         </div>
       )}
+
     </div>
   )
 }

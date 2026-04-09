@@ -124,6 +124,43 @@ export async function clearAllMappings(projectId: string, fileKey: string, rootN
   return res.json();
 }
 
+export interface UniqueClusterCheck {
+  isUnique: boolean
+  signature?: string
+  mode?: 'full' | 'base'
+  affectedCount?: number
+  cluster?: { registryId: string; registryName: string; registryTag?: string; customAttrs: Record<string, string> }
+}
+
+export async function checkUniqueCluster(
+  projectId: string,
+  node: FigmaNodeForSignature,
+  parent: FigmaNodeForSignature | null
+): Promise<UniqueClusterCheck> {
+  const res = await fetch(`${getApiBase()}/clusters/check-unique`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ projectId, node, parent }),
+  });
+  if (!res.ok) return { isUnique: false };
+  return res.json();
+}
+
+export async function applyMappingBySignature(
+  projectId: string,
+  signature: string,
+  mode: 'full' | 'base',
+  mapping: { registryId: string; registryName: string; registryTag?: string; customAttrs: Record<string, string> }
+): Promise<{ success: boolean; appliedCount: number }> {
+  const res = await fetch(`${getApiBase()}/mappings/apply-by-signature`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ projectId, signature, mode, mapping }),
+  });
+  if (!res.ok) throw new Error('Failed to apply mapping by signature');
+  return res.json();
+}
+
 export interface RecommendedClass {
   className: string;
   frequency: number;
@@ -540,4 +577,16 @@ export async function exportXml(
     throw new Error(err.error || 'Failed to export XML');
   }
   return res.json();
+}
+
+// 노드 SVG 가져오기 (서버 경유)
+export async function fetchNodeSvgs(projectId: string, fileKey: string, nodeIds: string[]): Promise<Record<string, string>> {
+  const res = await fetch(`${getApiBase()}/node-svgs`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ projectId, fileKey, nodeIds }),
+  });
+  if (!res.ok) throw new Error('Failed to fetch node SVGs');
+  const data = await res.json();
+  return data.svgs || {};
 }

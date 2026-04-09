@@ -67,6 +67,12 @@ export class FigmaFileDataStore {
     }
   }
 
+  listByProject(projectId: string): FigmaFileData[] {
+    return this.db.prepare(
+      'SELECT project_id as projectId, fileKey, nodeId, data, updatedAt FROM figma_file_data WHERE project_id = ?'
+    ).all(projectId) as FigmaFileData[];
+  }
+
   deleteByProject(projectId: string): number {
     const result = this.db.prepare('DELETE FROM figma_file_data WHERE project_id = ?').run(projectId);
     return result.changes;

@@ -34,6 +34,7 @@ const INITIAL_RULES: { registryName: string; keywords: string[] }[] = [
   { registryName: 'textbox',       keywords: ['textbox', '텍스트박스', 'text', '텍스트'] },
   { registryName: 'th',            keywords: ['th'] },
   { registryName: 'tr',            keywords: ['tr'] },
+  { registryName: 'image',         keywords: ['image', '이미지', 'img', '사진'] },
 ];
 
 export class DefaultMappingRulesStore {
