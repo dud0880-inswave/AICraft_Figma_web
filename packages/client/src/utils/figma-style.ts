@@ -284,7 +284,7 @@ function extractButtonStyle(node: FigmaNode, parentNode?: FigmaNode): string {
 // ============================================================
 function extractAnchorStyle(node: FigmaNode, parentNode?: FigmaNode): string {
   const isParentAL = parentHasAutoLayout(parentNode)
-  const styles: string[] = ['display:block']
+  const styles: string[] = ['display:block', 'white-space:nowrap', 'overflow:hidden', 'text-overflow:ellipsis']
 
   pushPositionAndSizing(styles, node, parentNode, isParentAL)
 

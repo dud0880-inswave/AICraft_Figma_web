@@ -579,8 +579,10 @@ export default function ConvertedCodeEditor({
           if (regItemNameLower === 'anchor') {
             const text = n.characters || findTextInChildren(n)
             const anchorPropsStr = Object.entries(mergedProps).map(([k, v]) => `${k}="${v}"`).join(' ')
-            const labelTag = text
-              ? `\n${indentStr}    <xf:label><![CDATA[${text}]]></xf:label>\n${indentStr}`
+            // &#x...; → 실제 유니코드 문자로 역변환 (CDATA 안에서는 엔티티 미해석)
+            const cdataText = text?.replace(/&#x([0-9a-fA-F]+);/g, (_, hex: string) => String.fromCodePoint(parseInt(hex, 16))) || ''
+            const labelTag = cdataText
+              ? `\n${indentStr}    <xf:label><![CDATA[${cdataText}]]></xf:label>\n${indentStr}`
               : ''
             return `${indentStr}<${tagName} ${anchorPropsStr}>${labelTag}</${tagName}>`
           }
