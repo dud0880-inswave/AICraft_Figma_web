@@ -1244,6 +1244,271 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
       return json(res, { svgs: svgMap });
     }
 
+    // ---- 스펙문서 생성 API (Claude) ----
+    // ── 스펙 자동 매핑 ──
+    if (path === '/api/auto-map-spec' && req.method === 'POST') {
+      const body = await parseBody(req);
+      const { textNodes, nodeTree, imageUrl } = body;
+      if (!textNodes || !Array.isArray(textNodes)) return badRequest(res, 'textNodes required');
+
+      const apiKey = process.env.ANTHROPIC_API_KEY;
+      if (!apiKey) return json(res, { error: 'ANTHROPIC_API_KEY not configured' }, 500);
+
+      const nodesJson = JSON.stringify(textNodes, null, 2);
+      const treeSection = nodeTree ? `\n## 노드 트리 구조 (대상 매칭용)
+\`\`\`json
+${JSON.stringify(nodeTree, null, 2)}
+\`\`\`\n` : '';
+
+      const prompt = `당신은 Figma 화면 설계서(SDD) 분석 전문가입니다.
+아래는 Figma 스펙 문서 프레임에서 추출한 데이터입니다.
+
+## 1. 텍스트 노드 목록
+\`\`\`json
+${nodesJson}
+\`\`\`
+${treeSection}
+## 분류 규칙
+
+### screenName (화면 명) — 반드시 1개만 선택
+- 스펙 문서 최상단에 테이블 형태로 "화면명", "화면 경로", "제공 채널", "화면 ID" 등의 항목이 있음
+- screenName은 "화면명" 라벨 옆에 있는 값 텍스트 노드 (예: "EPC 상품 조회/찾기")
+- "화면명"이라는 라벨 자체가 아니라 그 값에 해당하는 텍스트 노드를 선택
+- "화면 경로", "제공 채널", "화면 ID" 등의 라벨이나 값은 screenName이 아님
+
+### description (설명)
+- 기능 설명, 요구사항, 비즈니스 로직, Activity ID 등이 포함된 텍스트
+- 보통 번호(①②③ 또는 1. 2. 3.)가 붙어있거나, 특정 UI 요소의 동작을 설명하는 내용
+
+### 분류하지 않는 것
+- 단순 레이블 ("버전", "출시일", "담당자")
+- 샘플 데이터값 ("V1.0", "2025-05-18", "홍길동")
+- UI 장식 텍스트, 구분선, 빈 텍스트
+
+### description의 대상 노드 (targetNodeId)
+- 각 description이 설명하는 대상 UI 요소의 nodeId를 노드 트리에서 찾아 매핑
+- 설명 텍스트 내용과 노드 트리의 name을 비교하여 가장 관련 있는 노드를 선택
+- 대상을 특정할 수 없으면 targetNodeId를 생략
+
+## 출력 형식
+반드시 아래 JSON 형식만 출력하세요. 다른 텍스트 없이 JSON만 출력하세요.
+\`\`\`json
+{
+  "mappings": [
+    { "nodeId": "텍스트노드ID", "type": "screenName" },
+    { "nodeId": "텍스트노드ID", "type": "description", "targetNodeId": "대상노드ID" }
+  ]
+}
+\`\`\``;
+
+      try {
+        // 이미지가 있으면 fetch → base64
+        let imageBase64: string | null = null
+        if (imageUrl) {
+          try {
+            const imgRes = await fetch(imageUrl as string)
+            if (imgRes.ok) {
+              const imgBuf = Buffer.from(await imgRes.arrayBuffer())
+              imageBase64 = imgBuf.toString('base64')
+            }
+          } catch { /* ignore */ }
+        }
+
+        const messageContent: Array<{ type: string; text?: string; source?: { type: string; media_type: string; data: string } }> = []
+        if (imageBase64) {
+          messageContent.push({
+            type: 'image',
+            source: { type: 'base64', media_type: 'image/png', data: imageBase64 },
+          })
+          messageContent.push({ type: 'text', text: '위 이미지는 스펙 문서 캡쳐입니다. 이미지와 텍스트 노드를 함께 분석하세요.\n\n' + prompt })
+        } else {
+          messageContent.push({ type: 'text', text: prompt })
+        }
+
+        const claudeRes = await fetch('https://api.anthropic.com/v1/messages', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-api-key': apiKey,
+            'anthropic-version': '2023-06-01',
+          },
+          body: JSON.stringify({
+            model: 'claude-sonnet-4-6',
+            max_tokens: 4096,
+            messages: [{ role: 'user', content: messageContent }],
+          }),
+        });
+
+        if (!claudeRes.ok) {
+          const err = await claudeRes.text();
+          console.error('[AutoMap] Claude API error:', err);
+          return json(res, { error: `Claude API error: ${claudeRes.status}` }, 500);
+        }
+
+        const claudeData = await claudeRes.json() as { content: Array<{ type: string; text: string }> };
+        const rawText = claudeData.content?.find(c => c.type === 'text')?.text || '';
+
+        // JSON 파싱 (```json ... ``` 블록 또는 순수 JSON)
+        const jsonMatch = rawText.match(/```json\s*([\s\S]*?)```/) || rawText.match(/(\{[\s\S]*\})/);
+        const metaTagMap: Record<string, string> = {};
+        const markTargetMap: Record<string, string> = {};
+
+        if (jsonMatch) {
+          try {
+            const parsed = JSON.parse(jsonMatch[1]);
+            if (parsed.mappings && Array.isArray(parsed.mappings)) {
+              for (const m of parsed.mappings) {
+                if (m.nodeId && (m.type === 'screenName' || m.type === 'description')) {
+                  metaTagMap[m.nodeId] = m.type;
+                  if (m.type === 'description' && m.targetNodeId) {
+                    markTargetMap[m.nodeId] = m.targetNodeId;
+                  }
+                }
+              }
+            }
+          } catch (e) {
+            console.error('[AutoMap] JSON parse error:', e, rawText);
+          }
+        }
+
+        return json(res, { metaTagMap, markTargetMap });
+      } catch (err) {
+        console.error('[AutoMap] Claude API call failed:', err);
+        return json(res, { error: String(err) }, 500);
+      }
+    }
+
+    // ── 스펙 문서 생성 ──
+    if (path === '/api/generate-spec' && req.method === 'POST') {
+      const body = await parseBody(req);
+      const { specJson, convertedXml, screenName, imageUrl } = body;
+      if (!specJson && !convertedXml) return badRequest(res, 'specJson or convertedXml required');
+
+      const apiKey = process.env.ANTHROPIC_API_KEY;
+      if (!apiKey) return json(res, { error: 'ANTHROPIC_API_KEY not configured' }, 500);
+
+      const hasSpecMeta = !!specJson;
+
+      const specMetaSection = hasSpecMeta ? `### 1. 스펙 메타데이터 (JSON)
+\`\`\`json
+${JSON.stringify(specJson, null, 2)}
+\`\`\`
+
+` : '';
+
+      const xmlSection = convertedXml ? `### ${hasSpecMeta ? '2' : '1'}. 변환된 UI 구조 (XML)
+\`\`\`xml
+${convertedXml}
+\`\`\`` : '';
+
+      const analysisGuide = hasSpecMeta
+        ? `규칙:
+- 한국어로 작성
+- 설명 데이터의 texts를 분석하여 의미 있는 요구사항으로 변환
+- XML 구조에서 컴포넌트 타입과 속성을 분석
+- 스펙 메타데이터의 설명(description)과 대상 요소(target) 매핑을 기반으로 기능 요구사항 작성
+- 추정이 필요한 부분은 합리적으로 추정하되 [추정] 표시
+- Markdown만 출력 (다른 설명 없이)`
+        : `규칙:
+- 한국어로 작성
+- 스펙 매핑정보가 없으므로 XML 구조와 이미지를 기반으로 화면을 분석
+- XML에서 컴포넌트 타입, 속성, 계층 구조를 분석하여 기능 요구사항을 도출
+- 이미지가 제공된 경우 화면의 시각적 구조와 레이아웃을 참고하여 분석
+- 추정이 필요한 부분은 합리적으로 추정하되 [추정] 표시
+- Markdown만 출력 (다른 설명 없이)`;
+
+      const prompt = `당신은 소프트웨어 화면 설계서(SDD) 작성 전문가입니다.
+아래 데이터를 분석하여 기능 요구사항 문서를 Markdown 형식으로 작성하세요.
+
+## 입력 데이터
+
+${specMetaSection}${xmlSection}
+
+## 출력 형식
+
+다음 구조의 Markdown 문서를 작성하세요:
+
+# ${screenName || '화면'} 기능 요구사항
+
+- 화면명: ${hasSpecMeta ? '(스펙 데이터에서 추출)' : `${screenName || '(화면 이미지/XML에서 추정)'}`}
+- 화면 유형: (추정)
+
+## 1. 화면 목적
+${hasSpecMeta ? '(설명 데이터를 기반으로 화면의 목적을 자연어로 서술)' : '(XML 구조와 이미지를 분석하여 화면의 목적을 자연어로 서술)'}
+
+## 2. 사용자 시나리오
+(화면의 UI 구조와 ${hasSpecMeta ? '설명' : '이미지'}을 기반으로 사용자 시나리오를 번호 목록으로 작성)
+
+## 3. 기능 요구사항
+(${hasSpecMeta ? '설명의 각 항목을' : 'XML 구조와 이미지에서 도출한 항목을'} 기능 요구사항 테이블로 정리)
+| ID | 우선순위 | 요구사항 | 대상 요소 | 상태 |
+|----|---------|---------|----------|------|
+
+## 4. 컴포넌트 목록
+(XML에서 추출한 컴포넌트 목록을 테이블로 정리)
+| No | 요소명 | 컴포넌트 타입 | 설명 |
+|----|-------|-------------|------|
+
+## 5. 비기능 요구사항
+(일반적인 웹 화면 비기능 요구사항)
+
+${analysisGuide}`;
+
+      try {
+        // 이미지가 있으면 fetch → base64
+        let imageBase64: string | null = null
+        if (imageUrl) {
+          try {
+            const imgRes = await fetch(imageUrl as string)
+            if (imgRes.ok) {
+              const imgBuf = Buffer.from(await imgRes.arrayBuffer())
+              imageBase64 = imgBuf.toString('base64')
+            }
+          } catch { /* ignore */ }
+        }
+
+        // Claude 메시지 구성 (이미지 포함 여부에 따라)
+        const messageContent: Array<{ type: string; text?: string; source?: { type: string; media_type: string; data: string } }> = []
+        if (imageBase64) {
+          messageContent.push({
+            type: 'image',
+            source: { type: 'base64', media_type: 'image/png', data: imageBase64 },
+          })
+          messageContent.push({ type: 'text', text: '위 이미지는 화면 설계서(SDD) 캡쳐입니다. 이 이미지와 아래 데이터를 함께 분석하세요.\n\n' + prompt })
+        } else {
+          messageContent.push({ type: 'text', text: prompt })
+        }
+
+        const claudeRes = await fetch('https://api.anthropic.com/v1/messages', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-api-key': apiKey,
+            'anthropic-version': '2023-06-01',
+          },
+          body: JSON.stringify({
+            model: 'claude-sonnet-4-6',
+            max_tokens: 8192,
+            messages: [{ role: 'user', content: messageContent }],
+          }),
+        });
+
+        if (!claudeRes.ok) {
+          const err = await claudeRes.text();
+          console.error('[Spec] Claude API error:', err);
+          return json(res, { error: `Claude API error: ${claudeRes.status}` }, 500);
+        }
+
+        const claudeData = await claudeRes.json() as { content: Array<{ type: string; text: string }> };
+        const markdown = claudeData.content?.find(c => c.type === 'text')?.text || '';
+
+        return json(res, { markdown });
+      } catch (err) {
+        console.error('[Spec] Claude API call failed:', err);
+        return json(res, { error: String(err) }, 500);
+      }
+    }
+
     // 404
     return notFound(res);
   } catch (err) {

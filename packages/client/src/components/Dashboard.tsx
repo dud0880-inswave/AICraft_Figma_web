@@ -1,18 +1,20 @@
 import { useState, useEffect } from 'react'
 import type { FigmaFileRecord, Project } from '../utils/api'
-import { fetchProjects, fetchProjectFiles, deleteProject, createProject, updateProject, deleteFigmaFile, generateClusters } from '../utils/api'
+import { fetchProjects, fetchProjectFiles, deleteProject, createProject, updateProject, deleteFigmaFile, generateClusters, fetchProjectSettings, saveProjectSettings } from '../utils/api'
+import { parseFigmaUrl } from '../utils/figma-api'
 
 interface DashboardProps {
   onSelectFile: (fileKey: string, nodeId: string | null, projectId: string, projectName?: string) => void
   onAddNewFile: (projectId: string) => void
   onOpenSettings: (projectId: string, projectName: string) => void
   onRefreshFile: (fileKey: string, nodeId: string | null, projectId: string) => Promise<void>
+  onOpenSpec: (projectId: string, fileKey: string, nodeId: string | null, srcFileKey?: string, srcNodeId?: string | null) => void
   initialProjectId?: string | null  // 초기 선택할 프로젝트 ID
 }
 
 type ViewMode = 'projects' | 'files'
 
-export default function Dashboard({ onSelectFile, onAddNewFile, onOpenSettings, onRefreshFile, initialProjectId }: DashboardProps) {
+export default function Dashboard({ onSelectFile, onAddNewFile, onOpenSettings, onRefreshFile, onOpenSpec, initialProjectId }: DashboardProps) {
   const [viewMode, setViewMode] = useState<ViewMode>('projects')
   const [projects, setProjects] = useState<Project[]>([])
   const [selectedProject, setSelectedProject] = useState<Project | null>(null)
@@ -20,6 +22,13 @@ export default function Dashboard({ onSelectFile, onAddNewFile, onOpenSettings, 
   const [loading, setLoading] = useState(true)
   const [initialLoaded, setInitialLoaded] = useState(false)
   const [refreshingFileKey, setRefreshingFileKey] = useState<string | null>(null)
+
+  // 스펙문서 URL 입력 모달
+  const [specModalOpen, setSpecModalOpen] = useState(false)
+  const [specModalFile, setSpecModalFile] = useState<{ fileKey: string; nodeId: string | null } | null>(null)
+  const [specLoading, setSpecLoading] = useState(false)
+  // 파일별 등록된 스펙 URL: key = "fileKey-nodeId"
+  const [specUrlMap, setSpecUrlMap] = useState<Record<string, { specFileKey: string; specNodeId: string | null; url: string }>>({})
 
   // 프로젝트 생성/수정 모달
   const [projectModalOpen, setProjectModalOpen] = useState(false)
@@ -61,6 +70,12 @@ export default function Dashboard({ onSelectFile, onAddNewFile, onOpenSettings, 
       setFiles(data)
       setSelectedProject(project)
       setViewMode('files')
+      // 스펙 URL 맵 로드
+      try {
+        const settings = await fetchProjectSettings(project.id)
+        const specData = settings['spec-url-map']
+        setSpecUrlMap(specData ? JSON.parse(specData) : {})
+      } catch { setSpecUrlMap({}) }
     } catch (err) {
       console.error('Failed to load project files:', err)
     } finally {
@@ -375,6 +390,31 @@ export default function Dashboard({ onSelectFile, onAddNewFile, onOpenSettings, 
                           </svg>
                         )}
                       </button>
+                      {/* 스펙문서 버튼 */}
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          if (!selectedProject) return
+                          const specKey = `${file.fileKey}-${file.nodeId || ''}`
+                          const existing = specUrlMap[specKey]
+                          if (existing) {
+                            // 이미 등록됨 → 바로 이동
+                            onOpenSpec(selectedProject.id, existing.specFileKey, existing.specNodeId, file.fileKey, file.nodeId)
+                          } else {
+                            // 미등록 → 모달
+                            setSpecModalFile({ fileKey: file.fileKey, nodeId: file.nodeId })
+                            setSpecModalOpen(true)
+                          }
+                        }}
+                        className={`absolute top-2 right-[4.5rem] p-1.5 bg-gray-900/80 rounded opacity-0 group-hover:opacity-100 transition-opacity ${
+                          specUrlMap[`${file.fileKey}-${file.nodeId || ''}`] ? 'text-green-400 hover:text-green-300' : 'text-gray-400 hover:text-green-400'
+                        }`}
+                        title={specUrlMap[`${file.fileKey}-${file.nodeId || ''}`] ? '스펙문서 보기' : '스펙문서 등록'}
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                        </svg>
+                      </button>
                       {/* 삭제 버튼 */}
                       <button
                         onClick={(e) => handleDeleteFile(file.fileKey, file.nodeId, e)}
@@ -441,6 +481,99 @@ export default function Dashboard({ onSelectFile, onAddNewFile, onOpenSettings, 
         </div>
       )}
 
+      {/* 스펙문서 URL 입력 모달 */}
+      {specModalOpen && selectedProject && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/60" onClick={() => setSpecModalOpen(false)} />
+          <div className="relative w-full max-w-md mx-4 theme-bg-secondary rounded-lg shadow-xl">
+            <div className="flex items-center justify-between px-6 py-4 border-b theme-border">
+              <h2 className="text-lg font-semibold theme-text-primary">스펙문서 생성</h2>
+              <button onClick={() => setSpecModalOpen(false)} className="p-1 text-gray-400 hover:text-white rounded">
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <form
+              onSubmit={async (e) => {
+                e.preventDefault()
+                if (!selectedProject || specLoading) return
+                const form = e.target as HTMLFormElement
+                const specUrl = (form.elements.namedItem('specUrl') as HTMLInputElement).value
+                if (!specUrl) return
+
+                const parsed = parseFigmaUrl(specUrl)
+                if (!parsed) { alert('올바른 Figma URL이 아닙니다'); return }
+
+                if (!specModalFile) return
+                setSpecLoading(true)
+                try {
+                  // 파일별 스펙 URL 저장
+                  const specKey = `${specModalFile.fileKey}-${specModalFile.nodeId || ''}`
+                  const newMap = {
+                    ...specUrlMap,
+                    [specKey]: { specFileKey: parsed.fileKey, specNodeId: parsed.nodeId, url: specUrl }
+                  }
+                  await saveProjectSettings(selectedProject.id, { 'spec-url-map': JSON.stringify(newMap) })
+                  setSpecUrlMap(newMap)
+
+                  setSpecModalOpen(false)
+
+                  // 스펙 뷰 화면으로 전환
+                  onOpenSpec(selectedProject.id, parsed.fileKey, parsed.nodeId, specModalFile?.fileKey, specModalFile?.nodeId)
+                } catch (err) {
+                  console.error('스펙문서 등록 실패:', err)
+                  alert('스펙문서 등록에 실패했습니다.')
+                } finally {
+                  setSpecLoading(false)
+                }
+              }}
+              className="p-6"
+            >
+              <div className="mb-6">
+                <label className="block text-sm font-medium theme-text-secondary mb-2">
+                  설계서 Figma URL
+                </label>
+                <input
+                  type="url"
+                  name="specUrl"
+                  placeholder="https://www.figma.com/design/xxxxx/..."
+                  className="w-full px-4 py-2 theme-bg-tertiary border theme-border rounded-lg theme-text-primary placeholder-gray-400 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                  autoFocus
+                  required
+                />
+                <p className="text-xs theme-text-secondary mt-2">
+                  화면 설계서가 작성된 Figma 파일 또는 노드 URL을 입력하세요
+                </p>
+              </div>
+              <div className="flex gap-3">
+                <button
+                  type="button"
+                  onClick={() => setSpecModalOpen(false)}
+                  className="flex-1 py-2.5 px-4 theme-bg-tertiary hover:opacity-80 theme-text-primary font-medium rounded-lg transition-colors"
+                >
+                  취소
+                </button>
+                <button
+                  type="submit"
+                  disabled={specLoading}
+                  className="flex-1 py-2.5 px-4 bg-green-600 hover:bg-green-500 disabled:opacity-50 text-white font-medium rounded-lg transition-colors flex items-center justify-center"
+                >
+                  {specLoading ? (
+                    <>
+                      <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                      </svg>
+                      생성 중...
+                    </>
+                  ) : '생성'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

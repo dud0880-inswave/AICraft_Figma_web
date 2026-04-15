@@ -3,6 +3,7 @@ import type { FigmaFile, FigmaNode, BoundingBox } from './types/figma'
 import type { RegistryItem, AutoMappingSuggestion, FigmaNodeForSignature } from './utils/api'
 import { saveFigmaFile, touchFigmaFile, fetchMappings, fetchFigmaFileData, saveFigmaFileData, saveMapping, fetchAutoMappingSuggestions, fetchDefaultRuleSuggestions, applyAutoMappingSuggestions, saveProjectSettings, fetchProjectSettings, refreshFigmaFile } from './utils/api'
 import { parseFigmaUrl, fetchFigmaFile, fetchNodeImages } from './utils/figma-api'
+import { getConfig } from './config'
 import { findNodeById, calculatePageBounds, groupNodes, ungroupNode, reorderNodes } from './utils/tree-utils'
 import Dashboard from './components/Dashboard'
 import AddFileModal from './components/AddFileModal'
@@ -85,7 +86,10 @@ export default function App() {
   const [addFileProjectId, setAddFileProjectId] = useState<string | null>(null)
   const [settingsProjectId, setSettingsProjectId] = useState<string | null>(null)
   const [settingsProjectName, setSettingsProjectName] = useState<string | null>(null)
-  const [navigateToProjectId, setNavigateToProjectId] = useState<string | null>(null)
+  const [navigateToProjectId, setNavigateToProjectId] = useState<string | null>(() => {
+    const params = new URLSearchParams(window.location.search)
+    return params.get('projectId')
+  })
 
   // 왼쪽 패널 리사이즈
   const handleLeftResize = useCallback((delta: number) => {
@@ -133,14 +137,16 @@ export default function App() {
 
         if (targetNode) {
           displayRoot = targetNode
-          // 해당 노드 JSON 파일로 저장
-          const jsonBlob = new Blob([JSON.stringify(targetNode, null, 2)], { type: 'application/json' })
-          const downloadUrl = URL.createObjectURL(jsonBlob)
-          const a = document.createElement('a')
-          a.href = downloadUrl
-          a.download = `figma-${fileKey}-${nodeId.replace(':', '-')}.json`
-          a.click()
-          URL.revokeObjectURL(downloadUrl)
+          // 디버그 JSON 다운로드 (config.enableDebugJson일 때만)
+          if (getConfig().enableDebugJson) {
+            const jsonBlob = new Blob([JSON.stringify(targetNode, null, 2)], { type: 'application/json' })
+            const downloadUrl = URL.createObjectURL(jsonBlob)
+            const a = document.createElement('a')
+            a.href = downloadUrl
+            a.download = `figma-${fileKey}-${nodeId.replace(':', '-')}.json`
+            a.click()
+            URL.revokeObjectURL(downloadUrl)
+          }
           // 노드 이미지 가져오기
           const images = await fetchNodeImages(fileKey, token, [nodeId], 'png', 1)
           const thumbnailUrl = images.images[nodeId] || undefined
@@ -952,6 +958,15 @@ export default function App() {
             setShowSettings(true)
           }}
           onRefreshFile={handleRefreshFile}
+          onOpenSpec={(projectId, fileKey, nodeId, srcFileKey, srcNodeId) => {
+            const params = new URLSearchParams({
+              projectId, fileKey,
+              ...(nodeId ? { nodeId } : {}),
+              ...(srcFileKey ? { srcFileKey } : {}),
+              ...(srcNodeId ? { srcNodeId } : {}),
+            })
+            window.location.href = `/spec?${params.toString()}`
+          }}
           initialProjectId={navigateToProjectId}
         />
         {state.error && (

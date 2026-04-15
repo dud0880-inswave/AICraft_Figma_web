@@ -590,3 +590,32 @@ export async function fetchNodeSvgs(projectId: string, fileKey: string, nodeIds:
   const data = await res.json();
   return data.svgs || {};
 }
+
+// 스펙 자동 매핑 (Claude API 경유)
+export async function autoMapSpec(textNodes: Array<{ nodeId: string; name: string; text: string }>, nodeTree?: object, imageUrl?: string): Promise<{ metaTagMap: Record<string, string>; markTargetMap: Record<string, string> }> {
+  const res = await fetch(`${getApiBase()}/auto-map-spec`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ textNodes, nodeTree, imageUrl }),
+  });
+  if (!res.ok) {
+    const err = await res.json();
+    throw new Error(err.error || 'Failed to auto-map spec');
+  }
+  return await res.json();
+}
+
+// 스펙문서 생성 (Claude API 경유)
+export async function generateSpec(specJson: object | null, convertedXml?: string, screenName?: string, imageUrl?: string): Promise<string> {
+  const res = await fetch(`${getApiBase()}/generate-spec`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ specJson, convertedXml, screenName, imageUrl }),
+  });
+  if (!res.ok) {
+    const err = await res.json();
+    throw new Error(err.error || 'Failed to generate spec');
+  }
+  const data = await res.json();
+  return data.markdown || '';
+}

@@ -10,6 +10,7 @@ interface NodeTreeProps {
   onSelectNodeIds?: (nodeIds: string[]) => void
   onHoverNode: (node: FigmaNode | null) => void
   onGroupNodes: () => void
+  hideGroupButton?: boolean
   onUngroupNodes?: () => void
   onReorderNodes?: (parentId: string | null, nodeId: string, newIndex: number) => void
 }
@@ -288,6 +289,7 @@ export default function NodeTree({
   onSelectNodeIds,
   onHoverNode,
   onGroupNodes,
+  hideGroupButton,
   onUngroupNodes,
   onReorderNodes
 }: NodeTreeProps) {
@@ -458,13 +460,43 @@ export default function NodeTree({
     }
   }, [flatVisibleNodes, selectedNodeIds, expandedIds, onSelectNode, handleToggle])
 
-  // 선택 변경 시 해당 노드가 보이도록 스크롤
+  // 선택 변경 시 상위 노드 펼치기 + 스크롤
   useEffect(() => {
     const currentId = selectedNodeIds[selectedNodeIds.length - 1]
-    if (!currentId || !treeRef.current) return
-    const el = treeRef.current.querySelector(`[data-node-id="${currentId}"]`)
-    if (el) el.scrollIntoView({ block: 'nearest' })
-  }, [selectedNodeIds])
+    if (!currentId) return
+
+    // 상위 노드 경로 찾기
+    const findAncestors = (nodeList: FigmaNode[], targetId: string, path: string[]): string[] | null => {
+      for (const n of nodeList) {
+        if (n.id === targetId) return path
+        if (n.children) {
+          const result = findAncestors(n.children, targetId, [...path, n.id])
+          if (result) return result
+        }
+      }
+      return null
+    }
+
+    const ancestors = findAncestors(nodes, currentId, [])
+    if (ancestors && ancestors.length > 0) {
+      setExpandedIds(prev => {
+        const next = new Set(prev)
+        let changed = false
+        for (const id of ancestors) {
+          if (!next.has(id)) { next.add(id); changed = true }
+        }
+        return changed ? next : prev
+      })
+    }
+
+    // 펼친 후 스크롤 (React 리렌더링 대기)
+    const timer = setTimeout(() => {
+      if (!treeRef.current) return
+      const el = treeRef.current.querySelector(`[data-node-id="${currentId}"]`)
+      if (el) el.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
+    }, 100)
+    return () => clearTimeout(timer)
+  }, [selectedNodeIds, nodes])
 
   return (
     <div className="h-full flex flex-col theme-bg-secondary" onKeyDown={handleKeyDown} tabIndex={0} style={{ outline: 'none' }}>
@@ -477,7 +509,7 @@ export default function NodeTree({
           )}
         </h2>
         <div className="flex gap-1">
-          {selectedNodeIds.length >= 1 && (
+          {selectedNodeIds.length >= 1 && !hideGroupButton && (
             <button
               onClick={onGroupNodes}
               className="px-2 py-1 text-xs bg-blue-600 hover:bg-blue-500 text-white rounded whitespace-nowrap"

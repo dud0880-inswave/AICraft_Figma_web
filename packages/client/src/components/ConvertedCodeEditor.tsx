@@ -387,7 +387,7 @@ export default function ConvertedCodeEditor({
         // 매핑된 노드인 경우
         if (regItem) {
           const { tagName, properties } = regItem
-          const mergedProps = { ...properties }
+          const mergedProps: Record<string, string> = { ...properties, 'data-nodeid': n.id }
           const regItemNameLower = regItem.name.toLowerCase()
 
           // 커스텀 속성 병합 (class는 default 뒤에 추가)

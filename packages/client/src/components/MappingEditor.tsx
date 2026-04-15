@@ -6,6 +6,10 @@ import { type CssItem, type ComponentClassMapping } from './SettingsModal'
 import { findTextInChildren, collectAllTexts, collectTopLevelTexts } from '../utils/text-utils'
 import { findParentNode } from '../utils/tree-utils'
 import { extractInlineStyle } from '../utils/figma-style'
+import hljs from 'highlight.js/lib/core'
+import xml from 'highlight.js/lib/languages/xml'
+
+hljs.registerLanguage('xml', xml)
 
 
 interface MappingEditorProps {
@@ -904,7 +908,7 @@ export default function MappingEditor({ node, nodes, tree, fileKey, rootNodeId, 
               if (!selectedItem) return null
 
               const { tagName, properties } = selectedItem
-              const mergedProps: Record<string, string> = { ...properties }
+              const mergedProps: Record<string, string> = { ...properties, 'data-nodeid': displayNode?.id || '' }
               const selectedItemNameLower = selectedItem.name.toLowerCase()
 
               // 커스텀 속성 병합 (class는 default 뒤에 추가)
@@ -1127,8 +1131,10 @@ ${bodyCols}
                 : `<${tagName}/>`
 
               return (
-                <pre className="mt-3 p-3 theme-bg-primary border theme-border rounded text-sm font-mono theme-text-code-green overflow-x-auto">
-                  {code}
+                <pre className="mt-3 p-3 theme-bg-primary border theme-border rounded text-sm font-mono overflow-x-auto">
+                  <code className="language-xml" ref={(el) => { if (el) { el.removeAttribute('data-highlighted'); hljs.highlightElement(el) } }}>
+                    {code}
+                  </code>
                 </pre>
               )
             })()}

@@ -7,12 +7,14 @@ export interface ClientConfig {
   serverHost: string;
   serverPort: number;
   appTitle: string;
+  enableDebugJson: boolean;
 }
 
 const DEFAULT_CONFIG: ClientConfig = {
   serverHost: '',      // 빈 문자열이면 상대 경로 사용 (Vite proxy)
   serverPort: 5181,
   appTitle: 'AICraft Figma Viewer',
+  enableDebugJson: false,
 };
 
 let cachedConfig: ClientConfig | null = null;
