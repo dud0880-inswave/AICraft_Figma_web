@@ -1,12 +1,13 @@
 import { useState, useCallback, useEffect, useRef } from 'react'
 import type { FigmaFile, FigmaNode, BoundingBox } from './types/figma'
 import type { RegistryItem, AutoMappingSuggestion, FigmaNodeForSignature } from './utils/api'
-import { saveFigmaFile, touchFigmaFile, fetchMappings, fetchFigmaFileData, saveFigmaFileData, saveMapping, fetchAutoMappingSuggestions, fetchDefaultRuleSuggestions, applyAutoMappingSuggestions, saveProjectSettings, fetchProjectSettings, refreshFigmaFile } from './utils/api'
+import { saveFigmaFile, touchFigmaFile, fetchMappings, fetchFigmaFileData, saveFigmaFileData, saveMapping, fetchAutoMappingSuggestions, fetchDefaultRuleSuggestions, applyAutoMappingSuggestions, saveProjectSettings, fetchProjectSettings, refreshFigmaFile, saveFigmaFileImage, getFigmaFileImageUrl, bumpFigmaFileVersion, fetchProjectFiles } from './utils/api'
 import { parseFigmaUrl, fetchFigmaFile, fetchNodeImages } from './utils/figma-api'
 import { getConfig } from './config'
 import { findNodeById, calculatePageBounds, groupNodes, ungroupNode, reorderNodes } from './utils/tree-utils'
 import Dashboard from './components/Dashboard'
 import AddFileModal from './components/AddFileModal'
+import Spec from './Spec'
 import PageTabs from './components/PageTabs'
 import NodeTree from './components/NodeTree'
 import FigmaViewer from './components/FigmaViewer'
@@ -16,7 +17,7 @@ import Splitter from './components/Splitter'
 import SettingsModal from './components/SettingsModal'
 import AutoMappingSuggestionModal from './components/AutoMappingSuggestionModal'
 
-type AppView = 'dashboard' | 'editor'
+type AppView = 'dashboard' | 'editor' | 'spec'
 
 interface AppState {
   token: string
@@ -34,6 +35,7 @@ interface AppState {
   loading: boolean
   imageLoading: boolean
   error: string | null
+  fileVersion: string | null
 }
 
 const initialState: AppState = {
@@ -52,6 +54,7 @@ const initialState: AppState = {
   loading: false,
   imageLoading: false,
   error: null,
+  fileVersion: null,
 }
 
 
@@ -86,6 +89,11 @@ export default function App() {
   const [addFileProjectId, setAddFileProjectId] = useState<string | null>(null)
   const [settingsProjectId, setSettingsProjectId] = useState<string | null>(null)
   const [settingsProjectName, setSettingsProjectName] = useState<string | null>(null)
+  // Spec 뷰 컨텍스트
+  const [specContext, setSpecContext] = useState<{
+    projectId: string; fileKey: string; nodeId: string | null;
+    srcFileKey: string | null; srcNodeId: string | null;
+  } | null>(null)
   const [navigateToProjectId, setNavigateToProjectId] = useState<string | null>(() => {
     const params = new URLSearchParams(window.location.search)
     return params.get('projectId')
@@ -148,16 +156,39 @@ export default function App() {
             URL.revokeObjectURL(downloadUrl)
           }
           // 노드 이미지 가져오기
-          const images = await fetchNodeImages(fileKey, token, [nodeId], 'png', 1)
+          const images = await fetchNodeImages(fileKey, token, [nodeId], 'svg', 1)
           const thumbnailUrl = images.images[nodeId] || undefined
           await saveFigmaFile(fileKey, nodeId, targetNode.name, thumbnailUrl, projectId)
+          // 노드 트리 저장 (displayRoot 단일 노드)
+          try {
+            await saveFigmaFileData(projectId, fileKey, nodeId, targetNode)
+          } catch (e) { console.error('노드 트리 저장 실패:', e) }
+          // 이미지 파일 저장 (서버가 presigned URL을 받아 로컬에 다운로드)
+          if (thumbnailUrl) {
+            try {
+              await saveFigmaFileImage(projectId, fileKey, nodeId, thumbnailUrl)
+            } catch (e) { console.error('이미지 저장 실패:', e) }
+          }
         } else {
           throw new Error('해당 노드를 찾을 수 없습니다')
         }
       } else {
-        // 전체 파일 저장
+        // 전체 파일 저장 — 첫 페이지를 displayRoot로 저장
         displayRoot = pages[0] || null
         await saveFigmaFile(fileKey, null, file.name, file.thumbnailUrl, projectId)
+        if (displayRoot) {
+          try {
+            await saveFigmaFileData(projectId, fileKey, null, displayRoot)
+          } catch (e) { console.error('노드 트리 저장 실패:', e) }
+          // 첫 페이지 이미지 가져와서 저장
+          try {
+            const images = await fetchNodeImages(fileKey, token, [displayRoot.id], 'svg', 1)
+            const pageImageUrl = images.images[displayRoot.id]
+            if (pageImageUrl) {
+              await saveFigmaFileImage(projectId, fileKey, null, pageImageUrl)
+            }
+          } catch (e) { console.error('이미지 저장 실패:', e) }
+        }
       }
 
       setState((s) => ({ ...s, loading: false }))
@@ -219,46 +250,22 @@ export default function App() {
     }
   }, [state.error])
 
-  // 이미지 로드 (노드 또는 페이지)
+  // 이미지 로드 (서버에 저장된 PNG 사용)
   useEffect(() => {
     const nodeIdToLoad = state.targetNodeId || state.currentPageId
-    if (!nodeIdToLoad || !state.fileKey || !state.token) {
+    if (!nodeIdToLoad || !state.fileKey || !state.projectId) {
       return
     }
     if (state.nodeImages[nodeIdToLoad]) {
       return
     }
-
-    const loadImage = async () => {
-      setState((s) => ({ ...s, imageLoading: true }))
-
-      try {
-        const result = await fetchNodeImages(
-          state.fileKey!,
-          state.token,
-          [nodeIdToLoad],
-          'png',
-          2 // scale 2x for better quality
-        )
-
-        const imageUrl = result.images[nodeIdToLoad]
-        if (imageUrl) {
-          setState((s) => ({
-            ...s,
-            nodeImages: { ...s.nodeImages, [nodeIdToLoad]: imageUrl },
-            imageLoading: false,
-          }))
-        } else {
-          setState((s) => ({ ...s, imageLoading: false }))
-        }
-      } catch (err) {
-        console.error('이미지 로드 실패:', err)
-        setState((s) => ({ ...s, imageLoading: false }))
-      }
-    }
-
-    loadImage()
-  }, [state.targetNodeId, state.currentPageId, state.fileKey, state.token])
+    const url = `${getFigmaFileImageUrl(state.projectId, state.fileKey, state.targetNodeId)}&t=${Date.now()}`
+    setState((s) => ({
+      ...s,
+      nodeImages: { ...s.nodeImages, [nodeIdToLoad]: url },
+      imageLoading: false,
+    }))
+  }, [state.targetNodeId, state.currentPageId, state.fileKey, state.projectId])
 
   // 매핑 정보 로드
   useEffect(() => {
@@ -348,84 +355,86 @@ export default function App() {
   // 파일 새로고침
   const handleRefreshFile = useCallback(async (fileKey: string, nodeId: string | null, projectId: string) => {
     try {
-      // 1. 프로젝트 설정에서 토큰 가져오기
+      // 1. 토큰
       const settings = await fetchProjectSettings(projectId)
       const token = settings['figma-token']
       if (!token) {
         throw new Error('Figma Access Token이 설정되어 있지 않습니다.')
       }
 
-      // 2. Figma API로 최신 데이터 가져오기
-      let file = await fetchFigmaFile(fileKey, token, nodeId)
-      const documentToSave = nodeId && file.nodes?.[nodeId]
-        ? file.nodes[nodeId].document
-        : file.document
+      // 2. Figma에서 최신 데이터 받아와서 displayRoot(단일 노드) 추출
+      const file = await fetchFigmaFile(fileKey, token, nodeId)
+      const pages = file.document.children || []
+      let displayRoot: FigmaNode | null = null
+      if (nodeId) {
+        for (const page of pages) {
+          const found = findNodeById(page, nodeId)
+          if (found) { displayRoot = found; break }
+        }
+      } else {
+        displayRoot = pages[0] || null
+      }
+      if (!displayRoot) throw new Error('디스플레이 루트 노드를 찾을 수 없습니다.')
 
-      // 3. 서버에 업데이트 및 매핑 정리
-      const result = await refreshFigmaFile(projectId, fileKey, nodeId, documentToSave)
-      console.log(`[Refresh] ${result.deletedMappingsCount}개 매핑 삭제됨, ${result.newNodeIds.length}개 신규 노드`)
-      const newNodeIdSet = new Set(result.newNodeIds)
+      // 3. 서버에 전달 → 변경 감지 + (변경 있으면) 저장 + 매핑 정리 + 신규 노드 반환
+      const result = await refreshFigmaFile(projectId, fileKey, nodeId, displayRoot)
+      console.log(`[Refresh] hasChanges=${result.hasChanges}, 삭제매핑=${result.deletedMappingsCount}, 신규노드=${result.newNodeIds.length}`)
 
-      // 4. 저장된 수정 데이터가 있으면 적용
-      const savedData = await fetchFigmaFileData(projectId, fileKey, nodeId)
-      if (savedData && savedData.data) {
-        file = { ...file, document: savedData.data as typeof file.document }
+      if (!result.hasChanges) {
+        window.alert('변경된 내용이 없습니다.')
+        return
       }
 
-      // 5. 현재 편집 중인 파일이면 state 업데이트
+      // 4. 변경 있음 → 이미지 갱신 + state 반영
+      try {
+        const images = await fetchNodeImages(fileKey, token, [displayRoot.id], 'svg', 1)
+        const imgUrl = images.images[displayRoot.id]
+        if (imgUrl) await saveFigmaFileImage(projectId, fileKey, nodeId, imgUrl)
+      } catch (e) { console.error('이미지 저장 실패:', e) }
+
       const isSameFile = state.fileKey === fileKey &&
                          (state.targetNodeId === nodeId || (!state.targetNodeId && !nodeId))
 
       if (isSameFile) {
-        const pages = file.document.children || []
+        const syntheticFile = {
+          document: { id: 'synthetic', name: 'synthetic', type: 'DOCUMENT', children: [displayRoot] }
+        } as unknown as FigmaFile
 
-        // 바운딩 박스 재계산
+        const imageKey = nodeId ? displayRoot.id : displayRoot.id
+        const freshImageUrl = `${getFigmaFileImageUrl(projectId, fileKey, nodeId)}&t=${Date.now()}`
+
         const nodeBounds: Record<string, BoundingBox> = {}
-        const imageKey = state.targetNodeId || state.currentPageId
-
-        if (state.targetNodeId && state.currentPageId) {
-          const page = pages.find(p => p.id === state.currentPageId)
-          if (page) {
-            const targetNode = findNodeById(page, state.targetNodeId)
-            const bounds = targetNode?.absoluteRenderBounds || targetNode?.absoluteBoundingBox
-            if (bounds) {
-              nodeBounds[state.targetNodeId] = bounds
-            }
-          }
+        if (nodeId) {
+          const bounds = displayRoot.absoluteRenderBounds || displayRoot.absoluteBoundingBox
+          if (bounds) nodeBounds[displayRoot.id] = bounds
         } else {
-          for (const page of pages) {
-            const bounds = calculatePageBounds(page)
-            if (bounds) {
-              nodeBounds[page.id] = bounds
-            }
-          }
-        }
-
-        // 6. 이미지 다시 로드
-        let newNodeImages = { ...state.nodeImages }
-        if (imageKey) {
-          try {
-            const imageResult = await fetchNodeImages(fileKey, token, [imageKey], 'png', 2)
-            const imageUrl = imageResult.images[imageKey]
-            if (imageUrl) {
-              newNodeImages[imageKey] = imageUrl
-            }
-          } catch (err) {
-            console.error('이미지 로드 실패:', err)
-          }
+          const bounds = calculatePageBounds(displayRoot)
+          if (bounds) nodeBounds[displayRoot.id] = bounds
         }
 
         setState(s => ({
           ...s,
-          file,
+          file: syntheticFile,
           token,
           nodeBounds,
-          nodeImages: newNodeImages,
+          nodeImages: { [imageKey]: freshImageUrl },
         }))
         setConvertTrigger(t => t + 1)
       }
 
-      // 7. 새로 추가된 노드에 대해서만 auto-mapping 제안
+      // 5. 버전업 컨펌
+      if (window.confirm('Figma 파일에 변경사항이 있습니다.\n버전을 올리시겠습니까?')) {
+        try {
+          const { version } = await bumpFigmaFileVersion(projectId, fileKey, nodeId)
+          console.log(`[Refresh] 버전 증가 → v${version}`)
+          setState(s => ({ ...s, fileVersion: version }))
+        } catch (e) {
+          console.error('버전 증가 실패:', e)
+        }
+      }
+
+      // 6. 새 노드가 있으면 자동 매핑 제안
+      const newNodeIdSet = new Set(result.newNodeIds)
       if (newNodeIdSet.size > 0) {
         try {
           const convertNode = (node: FigmaNode): FigmaNodeForSignature => ({
@@ -436,20 +445,8 @@ export default function App() {
             children: node.children?.filter(c => c.visible !== false).map(c => convertNode(c)),
           })
 
-          const displayRoot = nodeId
-            ? (() => {
-                const pages = documentToSave.children || []
-                for (const page of pages as FigmaNode[]) {
-                  const found = findNodeById(page, nodeId)
-                  if (found) return found
-                }
-                return documentToSave as unknown as FigmaNode
-              })()
-            : documentToSave as unknown as FigmaNode
-
           const nodesForSignature = [convertNode(displayRoot)]
 
-          // 새 노드가 아닌 모든 노드를 existingMappingNodeIds로 넘겨 제외
           const allIds: string[] = []
           const collectAllIds = (node: FigmaNodeForSignature) => {
             allIds.push(node.id)
@@ -458,7 +455,6 @@ export default function App() {
           nodesForSignature.forEach(collectAllIds)
           const nonNewIds = allIds.filter(id => !newNodeIdSet.has(id))
 
-          // keyword 제안은 새 노드만 flat하게 전달 (부모 포함 시 기존 매핑 덮어씀 방지)
           const newNodesList: FigmaNodeForSignature[] = []
           const collectNewNodes = (n: FigmaNodeForSignature) => {
             if (newNodeIdSet.has(n.id)) newNodesList.push(n)
@@ -487,10 +483,10 @@ export default function App() {
       console.error('Failed to refresh file:', err)
       throw err
     }
-  }, [state.fileKey, state.targetNodeId, state.currentPageId, state.nodeImages])
+  }, [state.fileKey, state.targetNodeId])
 
   // 대시보드에서 파일 선택
-  const handleSelectFileFromDashboard = useCallback(async (fileKey: string, nodeId: string | null, projectId: string, projectName?: string) => {
+  const handleSelectFileFromDashboard = useCallback(async (fileKey: string, nodeId: string | null, projectId: string, projectName?: string, version?: string) => {
     // 프로젝트 설정에서 토큰 불러오기
     let token = state.token
     try {
@@ -513,63 +509,83 @@ export default function App() {
     setState((s) => ({ ...s, loading: true, error: null, token }))
 
     try {
-      // Figma에서 원본 파일 가져오기
-      let file = await fetchFigmaFile(fileKey, token, nodeId)
-
-      // 저장된 수정 데이터가 있으면 적용
+      // DB에서 저장된 노드 트리 로드
+      let displayRoot: FigmaNode | null = null
       try {
         const savedData = await fetchFigmaFileData(projectId, fileKey, nodeId)
         if (savedData && savedData.data) {
-          // 저장된 document 구조로 교체
-          file = { ...file, document: savedData.data as typeof file.document }
+          displayRoot = savedData.data as FigmaNode
         }
       } catch (e) {
         console.error('Failed to load saved file data:', e)
       }
 
-      const pages = file.document.children || []
-
-      let targetPageId = pages[0]?.id || null
-      let targetNodeId: string | null = null
-
-      // nodeId가 있으면 해당 노드 찾기
-      if (nodeId) {
-        for (const page of pages) {
-          const node = findNodeById(page, nodeId)
-          if (node) {
-            targetPageId = page.id
-            targetNodeId = nodeId
-            break
+      // 레거시 파일: DB에 저장된 트리 없으면 Figma에서 한 번 받아와 저장
+      if (!displayRoot) {
+        const file = await fetchFigmaFile(fileKey, token, nodeId)
+        const pages = file.document.children || []
+        if (nodeId) {
+          for (const page of pages) {
+            const node = findNodeById(page, nodeId)
+            if (node) { displayRoot = node; break }
           }
+        } else {
+          displayRoot = pages[0] || null
+        }
+        if (displayRoot) {
+          try {
+            await saveFigmaFileData(projectId, fileKey, nodeId, displayRoot)
+          } catch (e) { console.error('레거시 트리 저장 실패:', e) }
+          // 이미지도 없으면 받아서 저장
+          try {
+            const images = await fetchNodeImages(fileKey, token, [displayRoot.id], 'svg', 1)
+            const imgUrl = images.images[displayRoot.id]
+            if (imgUrl) await saveFigmaFileImage(projectId, fileKey, nodeId, imgUrl)
+          } catch (e) { console.error('레거시 이미지 저장 실패:', e) }
         }
       }
+
+      if (!displayRoot) {
+        throw new Error('파일 트리를 로드할 수 없습니다.')
+      }
+
+      // 렌더링 코드 재사용을 위한 synthetic 파일 구조
+      const syntheticFile = {
+        document: { id: 'synthetic', name: 'synthetic', type: 'DOCUMENT', children: [displayRoot] }
+      } as unknown as FigmaFile
+
+      const targetPageId = displayRoot.id
+      const targetNodeId: string | null = nodeId ? displayRoot.id : null
 
       // 바운딩 박스 계산
-      // absoluteRenderBounds 우선: Figma 이미지 API는 effects 포함 render bounds 기준으로 이미지 생성
       const nodeBounds: Record<string, BoundingBox> = {}
-      if (targetNodeId && targetPageId) {
-        const page = pages.find(p => p.id === targetPageId)
-        if (page) {
-          const targetNode = findNodeById(page, targetNodeId)
-          const bounds = targetNode?.absoluteRenderBounds || targetNode?.absoluteBoundingBox
-          if (bounds) {
-            nodeBounds[targetNodeId] = bounds
-          }
-        }
+      if (targetNodeId) {
+        const bounds = displayRoot.absoluteRenderBounds || displayRoot.absoluteBoundingBox
+        if (bounds) nodeBounds[targetNodeId] = bounds
       } else {
-        for (const page of pages) {
-          const bounds = calculatePageBounds(page)
-          if (bounds) {
-            nodeBounds[page.id] = bounds
-          }
-        }
+        const bounds = calculatePageBounds(displayRoot)
+        if (bounds) nodeBounds[displayRoot.id] = bounds
       }
 
-      // DB 업데이트 (lastOpenedAt만)
+      // 이미지 URL은 서버 엔드포인트로 고정 (DB 사전 저장된 PNG)
+      const imageKey = targetNodeId || targetPageId
+      const imageUrl = imageKey ? `${getFigmaFileImageUrl(projectId, fileKey, nodeId)}&t=${Date.now()}` : null
+
+      // lastOpenedAt 업데이트
       try {
         await touchFigmaFile(projectId, fileKey, nodeId)
       } catch (e) {
         console.error('Failed to update file info:', e)
+      }
+
+      // 버전이 전달 안 된 경우 (auto-mapping 경유 등) DB에서 조회
+      let resolvedVersion = version
+      if (!resolvedVersion) {
+        try {
+          const projectFiles = await fetchProjectFiles(projectId)
+          const rec = projectFiles.find(f => f.fileKey === fileKey && (f.nodeId ?? null) === (nodeId ?? null))
+          resolvedVersion = rec?.version
+        } catch { /* ignore */ }
       }
 
       setState((s) => ({
@@ -577,13 +593,15 @@ export default function App() {
         fileKey,
         projectId,
         projectName: projectName || null,
-        file,
+        file: syntheticFile,
         currentPageId: targetPageId,
         targetNodeId,
         selectedNodeIds: [],
         primarySelectedId: null,
         nodeBounds,
+        nodeImages: imageUrl && imageKey ? { [imageKey]: imageUrl } : {},
         loading: false,
+        fileVersion: resolvedVersion || null,
       }))
       setView('editor')
 
@@ -736,10 +754,10 @@ export default function App() {
       document: newDocument,
     }
 
-    // 서버에 저장
+    // 서버에 저장 (displayRoot만 저장 — synthetic wrapper 저장 금지)
     try {
       if (s.projectId) {
-        await saveFigmaFileData(s.projectId, s.fileKey, s.targetNodeId, newDocument)
+        await saveFigmaFileData(s.projectId, s.fileKey, s.targetNodeId, newDisplayRoot)
       }
     } catch (e) {
       console.error('Failed to save file data:', e)
@@ -798,10 +816,10 @@ export default function App() {
       document: newDocument,
     }
 
-    // 서버에 저장
+    // 서버에 저장 (displayRoot만 저장)
     try {
       if (s.projectId) {
-        await saveFigmaFileData(s.projectId, s.fileKey, s.targetNodeId, newDocument)
+        await saveFigmaFileData(s.projectId, s.fileKey, s.targetNodeId, result.newRoot)
       }
     } catch (e) {
       console.error('Failed to save file data:', e)
@@ -888,10 +906,10 @@ export default function App() {
       document: newDocument,
     }
 
-    // 서버에 저장
+    // 서버에 저장 (displayRoot만 저장)
     try {
       if (s.projectId) {
-        await saveFigmaFileData(s.projectId, s.fileKey, s.targetNodeId, newDocument)
+        await saveFigmaFileData(s.projectId, s.fileKey, s.targetNodeId, result.newRoot)
       }
     } catch (e) {
       console.error('Failed to save file data:', e)
@@ -930,6 +948,24 @@ export default function App() {
     ? findNodeById(displayRootNode, state.hoveredNodeId)
     : null
 
+  // 스펙 문서 화면 (대시보드에서 진입)
+  if (view === 'spec' && specContext) {
+    return (
+      <Spec
+        projectId={specContext.projectId}
+        fileKey={specContext.fileKey}
+        nodeId={specContext.nodeId}
+        srcFileKey={specContext.srcFileKey}
+        srcNodeId={specContext.srcNodeId}
+        onClose={() => {
+          setSpecContext(null)
+          setNavigateToProjectId(specContext.projectId)
+          setView('dashboard')
+        }}
+      />
+    )
+  }
+
   // 대시보드 화면
   if (view === 'dashboard' || !state.file) {
     return (
@@ -959,13 +995,8 @@ export default function App() {
           }}
           onRefreshFile={handleRefreshFile}
           onOpenSpec={(projectId, fileKey, nodeId, srcFileKey, srcNodeId) => {
-            const params = new URLSearchParams({
-              projectId, fileKey,
-              ...(nodeId ? { nodeId } : {}),
-              ...(srcFileKey ? { srcFileKey } : {}),
-              ...(srcNodeId ? { srcNodeId } : {}),
-            })
-            window.location.href = `/spec?${params.toString()}`
+            setSpecContext({ projectId, fileKey, nodeId, srcFileKey: srcFileKey ?? null, srcNodeId: srcNodeId ?? null })
+            setView('spec')
           }}
           initialProjectId={navigateToProjectId}
         />
@@ -1031,6 +1062,9 @@ export default function App() {
           {state.targetNodeId && displayRootNode && (
             <span className="text-sm text-blue-500 mapped-component-box border px-2 py-0.5 rounded">
               {displayRootNode.name}
+              {state.fileVersion && (
+                <span className="ml-2 text-xs text-gray-500 dark:text-gray-400 font-mono">v{state.fileVersion}</span>
+              )}
             </span>
           )}
         </div>
@@ -1132,6 +1166,7 @@ export default function App() {
             selectedNodes={selectedNodes}
             hoveredNode={hoveredNode}
             loading={state.imageLoading}
+            imageScale={1}
           />
         </div>
 

@@ -54,7 +54,7 @@ function formatXml(xml: string): string {
 
 
 import type { RegistryItem } from '../utils/api'
-import { fetchMappings, updateFigmaFileCompleted, generateClusters, exportXml, saveFigmaFileData, fetchProjectSettings, fetchNodeSvgs } from '../utils/api'
+import { fetchMappings, updateFigmaFileCompleted, generateClusters, exportXml, saveFigmaFileData, fetchProjectSettings, fetchNodeSvgs, getFigmaFileXmlFilename, setFigmaFileXmlFilename, fetchProjectFiles } from '../utils/api'
 import { extractInlineStyle } from '../utils/figma-style'
 
 
@@ -153,6 +153,7 @@ export default function ConvertedCodeEditor({
   const [saving, setSaving] = useState(false)
   const [saveMessage, setSaveMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
   const [cssContents, setCssContents] = useState<string[]>([])
+  const [enableInlineStyle, setEnableInlineStyle] = useState(true)
   const [showFilenameModal, setShowFilenameModal] = useState(false)
   const [inputFilename, setInputFilename] = useState('')
   const iframeRef = useRef<HTMLIFrameElement>(null)
@@ -174,6 +175,7 @@ export default function ConvertedCodeEditor({
         } else {
           setCssContents([])
         }
+        setEnableInlineStyle(settings['enable-inline-style'] !== 'false')
       } catch {
         setCssContents([])
       }
@@ -187,10 +189,10 @@ export default function ConvertedCodeEditor({
     setCompleting(true)
     try {
       await updateFigmaFileCompleted(projectId, fileKey, nodeId, true)
-      // 현재 document 저장 후 클러스터 생성
+      // displayRoot 저장 (synthetic wrapper가 아닌 실제 루트 노드) 후 클러스터 생성
       try {
-        if (document && projectId) {
-          await saveFigmaFileData(projectId, fileKey, nodeId, document)
+        if (rootNode && projectId) {
+          await saveFigmaFileData(projectId, fileKey, nodeId, rootNode)
         }
         if (projectId) {
           await generateClusters(projectId)
@@ -206,48 +208,37 @@ export default function ConvertedCodeEditor({
     }
   }
 
-  // XML 저장 모달 열기
-  const handleSaveXml = () => {
-    if (!convertedCode || !rootNode) return
-    const defaultFilename = rootNode.name.replace(/[<>:"/\\|?*]/g, '_')
-    setInputFilename(defaultFilename)
-    setShowFilenameModal(true)
-  }
+  // 실제 export 실행 (파일명 확보된 상태에서 호출)
+  const doExportXml = async (rawFilename: string) => {
+    if (!convertedCode || !projectId || !fileKey) return
 
-  // XML 저장 실행
-  const handleConfirmSave = async () => {
-    if (!convertedCode || !inputFilename) return
-
-    setShowFilenameModal(false)
     setSaving(true)
     setSaveMessage(null)
-
     try {
-      // 프로젝트 설정에서 XML export 경로 가져오기
-      if (!projectId) {
-        setSaveMessage({ type: 'error', text: '프로젝트를 선택해주세요' })
-        setTimeout(() => setSaveMessage(null), 3000)
-        setSaving(false)
-        return
-      }
-
-      let exportPath: string | null = null
-      try {
-        const settings = await fetchProjectSettings(projectId)
-        exportPath = settings['xml-export-path'] || null
-      } catch {
-        exportPath = null
-      }
-
+      const settings = await fetchProjectSettings(projectId)
+      const exportPath = settings['xml-export-path'] || null
       if (!exportPath) {
         setSaveMessage({ type: 'error', text: '설정에서 XML Export 경로를 지정해주세요' })
         setTimeout(() => setSaveMessage(null), 3000)
-        setSaving(false)
         return
       }
 
-      const filename = inputFilename.replace(/[<>:"/\\|?*]/g, '_')
-      const result = await exportXml(convertedCode, filename, exportPath)
+      // 현재 파일 버전 조회 (DB 기준, 자동 증가 안 함)
+      let version = '01'
+      try {
+        const projectFiles = await fetchProjectFiles(projectId)
+        const rec = projectFiles.find(f => f.fileKey === fileKey && (f.nodeId ?? null) === (nodeId ?? null))
+        if (rec?.version) version = rec.version
+      } catch { /* ignore */ }
+
+      const filename = rawFilename.replace(/[<>:"/\\|?*]/g, '_')
+      const result = await exportXml(convertedCode, filename, exportPath, version)
+
+      // 최초 저장 시 figma_files.xmlFilename에 기록 → 다음 다운로드부터 모달 생략
+      try {
+        await setFigmaFileXmlFilename(projectId, fileKey, nodeId, filename)
+      } catch { /* ignore */ }
+
       setSaveMessage({ type: 'success', text: `저장 완료: ${result.path}` })
       setTimeout(() => setSaveMessage(null), 3000)
     } catch (e) {
@@ -257,6 +248,37 @@ export default function ConvertedCodeEditor({
     } finally {
       setSaving(false)
     }
+  }
+
+  // XML 저장 버튼 클릭: 이전에 저장한 파일명이 있으면 모달 없이 즉시 저장
+  const handleSaveXml = async () => {
+    if (!convertedCode || !rootNode) return
+    if (!projectId || !fileKey) {
+      setSaveMessage({ type: 'error', text: '프로젝트를 선택해주세요' })
+      setTimeout(() => setSaveMessage(null), 3000)
+      return
+    }
+
+    // 기존 파일명 조회
+    try {
+      const existing = await getFigmaFileXmlFilename(projectId, fileKey, nodeId)
+      if (existing) {
+        await doExportXml(existing)
+        return
+      }
+    } catch { /* ignore */ }
+
+    // 최초 저장: 모달 열어 파일명 입력 받기
+    const defaultFilename = rootNode.name.replace(/[<>:"/\\|?*]/g, '_')
+    setInputFilename(defaultFilename)
+    setShowFilenameModal(true)
+  }
+
+  // 모달 확인: 입력한 파일명으로 export
+  const handleConfirmSave = async () => {
+    if (!convertedCode || !inputFilename) return
+    setShowFilenameModal(false)
+    await doExportXml(inputFilename)
   }
 
   // iframe으로부터 메시지 수신
@@ -283,7 +305,7 @@ export default function ConvertedCodeEditor({
     if (fileKey && rootNode && registry.length > 0) {
       handleConvert()
     }
-  }, [convertTrigger, fileKey, rootNode, registry])
+  }, [convertTrigger, fileKey, rootNode, registry, enableInlineStyle])
 
   // 탭 전환 시 iframe ready 상태 리셋 (iframe이 새로 마운트되므로)
   useEffect(() => {
@@ -411,9 +433,10 @@ export default function ConvertedCodeEditor({
 
           // class 없거나 table/gridview이면 컴포넌트별 인라인 스타일 적용
           // customAttrs에 style 키가 있으면 (빈 값 포함) 인라인 스타일 생성 skip
+          // 설정에서 인라인 스타일이 꺼져 있으면 skip
           const hasCustomStyleKey = nodeMapping?.customAttrs && 'style' in nodeMapping.customAttrs
           // eslint-disable-next-line no-constant-condition
-          if (!hasCustomStyleKey && (!mergedProps.class || ['table', 'gridview'].includes(regItemNameLower))) {
+          if (enableInlineStyle && !hasCustomStyleKey && (!mergedProps.class || ['table', 'gridview'].includes(regItemNameLower))) {
             const inlineStyle = extractInlineStyle(n, regItemNameLower, parent)
             if (inlineStyle) {
               const existingStyle = mergedProps.style ? `${mergedProps.style};` : ''

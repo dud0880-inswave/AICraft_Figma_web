@@ -192,6 +192,8 @@ export interface FigmaFileRecord {
   lastOpenedAt: string;
   createdAt: string;
   completed: boolean;
+  version: string;
+  xmlFilename: string | null;
   projectId: string | null;
 }
 
@@ -324,7 +326,7 @@ export async function updateFigmaFileCompleted(projectId: string, fileKey: strin
   if (!res.ok) throw new Error('Failed to update figma file completion status');
 }
 
-export async function refreshFigmaFile(projectId: string, fileKey: string, nodeId: string | null, data: object): Promise<{ deletedMappingsCount: number; newNodeIds: string[] }> {
+export async function refreshFigmaFile(projectId: string, fileKey: string, nodeId: string | null, data: object): Promise<{ hasChanges: boolean; deletedMappingsCount: number; newNodeIds: string[] }> {
   const res = await fetch(`${getApiBase()}/figma-files/refresh`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -332,6 +334,66 @@ export async function refreshFigmaFile(projectId: string, fileKey: string, nodeI
   });
   if (!res.ok) throw new Error('Failed to refresh figma file');
   return res.json();
+}
+
+// 저장된 XML 파일명 조회 (최초 저장 여부 판단용)
+export async function getFigmaFileXmlFilename(projectId: string, fileKey: string, nodeId: string | null): Promise<string | null> {
+  const params = new URLSearchParams({ projectId, fileKey });
+  if (nodeId) params.append('nodeId', nodeId);
+  const res = await fetch(`${getApiBase()}/figma-files/xml-filename?${params}`);
+  if (!res.ok) return null;
+  const data = await res.json();
+  return data.xmlFilename || null;
+}
+
+// 최초 저장 후 파일명 저장
+export async function setFigmaFileXmlFilename(projectId: string, fileKey: string, nodeId: string | null, xmlFilename: string): Promise<void> {
+  const res = await fetch(`${getApiBase()}/figma-files/xml-filename`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ projectId, fileKey, nodeId, xmlFilename }),
+  });
+  if (!res.ok) throw new Error('Failed to save xml filename');
+}
+
+// 버전 증가 (refresh 시 사용자 컨펌 후 호출)
+export async function bumpFigmaFileVersion(projectId: string, fileKey: string, nodeId: string | null): Promise<{ version: string }> {
+  const res = await fetch(`${getApiBase()}/figma-files/bump-version`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ projectId, fileKey, nodeId }),
+  });
+  if (!res.ok) throw new Error('Failed to bump figma file version');
+  return res.json();
+}
+
+// 서버에 이미지 다운로드 + 로컬 저장 요청 (Figma presigned URL 전달)
+// suffix: 파일명 뒤에 붙는 접미사 (예: 'spec' → _spec.svg)
+export async function saveFigmaFileImage(projectId: string, fileKey: string, nodeId: string | null, imageUrl: string, suffix?: string): Promise<void> {
+  const res = await fetch(`${getApiBase()}/figma-files/image`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ projectId, fileKey, nodeId, imageUrl, suffix }),
+  });
+  if (!res.ok) throw new Error('Failed to save figma file image');
+}
+
+// 저장된 이미지 삭제
+export async function deleteFigmaFileImage(projectId: string, fileKey: string, nodeId: string | null, suffix?: string): Promise<void> {
+  const params = new URLSearchParams({ projectId, fileKey });
+  if (nodeId) params.append('nodeId', nodeId);
+  if (suffix) params.append('suffix', suffix);
+  const res = await fetch(`${getApiBase()}/figma-files/image?${params}`, { method: 'DELETE' });
+  if (!res.ok) throw new Error('Failed to delete figma file image');
+}
+
+// 저장된 이미지 URL (서버 endpoint)
+export function getFigmaFileImageUrl(projectId: string, fileKey: string, nodeId: string | null, suffix?: string): string {
+  const params = new URLSearchParams({ projectId, fileKey });
+  if (nodeId) params.append('nodeId', nodeId);
+  if (suffix) params.append('suffix', suffix);
+  // cache buster 필요하면 호출 쪽에서 &t=... 붙이기
+  return `${getApiBase()}/figma-files/image?${params}`;
 }
 
 // ---- Figma File Data API (수정된 파일 구조 저장) ----
@@ -565,16 +627,36 @@ export async function resetDefaultMappingRules(projectId: string): Promise<{ cou
 export async function exportXml(
   xml: string,
   filename: string,
-  exportPath: string
+  exportPath: string,
+  version: string
 ): Promise<{ success: boolean; path: string }> {
   const res = await fetch(`${getApiBase()}/export-xml`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ xml, filename, exportPath }),
+    body: JSON.stringify({ xml, filename, exportPath, version }),
   });
   if (!res.ok) {
     const err = await res.json();
     throw new Error(err.error || 'Failed to export XML');
+  }
+  return res.json();
+}
+
+// Spec 마크다운을 XML과 동일 경로의 현재 버전 폴더에 _spec.md로 저장
+export async function exportSpec(
+  markdown: string,
+  folderName: string,
+  version: string,
+  exportPath: string
+): Promise<{ success: boolean; path: string }> {
+  const res = await fetch(`${getApiBase()}/export-spec`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ markdown, folderName, version, exportPath }),
+  });
+  if (!res.ok) {
+    const err = await res.json();
+    throw new Error(err.error || 'Failed to export spec');
   }
   return res.json();
 }
@@ -606,11 +688,17 @@ export async function autoMapSpec(textNodes: Array<{ nodeId: string; name: strin
 }
 
 // 스펙문서 생성 (Claude API 경유)
-export async function generateSpec(specJson: object | null, convertedXml?: string, screenName?: string, imageUrl?: string): Promise<string> {
+export async function generateSpec(
+  specJson: object | null,
+  convertedXml?: string,
+  screenName?: string,
+  imageUrl?: string,
+  priorSpecs?: Array<{ version: string; content: string }>
+): Promise<string> {
   const res = await fetch(`${getApiBase()}/generate-spec`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ specJson, convertedXml, screenName, imageUrl }),
+    body: JSON.stringify({ specJson, convertedXml, screenName, imageUrl, priorSpecs }),
   });
   if (!res.ok) {
     const err = await res.json();
@@ -618,4 +706,17 @@ export async function generateSpec(specJson: object | null, convertedXml?: strin
   }
   const data = await res.json();
   return data.markdown || '';
+}
+
+// 이전 버전 스펙 .md 파일들 조회
+export async function fetchPriorSpecs(
+  exportPath: string,
+  folderName: string,
+  upToVersion: number
+): Promise<Array<{ version: string; content: string }>> {
+  const params = new URLSearchParams({ exportPath, folderName, upToVersion: String(upToVersion) });
+  const res = await fetch(`${getApiBase()}/export-spec/prior?${params}`);
+  if (!res.ok) return [];
+  const data = await res.json();
+  return data.priorSpecs || [];
 }

@@ -4,7 +4,7 @@
 import { config as dotenvConfig } from 'dotenv';
 import { createServer, IncomingMessage, ServerResponse } from 'http';
 import { randomUUID } from 'crypto';
-import { writeFileSync, existsSync, mkdirSync } from 'fs';
+import { writeFileSync, existsSync, mkdirSync, readFileSync, unlinkSync, readdirSync } from 'fs';
 import { join, resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { initDb, closeDb, getDb } from './db.js';
@@ -73,6 +73,23 @@ function extractClassesFromCluster(cluster: any, mode: 'common' | 'all'): Record
   }
 
   return result;
+}
+
+// 이미지 저장 경로
+const IMAGES_DIR = resolve(__dirname, '..', 'data', 'images');
+if (!existsSync(IMAGES_DIR)) mkdirSync(IMAGES_DIR, { recursive: true });
+
+function sanitizeFilePart(s: string): string {
+  return s.replace(/[^a-zA-Z0-9_-]/g, '_');
+}
+function getImagePath(projectId: string, fileKey: string, nodeId: string | null, suffix: string | null = null): string {
+  const safeProject = sanitizeFilePart(projectId);
+  const safeFile = sanitizeFilePart(fileKey);
+  const safeNode = nodeId ? sanitizeFilePart(nodeId) : 'root';
+  const dir = join(IMAGES_DIR, safeProject);
+  if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+  const suffixPart = suffix ? `_${sanitizeFilePart(suffix)}` : '';
+  return join(dir, `${safeFile}__${safeNode}${suffixPart}.svg`);
 }
 
 // DB 초기화
@@ -398,6 +415,13 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
       figmaFilesStore.delete(fileKey, nodeId || null);
       mappingStore.deleteByFileKey(projectId, fileKey, nodeId || null);
       figmaFileDataStore.delete(projectId, fileKey, nodeId || null);
+      // 저장된 이미지 삭제 (기본 + _spec suffix 버전)
+      try {
+        for (const suffix of [null, 'spec']) {
+          const imgPath = getImagePath(projectId, fileKey, nodeId || null, suffix);
+          if (existsSync(imgPath)) unlinkSync(imgPath);
+        }
+      } catch { /* ignore */ }
 
       // 클러스터 재생성
       // 프로젝트 설정에서 노드 이름 포함 여부 읽기
@@ -467,29 +491,33 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
         if (node?.children) node.children.forEach((c: any) => collectNodeIds(c, acc));
       };
 
-      // 1. 이전 데이터에서 노드 ID 수집 (변경 감지용)
+      // 1. 이전 데이터 로드 및 변경 여부 판단
       const prevData = figmaFileDataStore.get(projectId, fileKey, nodeId || null);
-      // prevData가 없으면 최초 refresh → 비교 기준 없음, 신규 노드 없음으로 처리
-      const isFirstRefresh = !prevData;
+      const newDataJson = JSON.stringify(data);
+      const hasChanges = !prevData || prevData.data !== newDataJson;
+
+      // 변경 없으면 아무 것도 안 함
+      if (!hasChanges) {
+        console.log(`[Refresh] ${fileKey} - 변경 없음`);
+        return json(res, { success: true, hasChanges: false, deletedMappingsCount: 0, newNodeIds: [] });
+      }
+
+      // 2. 이전/신규 노드 ID 수집
       const prevNodeIds = new Set<string>();
       if (prevData) collectNodeIds(JSON.parse(prevData.data), prevNodeIds);
-
-      // 2. figma_file_data 업데이트
-      figmaFileDataStore.save(projectId, fileKey, nodeId || null, data);
-
-      // 3. 새 데이터에서 모든 노드 ID 수집
       const allNodeIds = new Set<string>();
       collectNodeIds(data, allNodeIds);
 
-      // 4. 추가된 노드 ID 계산 (이전에 없던 노드, 최초 refresh는 빈 배열)
+      // 3. figma_file_data 갱신
+      figmaFileDataStore.save(projectId, fileKey, nodeId || null, data);
+
+      // 4. 신규 노드 ID 계산 (최초 등록이면 prevNodeIds가 비어있으므로 모든 노드가 신규)
       const newNodeIds: string[] = [];
-      if (!isFirstRefresh) {
-        for (const id of allNodeIds) {
-          if (!prevNodeIds.has(id)) newNodeIds.push(id);
-        }
+      for (const id of allNodeIds) {
+        if (!prevNodeIds.has(id)) newNodeIds.push(id);
       }
 
-      // 5. 존재하지 않는 노드의 매핑 삭제
+      // 5. 사라진 노드의 매핑 삭제
       const mappings = mappingStore.listByFile(projectId, fileKey, nodeId || null);
       let deletedCount = 0;
       for (const mapping of mappings) {
@@ -500,7 +528,93 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
       }
 
       console.log(`[Refresh] ${fileKey} - ${allNodeIds.size}개 노드, ${deletedCount}개 매핑 삭제, ${newNodeIds.length}개 신규 노드`);
-      return json(res, { success: true, deletedMappingsCount: deletedCount, newNodeIds });
+      return json(res, { success: true, hasChanges: true, deletedMappingsCount: deletedCount, newNodeIds });
+    }
+
+    // XML 다운로드 파일명 조회 (최초 저장 여부 판단용)
+    if (path === '/api/figma-files/xml-filename' && req.method === 'GET') {
+      const projectId = url.searchParams.get('projectId');
+      const fileKey = url.searchParams.get('fileKey');
+      const nodeId = url.searchParams.get('nodeId');
+      if (!projectId || !fileKey) return badRequest(res, 'projectId, fileKey required');
+      const record = figmaFilesStore.get(fileKey, nodeId || null, projectId);
+      return json(res, { xmlFilename: record?.xmlFilename || null });
+    }
+
+    // XML 다운로드 파일명 저장 (최초 저장 후)
+    if (path === '/api/figma-files/xml-filename' && req.method === 'POST') {
+      const body = await parseBody(req);
+      const { projectId, fileKey, nodeId, xmlFilename } = body;
+      if (!projectId || !fileKey || !xmlFilename) return badRequest(res, 'projectId, fileKey, xmlFilename required');
+      figmaFilesStore.updateXmlFilename(projectId, fileKey, nodeId || null, xmlFilename);
+      return json(res, { success: true });
+    }
+
+    // 버전 증가 (refresh 시 사용자가 '버전 올리기' 컨펌한 경우 호출)
+    if (path === '/api/figma-files/bump-version' && req.method === 'POST') {
+      const body = await parseBody(req);
+      const { projectId, fileKey, nodeId } = body;
+      if (!projectId || !fileKey) return badRequest(res, 'projectId, fileKey required');
+      const newVersion = figmaFilesStore.incrementVersion(projectId, fileKey, nodeId || null);
+      console.log(`[BumpVersion] ${fileKey} → v${newVersion}`);
+      return json(res, { success: true, version: newVersion });
+    }
+
+    // 이미지 저장: Figma presigned URL을 서버가 다운로드해서 로컬에 저장
+    if (path === '/api/figma-files/image' && req.method === 'POST') {
+      const body = await parseBody(req);
+      const { projectId, fileKey, nodeId, imageUrl, suffix } = body as {
+        projectId?: string; fileKey?: string; nodeId?: string | null; imageUrl?: string; suffix?: string;
+      };
+      if (!projectId || !fileKey) return badRequest(res, 'projectId, fileKey required');
+      if (!imageUrl) return badRequest(res, 'imageUrl required');
+      try {
+        const imgRes = await fetch(imageUrl);
+        if (!imgRes.ok) return json(res, { error: `Failed to download image: ${imgRes.status}` }, 500);
+        const buf = Buffer.from(await imgRes.arrayBuffer());
+        const imgPath = getImagePath(projectId, fileKey, nodeId || null, suffix || null);
+        writeFileSync(imgPath, buf);
+        console.log(`[Image] saved ${imgPath} (${buf.length} bytes)`);
+        return json(res, { success: true });
+      } catch (err) {
+        console.error('[Image] save failed:', err);
+        return json(res, { error: String(err) }, 500);
+      }
+    }
+
+    // 이미지 조회
+    if (path === '/api/figma-files/image' && req.method === 'GET') {
+      const projectId = url.searchParams.get('projectId');
+      const fileKey = url.searchParams.get('fileKey');
+      const nodeId = url.searchParams.get('nodeId');
+      const suffix = url.searchParams.get('suffix');
+      if (!projectId || !fileKey) return badRequest(res, 'projectId, fileKey required');
+      const imgPath = getImagePath(projectId, fileKey, nodeId || null, suffix || null);
+      if (!existsSync(imgPath)) {
+        res.writeHead(404);
+        res.end('Not found');
+        return;
+      }
+      const buf = readFileSync(imgPath);
+      res.writeHead(200, {
+        'Content-Type': 'image/svg+xml',
+        'Content-Length': String(buf.length),
+        'Cache-Control': 'no-cache',
+      });
+      res.end(buf);
+      return;
+    }
+
+    // 이미지 삭제
+    if (path === '/api/figma-files/image' && req.method === 'DELETE') {
+      const projectId = url.searchParams.get('projectId');
+      const fileKey = url.searchParams.get('fileKey');
+      const nodeId = url.searchParams.get('nodeId');
+      const suffix = url.searchParams.get('suffix');
+      if (!projectId || !fileKey) return badRequest(res, 'projectId, fileKey required');
+      const imgPath = getImagePath(projectId, fileKey, nodeId || null, suffix || null);
+      if (existsSync(imgPath)) unlinkSync(imgPath);
+      return json(res, { success: true });
     }
 
     // ---- Figma File Data API (프로젝트별) ----
@@ -1172,10 +1286,11 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
     // ---- XML Export API ----
     if (path === '/api/export-xml' && req.method === 'POST') {
       const body = await parseBody(req);
-      const { xml, filename, exportPath } = body as {
+      const { xml, filename, exportPath, version } = body as {
         xml: string;
         filename: string;
         exportPath?: string;
+        version?: string;
       };
 
       if (!xml || !filename) {
@@ -1185,15 +1300,27 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
       if (!exportPath) {
         return badRequest(res, 'exportPath required. Set it in Settings.');
       }
+      if (!version) {
+        return badRequest(res, 'version required');
+      }
 
       try {
-        if (!existsSync(exportPath)) {
-          mkdirSync(exportPath, { recursive: true });
+        const baseName = filename.replace(/\.xml$/i, '');
+
+        // 1. {exportPath}/{filename} 폴더 생성
+        const fileDir = join(exportPath, baseName);
+        if (!existsSync(fileDir)) {
+          mkdirSync(fileDir, { recursive: true });
         }
 
-        const cleanFilename = filename.endsWith('.xml') ? filename : `${filename}.xml`;
-        const fullPath = join(exportPath, cleanFilename);
+        // 2. 전달받은 현재 버전 폴더에 저장 (자동 증가 X)
+        const versionDir = join(fileDir, `v${String(version).padStart(2, '0')}`);
+        if (!existsSync(versionDir)) {
+          mkdirSync(versionDir, { recursive: true });
+        }
 
+        // 4. 버전 폴더 하위에 xml 저장
+        const fullPath = join(versionDir, `${baseName}.xml`);
         writeFileSync(fullPath, xml, 'utf-8');
         console.log(`[Server] XML saved to: ${fullPath}`);
 
@@ -1201,6 +1328,75 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
       } catch (err) {
         console.error('[Server] Failed to save XML:', err);
         return json(res, { error: `Failed to save: ${String(err)}` }, 500);
+      }
+    }
+
+    // Spec 마크다운 저장: XML과 동일 경로 구조로 저장 (현재 버전 폴더에 _spec.md)
+    if (path === '/api/export-spec' && req.method === 'POST') {
+      const body = await parseBody(req);
+      const { markdown, exportPath, folderName, version } = body as {
+        markdown: string;
+        exportPath?: string;
+        folderName: string;
+        version: string;
+      };
+
+      if (!markdown || !folderName || !version) {
+        return badRequest(res, 'markdown, folderName, version required');
+      }
+      if (!exportPath) {
+        return badRequest(res, 'exportPath required. Set it in Settings.');
+      }
+
+      try {
+        const baseName = folderName.replace(/\.xml$/i, '');
+        const fileDir = join(exportPath, baseName);
+        if (!existsSync(fileDir)) mkdirSync(fileDir, { recursive: true });
+
+        const versionDir = join(fileDir, `v${String(version).padStart(2, '0')}`);
+        if (!existsSync(versionDir)) mkdirSync(versionDir, { recursive: true });
+
+        const fullPath = join(versionDir, `${baseName}_spec.md`);
+        writeFileSync(fullPath, markdown, 'utf-8');
+        console.log(`[Server] Spec saved to: ${fullPath}`);
+
+        return json(res, { success: true, path: fullPath });
+      } catch (err) {
+        console.error('[Server] Failed to save spec:', err);
+        return json(res, { error: `Failed to save: ${String(err)}` }, 500);
+      }
+    }
+
+    // 이전 버전 스펙들 조회: v01 ~ v(upToVersion-1) 폴더에서 {folderName}_spec.md 존재하는 것들을 순서대로 반환
+    if (path === '/api/export-spec/prior' && req.method === 'GET') {
+      const exportPath = url.searchParams.get('exportPath');
+      const folderName = url.searchParams.get('folderName');
+      const upToVersion = parseInt(url.searchParams.get('upToVersion') || '0', 10);
+
+      if (!exportPath || !folderName || !upToVersion) {
+        return badRequest(res, 'exportPath, folderName, upToVersion required');
+      }
+
+      try {
+        const baseName = folderName.replace(/\.xml$/i, '');
+        const fileDir = join(exportPath, baseName);
+        const result: Array<{ version: string; content: string }> = [];
+
+        for (let v = 1; v < upToVersion; v++) {
+          const versionStr = String(v).padStart(2, '0');
+          const mdPath = join(fileDir, `v${versionStr}`, `${baseName}_spec.md`);
+          if (existsSync(mdPath)) {
+            try {
+              const content = readFileSync(mdPath, 'utf-8');
+              result.push({ version: versionStr, content });
+            } catch { /* ignore unreadable */ }
+          }
+        }
+
+        return json(res, { priorSpecs: result });
+      } catch (err) {
+        console.error('[Server] Failed to list prior specs:', err);
+        return json(res, { error: String(err) }, 500);
       }
     }
 
@@ -1381,7 +1577,13 @@ ${treeSection}
     // ── 스펙 문서 생성 ──
     if (path === '/api/generate-spec' && req.method === 'POST') {
       const body = await parseBody(req);
-      const { specJson, convertedXml, screenName, imageUrl } = body;
+      const { specJson, convertedXml, screenName, imageUrl, priorSpecs } = body as {
+        specJson?: object | null;
+        convertedXml?: string;
+        screenName?: string;
+        imageUrl?: string;
+        priorSpecs?: Array<{ version: string; content: string }>;
+      };
       if (!specJson && !convertedXml) return badRequest(res, 'specJson or convertedXml required');
 
       const apiKey = process.env.ANTHROPIC_API_KEY;
@@ -1417,7 +1619,51 @@ ${convertedXml}
 - 추정이 필요한 부분은 합리적으로 추정하되 [추정] 표시
 - Markdown만 출력 (다른 설명 없이)`;
 
-      const prompt = `당신은 소프트웨어 화면 설계서(SDD) 작성 전문가입니다.
+      const hasPrior = Array.isArray(priorSpecs) && priorSpecs.length > 0;
+
+      const priorSection = hasPrior
+        ? `## 이전 버전 누적 스펙
+
+아래는 이전 버전들에서 작성된 스펙 문서들입니다. 이들은 버전 순서대로 누적되어 현재까지의 스펙 상태를 구성합니다.
+**현재 입력 데이터와 비교하여 변경/추가/삭제된 내용만 이번 버전의 스펙으로 작성하세요.**
+
+${priorSpecs!.map(p => `### v${p.version}\n\`\`\`markdown\n${p.content}\n\`\`\``).join('\n\n')}
+`
+        : '';
+
+      const prompt = hasPrior
+        ? `당신은 소프트웨어 화면 설계서(SDD) 작성 전문가입니다.
+
+${priorSection}
+
+## 이번 버전 입력 데이터
+
+${specMetaSection}${xmlSection}
+
+## 출력 형식
+
+이번 버전에서 **변경된/추가된/삭제된** 내용만 간결한 Markdown으로 작성하세요.
+
+# ${screenName || '화면'} 변경 스펙
+
+## 변경 요약
+(한 두 문장으로 이번 버전 핵심 변경점)
+
+## 추가된 기능/요소
+(없으면 "없음")
+
+## 변경된 기능/요소
+(없으면 "없음")
+- 기존: ...
+- 변경: ...
+
+## 제거된 기능/요소
+(없으면 "없음")
+
+${analysisGuide}
+- 이전 스펙에 이미 있는 내용은 반복하지 마세요.
+- 변경 없으면 해당 섹션에 "없음"이라고 명시.`
+        : `당신은 소프트웨어 화면 설계서(SDD) 작성 전문가입니다.
 아래 데이터를 분석하여 기능 요구사항 문서를 Markdown 형식으로 작성하세요.
 
 ## 입력 데이터

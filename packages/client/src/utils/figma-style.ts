@@ -128,28 +128,32 @@ function pushBorderRadius(styles: string[], node: FigmaNode) {
 }
 
 // border (solid/dashed, individualStrokeWeights 지원)
-function pushBorder(styles: string[], node: FigmaNode) {
+function pushBorder(styles: string[], node: FigmaNode, fallbackTransparent = false) {
   const solidStroke = node.strokes?.find(s => s.type === 'SOLID' && s.visible !== false)
-  if (!solidStroke?.color) return
+  if (!solidStroke?.color) {
+    if (fallbackTransparent) styles.push('border:0 solid transparent')
+    return
+  }
   const { r, g, b } = solidStroke.color
   const color = `rgb(${Math.round(r * 255)},${Math.round(g * 255)},${Math.round(b * 255)})`
   const borderStyle = node.strokeDashes?.length ? 'dashed' : 'solid'
 
   if (node.individualStrokeWeights) {
     const w = node.individualStrokeWeights
-    if (w.top && !w.right && !w.bottom && !w.left) {
-      styles.push(`border-top:${w.top}px ${borderStyle} ${color}`)
-    } else if (!w.top && !w.right && w.bottom && !w.left) {
-      styles.push(`border-bottom:${w.bottom}px ${borderStyle} ${color}`)
+    const t = w.top || 0, r2 = w.right || 0, b2 = w.bottom || 0, l = w.left || 0
+    // 4변 동일하면 단축형
+    if (t === r2 && r2 === b2 && b2 === l) {
+      if (t > 0) styles.push(`border:${t}px ${borderStyle} ${color}`)
     } else {
-      // 여러 방향
-      if (w.top) styles.push(`border-top:${w.top}px ${borderStyle} ${color}`)
-      if (w.right) styles.push(`border-right:${w.right}px ${borderStyle} ${color}`)
-      if (w.bottom) styles.push(`border-bottom:${w.bottom}px ${borderStyle} ${color}`)
-      if (w.left) styles.push(`border-left:${w.left}px ${borderStyle} ${color}`)
+      // TRBL 4-value shorthand (top right bottom left)
+      styles.push(`border-width:${t}px ${r2}px ${b2}px ${l}px`)
+      styles.push(`border-style:${borderStyle}`)
+      styles.push(`border-color:${color}`)
     }
   } else if (node.strokeWeight) {
     styles.push(`border:${node.strokeWeight}px ${borderStyle} ${color}`)
+  } else if (fallbackTransparent) {
+    styles.push('border:0 solid transparent')
   }
 }
 
@@ -260,9 +264,9 @@ function extractButtonStyle(node: FigmaNode, parentNode?: FigmaNode): string {
     if (innerH > 0) styles.push(`line-height:${innerH}px`)
   }
 
-  pushBackgroundColor(styles, node)
+  pushBackgroundColor(styles, node, true)
   pushBorderRadius(styles, node)
-  pushBorder(styles, node)
+  pushBorder(styles, node, true)
 
   // typography
   const textNode = findFirstText(node)
@@ -473,7 +477,7 @@ function extractSelectStyle(node: FigmaNode, parentNode?: FigmaNode): string {
 
   pushPositionAndSizing(styles, node, parentNode, isParentAL)
   pushBorderRadius(styles, node)
-  pushBorder(styles, node)
+  pushBorder(styles, node, true)
 
   const pt = node.paddingTop || 0
   const pr = node.paddingRight || 0

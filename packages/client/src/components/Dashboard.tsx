@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react'
 import type { FigmaFileRecord, Project } from '../utils/api'
-import { fetchProjects, fetchProjectFiles, deleteProject, createProject, updateProject, deleteFigmaFile, generateClusters, fetchProjectSettings, saveProjectSettings } from '../utils/api'
-import { parseFigmaUrl } from '../utils/figma-api'
+import { fetchProjects, fetchProjectFiles, deleteProject, createProject, updateProject, deleteFigmaFile, generateClusters, fetchProjectSettings, saveProjectSettings, saveFigmaFileData, saveFigmaFileImage } from '../utils/api'
+import { parseFigmaUrl, fetchFigmaFile, fetchNodeImages } from '../utils/figma-api'
+import { findNodeById } from '../utils/tree-utils'
 
 interface DashboardProps {
-  onSelectFile: (fileKey: string, nodeId: string | null, projectId: string, projectName?: string) => void
+  onSelectFile: (fileKey: string, nodeId: string | null, projectId: string, projectName?: string, version?: string) => void
   onAddNewFile: (projectId: string) => void
   onOpenSettings: (projectId: string, projectName: string) => void
   onRefreshFile: (fileKey: string, nodeId: string | null, projectId: string) => Promise<void>
@@ -327,7 +328,7 @@ export default function Dashboard({ onSelectFile, onAddNewFile, onOpenSettings, 
                 {files.map((file) => (
                   <div
                     key={file.id}
-                    onClick={() => selectedProject && onSelectFile(file.fileKey, file.nodeId, selectedProject.id, selectedProject.name)}
+                    onClick={() => selectedProject && onSelectFile(file.fileKey, file.nodeId, selectedProject.id, selectedProject.name, file.version)}
                     className="group theme-bg-secondary border theme-border rounded-lg overflow-hidden cursor-pointer hover:border-blue-500 transition-colors"
                   >
                     {/* 썸네일 영역 */}
@@ -508,7 +509,44 @@ export default function Dashboard({ onSelectFile, onAddNewFile, onOpenSettings, 
                 if (!specModalFile) return
                 setSpecLoading(true)
                 try {
-                  // 파일별 스펙 URL 저장
+                  // 토큰
+                  const settings = await fetchProjectSettings(selectedProject.id)
+                  const token = settings['figma-token']
+                  if (!token) {
+                    alert('Figma Access Token이 설정되어 있지 않습니다.')
+                    return
+                  }
+
+                  // 1. 스펙 Figma에서 노드 트리 받아오기
+                  const file = await fetchFigmaFile(parsed.fileKey, token, parsed.nodeId)
+                  const pages = file.document.children || []
+                  let displayRoot = null
+                  if (parsed.nodeId) {
+                    for (const page of pages) {
+                      const found = findNodeById(page, parsed.nodeId)
+                      if (found) { displayRoot = found; break }
+                    }
+                  } else {
+                    displayRoot = pages[0] || null
+                  }
+                  if (!displayRoot) {
+                    alert('해당 노드를 찾을 수 없습니다.')
+                    return
+                  }
+
+                  // 2. figma_file_data 에 스펙 트리 저장
+                  await saveFigmaFileData(selectedProject.id, parsed.fileKey, parsed.nodeId, displayRoot)
+
+                  // 3. 이미지 SVG 저장 — 이름 규칙: {srcFileKey}__{srcNodeId}_spec.svg
+                  try {
+                    const images = await fetchNodeImages(parsed.fileKey, token, [displayRoot.id], 'svg', 1)
+                    const imgUrl = images.images[displayRoot.id]
+                    if (imgUrl) {
+                      await saveFigmaFileImage(selectedProject.id, specModalFile.fileKey, specModalFile.nodeId, imgUrl, 'spec')
+                    }
+                  } catch (e) { console.warn('스펙 이미지 저장 실패:', e) }
+
+                  // 4. spec-url-map 에 등록
                   const specKey = `${specModalFile.fileKey}-${specModalFile.nodeId || ''}`
                   const newMap = {
                     ...specUrlMap,
@@ -519,8 +557,8 @@ export default function Dashboard({ onSelectFile, onAddNewFile, onOpenSettings, 
 
                   setSpecModalOpen(false)
 
-                  // 스펙 뷰 화면으로 전환
-                  onOpenSpec(selectedProject.id, parsed.fileKey, parsed.nodeId, specModalFile?.fileKey, specModalFile?.nodeId)
+                  // 5. 스펙 뷰로 전환
+                  onOpenSpec(selectedProject.id, parsed.fileKey, parsed.nodeId, specModalFile.fileKey, specModalFile.nodeId)
                 } catch (err) {
                   console.error('스펙문서 등록 실패:', err)
                   alert('스펙문서 등록에 실패했습니다.')

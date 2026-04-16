@@ -107,6 +107,8 @@ function createTables(db: Database.Database): void {
       lastOpenedAt  TEXT NOT NULL,
       createdAt     TEXT NOT NULL,
       completed     INTEGER DEFAULT 0,
+      version       TEXT NOT NULL DEFAULT '01',
+      xmlFilename   TEXT,
       project_id    TEXT NOT NULL,
       UNIQUE(project_id, fileKey, nodeId)
     )

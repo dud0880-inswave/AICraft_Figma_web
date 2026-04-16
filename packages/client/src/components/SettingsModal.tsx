@@ -122,6 +122,7 @@ function BasicTab({ onSaveToken, onClose, projectId }: { onSaveToken: (t: string
   const [inputToken, setInputToken] = useState('')
   const [xmlExportPath, setXmlExportPath] = useState('')
   const [clusterIncludeNodeName, setClusterIncludeNodeName] = useState(true)
+  const [enableInlineStyle, setEnableInlineStyle] = useState(true)
   const [loading, setLoading] = useState(true)
   const [regenerating, setRegenerating] = useState(false)
   const [toastMessage, setToastMessage] = useState<string | null>(null)
@@ -143,6 +144,7 @@ function BasicTab({ onSaveToken, onClose, projectId }: { onSaveToken: (t: string
         const includeNodeName = settings['cluster-include-node-name'] !== 'false'
         setClusterIncludeNodeName(includeNodeName)
         previousClusterSetting.current = includeNodeName
+        setEnableInlineStyle(settings['enable-inline-style'] !== 'false')
       } catch (err) {
         console.error('Failed to load settings:', err)
       } finally {
@@ -175,6 +177,7 @@ function BasicTab({ onSaveToken, onClose, projectId }: { onSaveToken: (t: string
         'figma-token': inputToken,
         'xml-export-path': xmlExportPath,
         'cluster-include-node-name': clusterIncludeNodeName ? 'true' : 'false',
+        'enable-inline-style': enableInlineStyle ? 'true' : 'false',
       })
       onSaveToken(inputToken)
 
@@ -314,6 +317,27 @@ function BasicTab({ onSaveToken, onClose, projectId }: { onSaveToken: (t: string
             </button>
           </div>
         )}
+      </div>
+
+      {/* 인라인 스타일 설정 */}
+      <div>
+        <label className="block text-sm font-medium theme-text-primary mb-2">
+          인라인 스타일
+        </label>
+        <label className="flex items-start gap-3 p-3 rounded-lg theme-bg-tertiary border theme-border cursor-pointer hover:border-blue-500 transition-colors">
+          <input
+            type="checkbox"
+            checked={enableInlineStyle}
+            onChange={(e) => setEnableInlineStyle(e.target.checked)}
+            className="mt-0.5 w-4 h-4 text-blue-600 rounded focus:ring-blue-500 focus:ring-2"
+          />
+          <div className="flex-1">
+            <div className="text-sm theme-text-primary font-medium">XML 변환 시 인라인 스타일 포함</div>
+            <div className="text-xs theme-text-secondary mt-1">
+              체크 해제 시 변환된 XML에 Figma에서 추출한 style 속성을 넣지 않습니다.
+            </div>
+          </div>
+        </label>
       </div>
 
       {/* 클러스터 설정 */}

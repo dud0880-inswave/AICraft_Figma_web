@@ -48,6 +48,7 @@ export default function MappingEditor({ node, nodes, tree, fileKey, rootNodeId, 
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
   const [cssList, setCssList] = useState<CssItem[]>([])
+  const [enableInlineStyle, setEnableInlineStyle] = useState(true)
   const [componentClassMapping, setComponentClassMapping] = useState<ComponentClassMapping>({})
   const [selectedCssId, setSelectedCssId] = useState<string | null>(null)
   const [topHeight, setTopHeight] = useState<number | null>(null) // null = 콘텐츠 높이 auto
@@ -126,6 +127,7 @@ export default function MappingEditor({ node, nodes, tree, fileKey, rootNodeId, 
 
         setCssList(list)
         setComponentClassMapping(mapping)
+        setEnableInlineStyle(settings['enable-inline-style'] !== 'false')
         if (list.length > 0 && !selectedCssId) {
           setSelectedCssId(list[0].id)
         }
@@ -946,8 +948,9 @@ export default function MappingEditor({ node, nodes, tree, fileKey, rootNodeId, 
 
               // class 없으면 컴포넌트별 인라인 스타일 적용
               // customAttrs에 style 키가 있으면 (빈 값 포함) 인라인 스타일 생성 skip
+              // 설정에서 인라인 스타일이 꺼져 있으면 skip
               const hasCustomStyleKey = mapping?.customAttrs && 'style' in mapping.customAttrs
-              if (!hasCustomStyleKey && !mergedProps.class && displayNode) {
+              if (enableInlineStyle && !hasCustomStyleKey && !mergedProps.class && displayNode) {
                 const parentOfDisplay = tree ? findParentNode(tree, displayNode.id) : undefined
                 const inlineStyle = extractInlineStyle(displayNode, selectedItemNameLower, parentOfDisplay ?? undefined)
                 if (inlineStyle) {

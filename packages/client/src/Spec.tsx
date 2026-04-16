@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import type { FigmaNode, BoundingBox } from './types/figma'
-import { fetchProjectSettings, saveProjectSettings, fetchMappings, fetchRegistry, fetchNodeSvgs, generateSpec, autoMapSpec, type NodeMapping, type RegistryItem } from './utils/api'
+import { fetchProjectSettings, saveProjectSettings, fetchMappings, fetchRegistry, fetchNodeSvgs, generateSpec, autoMapSpec, exportSpec, getFigmaFileXmlFilename, setFigmaFileXmlFilename, fetchProjectFiles, refreshFigmaFile, saveFigmaFileImage, bumpFigmaFileVersion, fetchFigmaFileData, getFigmaFileImageUrl, deleteFigmaFileData, deleteFigmaFileImage, fetchPriorSpecs, type NodeMapping, type RegistryItem } from './utils/api'
 import { convertToXml } from './utils/convert-xml'
 import { fetchFigmaFile, fetchNodeImages } from './utils/figma-api'
 import { findNodeById, calculatePageBounds } from './utils/tree-utils'
@@ -8,19 +8,18 @@ import NodeTree from './components/NodeTree'
 import FigmaViewer from './components/FigmaViewer'
 import Splitter from './components/Splitter'
 
-function getUrlParams() {
-  const params = new URLSearchParams(window.location.search)
-  return {
-    projectId: params.get('projectId') || '',
-    fileKey: params.get('fileKey') || '',
-    nodeId: params.get('nodeId') || null,
-    srcFileKey: params.get('srcFileKey') || null,  // 원본 디자인 파일
-    srcNodeId: params.get('srcNodeId') || null,
-  }
+export interface SpecProps {
+  projectId: string
+  fileKey: string
+  nodeId: string | null
+  srcFileKey: string | null  // 원본 디자인 파일
+  srcNodeId: string | null
+  onClose: () => void        // 닫기 (대시보드 등으로 복귀)
 }
 
 function collectTextNodes(node: FigmaNode): Array<{ nodeId: string; name: string; text: string }> {
   const result: Array<{ nodeId: string; name: string; text: string }> = []
+  if (node.visible === false) return result
   if (node.characters && node.characters.trim()) {
     result.push({ nodeId: node.id, name: node.name, text: node.characters })
   }
@@ -32,10 +31,12 @@ function collectTextNodes(node: FigmaNode): Array<{ nodeId: string; name: string
 
 // 경량 노드 트리 수집 (자동 매핑 대상 후보용)
 interface LightNode { nodeId: string; name: string; type: string; children?: LightNode[] }
-function collectLightTree(node: FigmaNode): LightNode {
+function collectLightTree(node: FigmaNode): LightNode | null {
+  if (node.visible === false) return null
   const light: LightNode = { nodeId: node.id, name: node.name, type: node.type }
   if (node.children && node.children.length > 0) {
-    light.children = node.children.map(c => collectLightTree(c))
+    const kids = node.children.map(c => collectLightTree(c)).filter((c): c is LightNode => c !== null)
+    if (kids.length > 0) light.children = kids
   }
   return light
 }
@@ -46,10 +47,18 @@ const META_OPTIONS = [
   { value: 'screenName', label: '화면 명' },
 ]
 
-export default function Spec() {
-  const { projectId, fileKey, nodeId, srcFileKey, srcNodeId } = getUrlParams()
+export default function Spec({ projectId, fileKey, nodeId, srcFileKey, srcNodeId, onClose }: SpecProps) {
 
   const [loading, setLoading] = useState(true)
+  const [toast, setToast] = useState<{ type: 'success' | 'error' | 'info'; text: string } | null>(null)
+  const showToast = useCallback((type: 'success' | 'error' | 'info', text: string) => {
+    setToast({ type, text })
+  }, [])
+  useEffect(() => {
+    if (!toast) return
+    const timer = setTimeout(() => setToast(null), 3000)
+    return () => clearTimeout(timer)
+  }, [toast])
   const [rootNode, setRootNode] = useState<FigmaNode | null>(null)
   const [selectedNodeIds, setSelectedNodeIds] = useState<string[]>([])
   const [hoveredNode, setHoveredNode] = useState<FigmaNode | null>(null)
@@ -60,6 +69,8 @@ export default function Spec() {
   const [registry, setRegistry] = useState<RegistryItem[]>([])
   const [srcRootNode, setSrcRootNode] = useState<FigmaNode | null>(null)  // 원본 디자인 파일 트리
   const [fileName, setFileName] = useState('')
+  const [fileVersion, setFileVersion] = useState<string | null>(null)
+  const [refreshing, setRefreshing] = useState(false)
 
   // 노드 → 메타 태그 맵: { nodeId: 'screenName' | 'description' }
   const [metaTagMap, setMetaTagMap] = useState<Record<string, string>>({})
@@ -97,32 +108,34 @@ export default function Spec() {
         const token = settings['figma-token']
         if (!token) { setLoading(false); return }
 
-        const file = await fetchFigmaFile(fileKey, token, nodeId)
-        const pages = file.document.children || []
-        let displayRoot: FigmaNode | null = null
+        // 버전: 매핑 파일(srcFile) 기준
+        try {
+          const projectFiles = await fetchProjectFiles(projectId)
+          const srcKey = srcFileKey || fileKey
+          const srcNid = srcFileKey ? srcNodeId : nodeId
+          const rec = projectFiles.find(f => f.fileKey === srcKey && (f.nodeId ?? null) === (srcNid ?? null))
+          if (rec?.version) setFileVersion(rec.version)
+        } catch { /* ignore */ }
 
-        if (nodeId) {
-          for (const page of pages) {
-            const found = findNodeById(page, nodeId)
-            if (found) { displayRoot = found; break }
-          }
-        } else {
-          displayRoot = pages[0] || null
-        }
+        // 스펙 노드 트리: DB에서 로드
+        let displayRoot: FigmaNode | null = null
+        try {
+          const saved = await fetchFigmaFileData(projectId, fileKey, nodeId)
+          if (saved && saved.data) displayRoot = saved.data as FigmaNode
+        } catch { /* ignore */ }
 
         let loadedImageUrl: string | null = null
         if (displayRoot) {
           setRootNode(displayRoot)
-          setFileName(displayRoot.name || file.name)
+          setFileName(displayRoot.name || '')
 
-          const nodeIdForImage = nodeId || displayRoot.id
           setPageBounds(calculatePageBounds(displayRoot))
 
-          try {
-            const images = await fetchNodeImages(fileKey, token, [nodeIdForImage], 'png', 2)
-            loadedImageUrl = images.images[nodeIdForImage] || null
-            setImageUrl(loadedImageUrl)
-          } catch { /* ignore */ }
+          // 이미지: 서버에 저장된 _spec.svg (identity=srcFile)
+          const imgFileKey = srcFileKey || fileKey
+          const imgNodeId = srcFileKey ? srcNodeId : nodeId
+          loadedImageUrl = `${getFigmaFileImageUrl(projectId, imgFileKey, imgNodeId, 'spec')}&t=${Date.now()}`
+          setImageUrl(loadedImageUrl)
         }
 
         // 메타 태그 맵 로드
@@ -146,8 +159,8 @@ export default function Spec() {
         // 최초 등록 시 자동 매핑
         if (!hasExistingMeta && displayRoot) {
           const textNodes = collectTextNodes(displayRoot)
-          if (textNodes.length > 0) {
-            const nodeTree = collectLightTree(displayRoot)
+          const nodeTree = collectLightTree(displayRoot)
+          if (textNodes.length > 0 && nodeTree) {
             setAutoMapping(true)
             try {
               const imgForMap = loadedImageUrl ?? undefined
@@ -209,6 +222,107 @@ export default function Spec() {
 
     loadData()
   }, [projectId, fileKey, nodeId, specSettingsKey, markTargetKey])
+
+  // 새로고침 — 스펙 파일의 Figma 데이터 갱신 + 변경 있으면 버전업 컨펌
+  const handleRefresh = useCallback(async () => {
+    if (!projectId || !fileKey || refreshing) return
+    setRefreshing(true)
+    try {
+      const settings = await fetchProjectSettings(projectId)
+      const token = settings['figma-token']
+      if (!token) {
+        showToast('error', 'Figma Access Token이 설정되어 있지 않습니다.')
+        return
+      }
+
+      // 1. Figma에서 최신 데이터 받아 displayRoot 추출
+      const file = await fetchFigmaFile(fileKey, token, nodeId)
+      const pages = file.document.children || []
+      let displayRoot: FigmaNode | null = null
+      if (nodeId) {
+        for (const page of pages) {
+          const found = findNodeById(page, nodeId)
+          if (found) { displayRoot = found; break }
+        }
+      } else {
+        displayRoot = pages[0] || null
+      }
+      if (!displayRoot) {
+        showToast('error', '스펙 노드를 찾을 수 없습니다.')
+        return
+      }
+
+      // 2. 서버에 비교 요청
+      const result = await refreshFigmaFile(projectId, fileKey, nodeId, displayRoot)
+      if (!result.hasChanges) {
+        showToast('info', '변경된 내용이 없습니다.')
+        return
+      }
+
+      // 3. 변경 있음 → 새 스펙 SVG 저장 (_spec.svg, identity=srcFile)
+      const imgFileKey = srcFileKey || fileKey
+      const imgNodeId = srcFileKey ? srcNodeId : nodeId
+      try {
+        const images = await fetchNodeImages(fileKey, token, [displayRoot.id], 'svg', 1)
+        const imgUrl = images.images[displayRoot.id]
+        if (imgUrl) {
+          await saveFigmaFileImage(projectId, imgFileKey, imgNodeId, imgUrl, 'spec')
+          setImageUrl(`${getFigmaFileImageUrl(projectId, imgFileKey, imgNodeId, 'spec')}&t=${Date.now()}`)
+        }
+      } catch (e) { console.warn('이미지 갱신 실패:', e) }
+
+      setRootNode(displayRoot)
+      setFileName(displayRoot.name || file.name)
+      setPageBounds(calculatePageBounds(displayRoot))
+
+      // 4. 매핑 파일(srcFile) 버전업 컨펌
+      const versionFileKey = srcFileKey || fileKey
+      const versionNodeId = srcFileKey ? srcNodeId : nodeId
+      if (window.confirm('스펙 문서에 변경사항이 있습니다.\n매핑 파일 버전을 올리시겠습니까?')) {
+        try {
+          const { version } = await bumpFigmaFileVersion(projectId, versionFileKey, versionNodeId)
+          setFileVersion(version)
+          showToast('success', `매핑 파일이 v${version}로 기록되었습니다.`)
+        } catch (e) {
+          console.error('버전 증가 실패:', e)
+          showToast('error', '버전 증가에 실패했습니다.')
+        }
+      } else {
+        showToast('success', '최신 데이터로 갱신되었습니다.')
+      }
+
+      // 5. 자동매핑 전체 재실행 (기존 덮어쓰기)
+      try {
+        setAutoMapping(true)
+        const textNodes = collectTextNodes(displayRoot)
+        const nodeTree = collectLightTree(displayRoot)
+        if (textNodes.length > 0 && nodeTree) {
+          const imgForMap = `${getFigmaFileImageUrl(projectId, imgFileKey, imgNodeId, 'spec')}&t=${Date.now()}`
+          const { metaTagMap: autoMap, markTargetMap: autoMarkMap } = await autoMapSpec(textNodes, nodeTree, imgForMap)
+          const newMetaMap = autoMap || {}
+          const newMarkMap = autoMarkMap || {}
+          setMetaTagMap(newMetaMap)
+          setMappedNodeIds(new Set(Object.keys(newMetaMap)))
+          setMarkTargetMap(newMarkMap)
+          await saveProjectSettings(projectId, {
+            [specSettingsKey]: JSON.stringify(newMetaMap),
+            [markTargetKey]: JSON.stringify(newMarkMap),
+          })
+          showToast('success', '자동 매핑이 재실행되었습니다.')
+        }
+      } catch (e) {
+        console.error('자동매핑 재실행 실패:', e)
+        showToast('error', '자동매핑 재실행에 실패했습니다.')
+      } finally {
+        setAutoMapping(false)
+      }
+    } catch (err) {
+      console.error('[Spec] 새로고침 실패:', err)
+      showToast('error', '새로고침에 실패했습니다.')
+    } finally {
+      setRefreshing(false)
+    }
+  }, [projectId, fileKey, nodeId, srcFileKey, srcNodeId, refreshing, showToast, specSettingsKey, markTargetKey])
 
   // 노드 선택
   const handleSelectNode = useCallback((node: FigmaNode, ctrlKey: boolean) => {
@@ -304,6 +418,7 @@ export default function Spec() {
     if (textNodes.length === 0) return
 
     const nodeTree = collectLightTree(rootNode)
+    if (!nodeTree) return
 
     setAutoMapping(true)
     try {
@@ -363,13 +478,25 @@ export default function Spec() {
         [markTargetKey]: JSON.stringify({}),
       })
 
-      // 3. 목록으로 이동
-      window.location.href = `/?projectId=${projectId}`
+      // 3. 스펙 노드 트리 삭제 (figma_file_data)
+      try {
+        await deleteFigmaFileData(projectId, fileKey, nodeId)
+      } catch (e) { console.warn('스펙 트리 삭제 실패:', e) }
+
+      // 4. 스펙 이미지 (_spec.svg) 삭제 — identity=srcFile
+      try {
+        const imgFileKey = srcFileKey || fileKey
+        const imgNodeId = srcFileKey ? srcNodeId : nodeId
+        await deleteFigmaFileImage(projectId, imgFileKey, imgNodeId, 'spec')
+      } catch (e) { console.warn('스펙 이미지 삭제 실패:', e) }
+
+      // 5. 목록으로 이동
+      onClose()
     } catch (err) {
       console.error('스펙 문서 삭제 실패:', err)
       alert('삭제에 실패했습니다.')
     }
-  }, [projectId, fileKey, srcFileKey, srcNodeId, specSettingsKey, markTargetKey])
+  }, [projectId, fileKey, nodeId, srcFileKey, srcNodeId, specSettingsKey, markTargetKey, onClose])
 
   if (loading) {
     return (
@@ -391,7 +518,7 @@ export default function Spec() {
       <div className="flex items-center justify-between px-4 py-2 border-b theme-border theme-bg-secondary">
         <div className="flex items-center gap-3">
           <button
-            onClick={() => { window.location.href = `/?projectId=${projectId}` }}
+            onClick={onClose}
             className="p-1 theme-text-secondary hover:theme-text-primary"
             title="뒤로가기"
           >
@@ -400,6 +527,9 @@ export default function Spec() {
             </svg>
           </button>
           <h1 className="text-sm font-medium">스펙문서 - {fileName}</h1>
+          {fileVersion && (
+            <span className="text-xs font-mono text-gray-500 dark:text-gray-400">v{fileVersion}</span>
+          )}
           {saving && <span className="text-xs theme-text-secondary">저장 중...</span>}
           {autoMapping && (
             <span className="text-xs bg-purple-500 text-white px-2 py-0.5 rounded animate-pulse">
@@ -420,6 +550,16 @@ export default function Spec() {
         </div>
         {/* 우측 버튼 그룹 */}
         <div className="flex items-center gap-3">
+          <button
+            onClick={handleRefresh}
+            disabled={refreshing}
+            className="p-1 theme-text-secondary hover:text-blue-500 disabled:opacity-50"
+            title="스펙 문서 새로고침"
+          >
+            <svg className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            </svg>
+          </button>
           <button
             onClick={runAutoMapping}
             disabled={autoMapping}
@@ -506,22 +646,67 @@ export default function Spec() {
                 }
               }
 
-              // --- 3. LLM 호출 ---
               setGenerating(true)
               try {
-                const markdown = await generateSpec(includeSpecJson ? specJson : null, convertedXml, includeSpecJson ? (screenName || fileName) : undefined, imageUrl || undefined)
+                // --- 3. 경로/파일명/버전 준비 ---
+                const settingsForPath = await fetchProjectSettings(projectId)
+                const exportPath = settingsForPath['xml-export-path']
+                if (!exportPath) {
+                  showToast('error', '설정에서 XML Export 경로를 지정해주세요')
+                  return
+                }
 
-                // --- 4. 다운로드 ---
-                const blob = new Blob([markdown], { type: 'text/markdown' })
-                const url = URL.createObjectURL(blob)
-                const a = document.createElement('a')
-                a.href = url
-                a.download = `${screenName || fileName || 'spec'}.md`
-                a.click()
-                URL.revokeObjectURL(url)
+                const folderFileKey = srcFileKey || fileKey
+                const folderNodeId = srcFileKey ? srcNodeId : nodeId
+                let folderName = await getFigmaFileXmlFilename(projectId, folderFileKey, folderNodeId)
+                let version = '01'
+                try {
+                  const projectFiles = await fetchProjectFiles(projectId)
+                  const rec = projectFiles.find(f => f.fileKey === folderFileKey && (f.nodeId ?? null) === (folderNodeId ?? null))
+                  if (rec?.version) version = rec.version
+                } catch { /* ignore */ }
+                if (!folderName) {
+                  const defaultName = (screenName || fileName || 'spec').replace(/[<>:"/\\|?*]/g, '_')
+                  const input = window.prompt('파일명을 입력해주세요 (.xml 확장자 제외)', defaultName)
+                  if (!input || !input.trim()) {
+                    showToast('error', '파일명이 필요합니다. 저장을 취소합니다.')
+                    return
+                  }
+                  folderName = input.trim().replace(/[<>:"/\\|?*]/g, '_')
+                  try {
+                    await setFigmaFileXmlFilename(projectId, folderFileKey, folderNodeId, folderName)
+                  } catch (e) {
+                    console.warn('xmlFilename 저장 실패:', e)
+                  }
+                }
+
+                // --- 4. v02 이상이면 이전 스펙 조회 (v01 ~ v(N-1)) ---
+                const versionNum = parseInt(version, 10)
+                let priorSpecs: Array<{ version: string; content: string }> = []
+                if (versionNum > 1) {
+                  try {
+                    priorSpecs = await fetchPriorSpecs(exportPath, folderName, versionNum)
+                  } catch (e) {
+                    console.warn('이전 스펙 조회 실패:', e)
+                  }
+                }
+
+                // --- 5. LLM 호출 ---
+                const markdown = await generateSpec(
+                  includeSpecJson ? specJson : null,
+                  convertedXml,
+                  includeSpecJson ? (screenName || fileName) : undefined,
+                  imageUrl || undefined,
+                  priorSpecs.length > 0 ? priorSpecs : undefined,
+                )
+
+                // --- 6. 서버에 저장 ---
+                const result = await exportSpec(markdown, folderName, version, exportPath)
+                const mode = priorSpecs.length > 0 ? `변경분 (이전 ${priorSpecs.length}개 스펙 참조)` : '전체 스펙'
+                showToast('success', `저장 완료 [${mode}]: ${result.path}`)
               } catch (err) {
-                console.error('문서 생성 실패:', err)
-                alert('문서 생성에 실패했습니다. API 키를 확인하세요.')
+                console.error('문서 생성/저장 실패:', err)
+                showToast('error', '문서 생성/저장에 실패했습니다. 설정과 API 키를 확인하세요.')
               } finally {
                 setGenerating(false)
               }
@@ -565,7 +750,7 @@ export default function Spec() {
             selectedNodes={selectedNodes}
             hoveredNode={hoveredNode}
             loading={false}
-            imageScale={2}
+            imageScale={1}
           />
         </div>
 
@@ -702,6 +887,15 @@ export default function Spec() {
           </div>
         </div>
       </div>
+
+      {/* 토스트 메시지 */}
+      {toast && (
+        <div className={`fixed bottom-4 left-1/2 transform -translate-x-1/2 px-4 py-2 rounded-lg z-50 shadow-lg text-white ${
+          toast.type === 'success' ? 'bg-green-600' : toast.type === 'error' ? 'bg-red-600' : 'bg-gray-700'
+        }`}>
+          {toast.text}
+        </div>
+      )}
     </div>
   )
 }

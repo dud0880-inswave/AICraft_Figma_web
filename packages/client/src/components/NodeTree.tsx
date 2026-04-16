@@ -460,7 +460,7 @@ export default function NodeTree({
     }
   }, [flatVisibleNodes, selectedNodeIds, expandedIds, onSelectNode, handleToggle])
 
-  // 선택 변경 시 상위 노드 펼치기 + 스크롤
+  // 선택 변경 시 상위 노드 펼치기
   useEffect(() => {
     const currentId = selectedNodeIds[selectedNodeIds.length - 1]
     if (!currentId) return
@@ -488,14 +488,6 @@ export default function NodeTree({
         return changed ? next : prev
       })
     }
-
-    // 펼친 후 스크롤 (React 리렌더링 대기)
-    const timer = setTimeout(() => {
-      if (!treeRef.current) return
-      const el = treeRef.current.querySelector(`[data-node-id="${currentId}"]`)
-      if (el) el.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
-    }, 100)
-    return () => clearTimeout(timer)
   }, [selectedNodeIds, nodes])
 
   return (

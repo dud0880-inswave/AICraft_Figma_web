@@ -13,6 +13,8 @@ export interface FigmaFileRecord {
   lastOpenedAt: string;
   createdAt: string;
   completed: boolean;
+  version: string;
+  xmlFilename: string | null;
   projectId: string | null;
 }
 
@@ -21,7 +23,7 @@ export class FigmaFilesStore {
 
   list(): FigmaFileRecord[] {
     const rows = this.db.prepare(`
-      SELECT id, fileKey, nodeId, name, thumbnailUrl, lastOpenedAt, createdAt, completed, project_id
+      SELECT id, fileKey, nodeId, name, thumbnailUrl, lastOpenedAt, createdAt, completed, version, xmlFilename, project_id
       FROM figma_files
       ORDER BY lastOpenedAt DESC
     `).all() as any[];
@@ -30,7 +32,7 @@ export class FigmaFilesStore {
 
   listByProject(projectId: string): FigmaFileRecord[] {
     const rows = this.db.prepare(`
-      SELECT id, fileKey, nodeId, name, thumbnailUrl, lastOpenedAt, createdAt, completed, project_id
+      SELECT id, fileKey, nodeId, name, thumbnailUrl, lastOpenedAt, createdAt, completed, version, xmlFilename, project_id
       FROM figma_files
       WHERE project_id = ?
       ORDER BY lastOpenedAt DESC
@@ -44,13 +46,13 @@ export class FigmaFilesStore {
       // 프로젝트별 조회
       if (nodeId) {
         row = this.db.prepare(`
-          SELECT id, fileKey, nodeId, name, thumbnailUrl, lastOpenedAt, createdAt, completed, project_id
+          SELECT id, fileKey, nodeId, name, thumbnailUrl, lastOpenedAt, createdAt, completed, version, xmlFilename, project_id
           FROM figma_files
           WHERE project_id = ? AND fileKey = ? AND nodeId = ?
         `).get(projectId, fileKey, nodeId);
       } else {
         row = this.db.prepare(`
-          SELECT id, fileKey, nodeId, name, thumbnailUrl, lastOpenedAt, createdAt, completed, project_id
+          SELECT id, fileKey, nodeId, name, thumbnailUrl, lastOpenedAt, createdAt, completed, version, xmlFilename, project_id
           FROM figma_files
           WHERE project_id = ? AND fileKey = ? AND nodeId IS NULL
         `).get(projectId, fileKey);
@@ -59,13 +61,13 @@ export class FigmaFilesStore {
       // 전역 조회 (기존 호환성)
       if (nodeId) {
         row = this.db.prepare(`
-          SELECT id, fileKey, nodeId, name, thumbnailUrl, lastOpenedAt, createdAt, completed, project_id
+          SELECT id, fileKey, nodeId, name, thumbnailUrl, lastOpenedAt, createdAt, completed, version, xmlFilename, project_id
           FROM figma_files
           WHERE fileKey = ? AND nodeId = ?
         `).get(fileKey, nodeId);
       } else {
         row = this.db.prepare(`
-          SELECT id, fileKey, nodeId, name, thumbnailUrl, lastOpenedAt, createdAt, completed, project_id
+          SELECT id, fileKey, nodeId, name, thumbnailUrl, lastOpenedAt, createdAt, completed, version, xmlFilename, project_id
           FROM figma_files
           WHERE fileKey = ? AND nodeId IS NULL
         `).get(fileKey);
@@ -99,11 +101,11 @@ export class FigmaFilesStore {
     } else {
       const id = randomUUID();
       this.db.prepare(`
-        INSERT INTO figma_files (id, fileKey, nodeId, name, thumbnailUrl, lastOpenedAt, createdAt, completed, project_id)
-        VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?)
+        INSERT INTO figma_files (id, fileKey, nodeId, name, thumbnailUrl, lastOpenedAt, createdAt, completed, version, xmlFilename, project_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?, 0, '01', NULL, ?)
       `).run(id, fileKey, nodeId, name, thumbnailUrl, now, now, projectId);
 
-      return { id, fileKey, nodeId, name, thumbnailUrl, lastOpenedAt: now, createdAt: now, completed: false, projectId };
+      return { id, fileKey, nodeId, name, thumbnailUrl, lastOpenedAt: now, createdAt: now, completed: false, version: '01', xmlFilename: null, projectId };
     }
   }
 
@@ -145,5 +147,36 @@ export class FigmaFilesStore {
         UPDATE figma_files SET completed = ? WHERE project_id = ? AND fileKey = ? AND nodeId IS NULL
       `).run(completed ? 1 : 0, projectId, fileKey);
     }
+  }
+
+  // XML 다운로드 파일명 업데이트 (최초 저장 시에만 호출)
+  updateXmlFilename(projectId: string, fileKey: string, nodeId: string | null, xmlFilename: string): void {
+    if (nodeId) {
+      this.db.prepare(`
+        UPDATE figma_files SET xmlFilename = ? WHERE project_id = ? AND fileKey = ? AND nodeId = ?
+      `).run(xmlFilename, projectId, fileKey, nodeId);
+    } else {
+      this.db.prepare(`
+        UPDATE figma_files SET xmlFilename = ? WHERE project_id = ? AND fileKey = ? AND nodeId IS NULL
+      `).run(xmlFilename, projectId, fileKey);
+    }
+  }
+
+  // 버전 증가: 현재 버전의 숫자에 +1 후 2자리 zero-pad로 저장
+  incrementVersion(projectId: string, fileKey: string, nodeId: string | null): string {
+    const existing = this.get(fileKey, nodeId, projectId);
+    if (!existing) return '01';
+    const current = parseInt(existing.version || '01', 10);
+    const next = String(current + 1).padStart(2, '0');
+    if (nodeId) {
+      this.db.prepare(`
+        UPDATE figma_files SET version = ? WHERE project_id = ? AND fileKey = ? AND nodeId = ?
+      `).run(next, projectId, fileKey, nodeId);
+    } else {
+      this.db.prepare(`
+        UPDATE figma_files SET version = ? WHERE project_id = ? AND fileKey = ? AND nodeId IS NULL
+      `).run(next, projectId, fileKey);
+    }
+    return next;
   }
 }
