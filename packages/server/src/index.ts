@@ -4,7 +4,7 @@
 import { config as dotenvConfig } from 'dotenv';
 import { createServer, IncomingMessage, ServerResponse } from 'http';
 import { randomUUID } from 'crypto';
-import { writeFileSync, existsSync, mkdirSync, readFileSync, unlinkSync, readdirSync } from 'fs';
+import { writeFileSync, existsSync, mkdirSync, readFileSync, unlinkSync } from 'fs';
 import { join, resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { initDb, closeDb, getDb } from './db.js';
@@ -118,7 +118,7 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
     }
   }
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-Figma-Token');
 
   if (req.method === 'OPTIONS') {
     res.writeHead(200);
@@ -132,6 +132,48 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
   console.log(`[Server] ${req.method} ${path}`);
 
   try {
+    // ---- 정적 파일 서빙: /websquare/* (미리보기 iframe + CSS 이미지 경로) ----
+    if (path.startsWith('/websquare/')) {
+      const clientPublicDir = resolve(__dirname, '..', '..', 'client', 'public');
+      const filePath = join(clientPublicDir, path);
+      if (!filePath.startsWith(clientPublicDir)) { res.writeHead(403); res.end(); return; }
+      if (existsSync(filePath)) {
+        const buf = readFileSync(filePath);
+        const ext = (path.split('.').pop() || '').toLowerCase();
+        const mime: Record<string, string> = {
+          html: 'text/html; charset=utf-8', js: 'application/javascript; charset=utf-8',
+          css: 'text/css; charset=utf-8', json: 'application/json; charset=utf-8',
+          png: 'image/png', jpg: 'image/jpeg', gif: 'image/gif', svg: 'image/svg+xml',
+          woff: 'font/woff', woff2: 'font/woff2', ttf: 'font/ttf', eot: 'application/vnd.ms-fontobject',
+        };
+        res.writeHead(200, { 'Content-Type': mime[ext] || 'application/octet-stream', 'Access-Control-Allow-Origin': origin });
+        res.end(buf);
+        return;
+      }
+    }
+
+    // ---- Figma API Proxy (VS Code extension 및 운영 환경에서 Vite proxy 대체) ----
+    if (path.startsWith('/api/figma-proxy/')) {
+      const subPath = path.replace('/api/figma-proxy', '');
+      const figmaUrl = `https://api.figma.com${subPath}${url.search || ''}`;
+      try {
+        const token = req.headers['x-figma-token'] as string | undefined;
+        const headers: Record<string, string> = {};
+        if (token) headers['X-Figma-Token'] = token;
+        const figmaRes = await fetch(figmaUrl, { method: req.method, headers });
+        const body = Buffer.from(await figmaRes.arrayBuffer());
+        res.writeHead(figmaRes.status, {
+          'Content-Type': figmaRes.headers.get('content-type') || 'application/json',
+          'Access-Control-Allow-Origin': origin,
+        });
+        res.end(body);
+        return;
+      } catch (err) {
+        console.error('[FigmaProxy] error:', err);
+        return json(res, { error: String(err) }, 500);
+      }
+    }
+
     // ---- Project API ----
     if (path === '/api/projects' && req.method === 'GET') {
       const projects = projectStore.list();
@@ -1334,15 +1376,18 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
     // Spec 마크다운 저장: XML과 동일 경로 구조로 저장 (현재 버전 폴더에 _spec.md)
     if (path === '/api/export-spec' && req.method === 'POST') {
       const body = await parseBody(req);
-      const { markdown, exportPath, folderName, version } = body as {
-        markdown: string;
+      const { markdown, content, exportPath, folderName, version, fileName } = body as {
+        markdown?: string;
+        content?: string;
         exportPath?: string;
         folderName: string;
         version: string;
+        fileName?: string;
       };
 
-      if (!markdown || !folderName || !version) {
-        return badRequest(res, 'markdown, folderName, version required');
+      const fileContent = markdown || content;
+      if (!fileContent || !folderName || !version) {
+        return badRequest(res, 'markdown/content, folderName, version required');
       }
       if (!exportPath) {
         return badRequest(res, 'exportPath required. Set it in Settings.');
@@ -1356,8 +1401,9 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
         const versionDir = join(fileDir, `v${String(version).padStart(2, '0')}`);
         if (!existsSync(versionDir)) mkdirSync(versionDir, { recursive: true });
 
-        const fullPath = join(versionDir, `${baseName}_spec.md`);
-        writeFileSync(fullPath, markdown, 'utf-8');
+        const outputFileName = fileName || `${baseName}_spec.md`;
+        const fullPath = join(versionDir, outputFileName);
+        writeFileSync(fullPath, fileContent, 'utf-8');
         console.log(`[Server] Spec saved to: ${fullPath}`);
 
         return json(res, { success: true, path: fullPath });
@@ -1367,11 +1413,12 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
       }
     }
 
-    // 이전 버전 스펙들 조회: v01 ~ v(upToVersion-1) 폴더에서 {folderName}_spec.md 존재하는 것들을 순서대로 반환
+    // 이전 버전 스펙들 조회: v01 ~ v(upToVersion-1) 폴더에서 해당 파일을 순서대로 반환
     if (path === '/api/export-spec/prior' && req.method === 'GET') {
       const exportPath = url.searchParams.get('exportPath');
       const folderName = url.searchParams.get('folderName');
       const upToVersion = parseInt(url.searchParams.get('upToVersion') || '0', 10);
+      const fileName = url.searchParams.get('fileName');
 
       if (!exportPath || !folderName || !upToVersion) {
         return badRequest(res, 'exportPath, folderName, upToVersion required');
@@ -1381,13 +1428,14 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
         const baseName = folderName.replace(/\.xml$/i, '');
         const fileDir = join(exportPath, baseName);
         const result: Array<{ version: string; content: string }> = [];
+        const targetFileName = fileName || `${baseName}_spec.md`;
 
         for (let v = 1; v < upToVersion; v++) {
           const versionStr = String(v).padStart(2, '0');
-          const mdPath = join(fileDir, `v${versionStr}`, `${baseName}_spec.md`);
-          if (existsSync(mdPath)) {
+          const filePath = join(fileDir, `v${versionStr}`, targetFileName);
+          if (existsSync(filePath)) {
             try {
-              const content = readFileSync(mdPath, 'utf-8');
+              const content = readFileSync(filePath, 'utf-8');
               result.push({ version: versionStr, content });
             } catch { /* ignore unreadable */ }
           }
@@ -1498,14 +1546,22 @@ ${treeSection}
 \`\`\``;
 
       try {
-        // 이미지가 있으면 fetch → base64
+        // 이미지가 있으면 base64 변환 (data URL 또는 HTTP URL)
         let imageBase64: string | null = null
+        let imageMediaType = 'image/png'
         if (imageUrl) {
           try {
-            const imgRes = await fetch(imageUrl as string)
-            if (imgRes.ok) {
-              const imgBuf = Buffer.from(await imgRes.arrayBuffer())
-              imageBase64 = imgBuf.toString('base64')
+            const imgUrlStr = imageUrl as string
+            const dataMatch = imgUrlStr.match(/^data:image\/(\w+);base64,(.+)$/)
+            if (dataMatch) {
+              imageMediaType = `image/${dataMatch[1]}`
+              imageBase64 = dataMatch[2]
+            } else {
+              const imgRes = await fetch(imgUrlStr)
+              if (imgRes.ok) {
+                const imgBuf = Buffer.from(await imgRes.arrayBuffer())
+                imageBase64 = imgBuf.toString('base64')
+              }
             }
           } catch { /* ignore */ }
         }
@@ -1514,7 +1570,7 @@ ${treeSection}
         if (imageBase64) {
           messageContent.push({
             type: 'image',
-            source: { type: 'base64', media_type: 'image/png', data: imageBase64 },
+            source: { type: 'base64', media_type: imageMediaType, data: imageBase64 },
           })
           messageContent.push({ type: 'text', text: '위 이미지는 스펙 문서 캡쳐입니다. 이미지와 텍스트 노드를 함께 분석하세요.\n\n' + prompt })
         } else {
@@ -1577,18 +1633,20 @@ ${treeSection}
     // ── 스펙 문서 생성 ──
     if (path === '/api/generate-spec' && req.method === 'POST') {
       const body = await parseBody(req);
-      const { specJson, convertedXml, screenName, imageUrl, priorSpecs } = body as {
+      const { specJson, convertedXml, screenName, imageUrl, priorSpecs, specType } = body as {
         specJson?: object | null;
         convertedXml?: string;
         screenName?: string;
         imageUrl?: string;
         priorSpecs?: Array<{ version: string; content: string }>;
+        specType?: 'screen-info' | 'test-plan' | 'interface-metadata' | null;
       };
       if (!specJson && !convertedXml) return badRequest(res, 'specJson or convertedXml required');
 
       const apiKey = process.env.ANTHROPIC_API_KEY;
       if (!apiKey) return json(res, { error: 'ANTHROPIC_API_KEY not configured' }, 500);
 
+      const effectiveSpecType = specType || 'screen-info';
       const hasSpecMeta = !!specJson;
 
       const specMetaSection = hasSpecMeta ? `### 1. 스펙 메타데이터 (JSON)
@@ -1603,22 +1661,6 @@ ${JSON.stringify(specJson, null, 2)}
 ${convertedXml}
 \`\`\`` : '';
 
-      const analysisGuide = hasSpecMeta
-        ? `규칙:
-- 한국어로 작성
-- 설명 데이터의 texts를 분석하여 의미 있는 요구사항으로 변환
-- XML 구조에서 컴포넌트 타입과 속성을 분석
-- 스펙 메타데이터의 설명(description)과 대상 요소(target) 매핑을 기반으로 기능 요구사항 작성
-- 추정이 필요한 부분은 합리적으로 추정하되 [추정] 표시
-- Markdown만 출력 (다른 설명 없이)`
-        : `규칙:
-- 한국어로 작성
-- 스펙 매핑정보가 없으므로 XML 구조와 이미지를 기반으로 화면을 분석
-- XML에서 컴포넌트 타입, 속성, 계층 구조를 분석하여 기능 요구사항을 도출
-- 이미지가 제공된 경우 화면의 시각적 구조와 레이아웃을 참고하여 분석
-- 추정이 필요한 부분은 합리적으로 추정하되 [추정] 표시
-- Markdown만 출력 (다른 설명 없이)`;
-
       const hasPrior = Array.isArray(priorSpecs) && priorSpecs.length > 0;
 
       const priorSection = hasPrior
@@ -1631,8 +1673,30 @@ ${priorSpecs!.map(p => `### v${p.version}\n\`\`\`markdown\n${p.content}\n\`\`\``
 `
         : '';
 
-      const prompt = hasPrior
-        ? `당신은 소프트웨어 화면 설계서(SDD) 작성 전문가입니다.
+      // ---- specType별 프롬프트 생성 ----
+      let prompt = '';
+      let maxTokens = 8192;
+
+      if (effectiveSpecType === 'screen-info') {
+        const analysisGuide = hasSpecMeta
+          ? `규칙:
+- 한국어로 작성
+- 설명 데이터의 texts를 분석하여 의미 있는 요구사항으로 변환
+- XML 구조에서 컴포넌트 타입과 속성을 분석
+- 스펙 메타데이터의 설명(description)과 대상 요소(target) 매핑을 기반으로 기능 요구사항 작성
+- 추정이 필요한 부분은 합리적으로 추정하되 [추정] 표시
+- Markdown만 출력 (다른 설명 없이)`
+          : `규칙:
+- 한국어로 작성
+- 스펙 매핑정보가 없으므로 XML 구조와 이미지를 기반으로 화면을 분석
+- XML에서 컴포넌트 타입, 속성, 계층 구조를 분석하여 기능 요구사항을 도출
+- 이미지가 제공된 경우 화면의 시각적 구조와 레이아웃을 참고하여 분석
+- 추정이 필요한 부분은 합리적으로 추정하되 [추정] 표시
+- Markdown만 출력 (다른 설명 없이)`;
+
+        prompt = hasPrior
+          ? `당신은 소프트웨어 화면 설계서(SDD) 작성 전문가입니다.
+이 문서는 **화면 정보(screen-info)** 문서입니다.
 
 ${priorSection}
 
@@ -1660,11 +1724,14 @@ ${specMetaSection}${xmlSection}
 ## 제거된 기능/요소
 (없으면 "없음")
 
+## TODO 변경사항
+(팝업 연결, 화면 전환, 외부 API 연동, 권한, 데이터 바인딩 등 화면 내부에서 정의하기 어려운 항목의 변경/추가/삭제를 TODO 체크리스트로 작성. 없으면 "없음")
+
 ${analysisGuide}
 - 이전 스펙에 이미 있는 내용은 반복하지 마세요.
 - 변경 없으면 해당 섹션에 "없음"이라고 명시.`
-        : `당신은 소프트웨어 화면 설계서(SDD) 작성 전문가입니다.
-아래 데이터를 분석하여 기능 요구사항 문서를 Markdown 형식으로 작성하세요.
+          : `당신은 소프트웨어 화면 설계서(SDD) 작성 전문가입니다.
+아래 데이터를 분석하여 **화면 정보(screen-info)** 문서를 Markdown 형식으로 작성하세요.
 
 ## 입력 데이터
 
@@ -1674,41 +1741,297 @@ ${specMetaSection}${xmlSection}
 
 다음 구조의 Markdown 문서를 작성하세요:
 
-# ${screenName || '화면'} 기능 요구사항
+# ${screenName || '화면'} 화면 정보
 
-- 화면명: ${hasSpecMeta ? '(스펙 데이터에서 추출)' : `${screenName || '(화면 이미지/XML에서 추정)'}`}
-- 화면 유형: (추정)
+## 1. 기본 정보
 
-## 1. 화면 목적
-${hasSpecMeta ? '(설명 데이터를 기반으로 화면의 목적을 자연어로 서술)' : '(XML 구조와 이미지를 분석하여 화면의 목적을 자연어로 서술)'}
+| 항목 | 내용 |
+|------|------|
+| 화면 ID | (화면 ID) |
+| 화면명 | (화면명) |
+| 화면 유형 | 메인 화면 (M) 또는 팝업 (P) |
+| 화면 패턴 | (CRUD_MAIN, SEARCH, POPUP 등 추정) |
+| 경로 | (XML 파일 경로) |
+| 설명 | (화면 설명) |
 
-## 2. 사용자 시나리오
+### 1.1 전역 상태
+
+| 변수 | 초기값 | 역할 |
+|------|--------|------|
+(XML/JS에서 scwin.* 전역 변수를 추출하여 나열)
+
+## 2. 목적 및 사용자 시나리오
+
+### 2.1 화면 목적
+(화면의 목적을 자연어로 서술)
+
+### 2.2 사용자 시나리오
 (화면의 UI 구조와 ${hasSpecMeta ? '설명' : '이미지'}을 기반으로 사용자 시나리오를 번호 목록으로 작성)
 
 ## 3. 기능 요구사항
-(${hasSpecMeta ? '설명의 각 항목을' : 'XML 구조와 이미지에서 도출한 항목을'} 기능 요구사항 테이블로 정리)
-| ID | 우선순위 | 요구사항 | 대상 요소 | 상태 |
-|----|---------|---------|----------|------|
+
+| ID | 우선순위 | 요구사항 | 수용 기준 (EARS) | 구현 근거 | 상태 |
+|----|---------|---------|-----------------|----------|------|
+(REQ-001부터 순서대로 기능 요구사항을 정리. 각 요구사항마다:
+- 우선순위: A(필수) 또는 B(선택)
+- 수용 기준: WHEN/THEN/SHALL 형식의 EARS 패턴
+- 구현 근거: 관련 핸들러 함수명
+- 상태: [ ] 고정)
+
+### 3.1 비기능 요구사항
+(NOVA 표준 구조 준수, Native API 사용 금지 등)
+
+### 3.2 금지 규칙
+(Native API, 원본 WRM API 사용 금지 등)
+
+### 3.3 제외 범위
+(서버 측 API 로직 변경, 다국어, 권한, 배치 연계 등)
 
 ## 4. 컴포넌트 목록
 (XML에서 추출한 컴포넌트 목록을 테이블로 정리)
 | No | 요소명 | 컴포넌트 타입 | 설명 |
 |----|-------|-------------|------|
 
-## 5. 비기능 요구사항
-(일반적인 웹 화면 비기능 요구사항)
+## 5. TODO (추가 확인/구현 필요)
+(이 화면 단독으로는 정의하기 어려운 항목을 TODO 체크리스트로 작성. 예시:)
+- [ ] 팝업 연결: 어떤 버튼 클릭 시 어떤 팝업이 호출되는지 (팝업 화면 ID, 전달 파라미터)
+- [ ] 화면 전환: 특정 동작 후 이동하는 화면 경로 및 조건
+- [ ] 외부 API 연동: 조회/저장 시 호출할 서비스 API 엔드포인트, 파라미터
+- [ ] 권한/인증: 화면 접근 권한, 버튼별 권한 제어
+- [ ] 데이터 바인딩: 서버 데이터 모델과 UI 컴포넌트 매핑 (DataCollection 등)
+- [ ] 유효성 검증: 입력값 검증 규칙, 에러 메시지
+- [ ] 기타 비즈니스 로직: 화면 내에서 파악 불가능한 업무 규칙
+(위 예시 중 해당 화면에 관련 있는 항목만 선별하여 구체적으로 작성. 해당 없으면 "없음")
 
 ${analysisGuide}`;
+      } else if (effectiveSpecType === 'test-plan') {
+        maxTokens = 8192;
+        prompt = hasPrior
+          ? `당신은 소프트웨어 생성물 검증 전문가입니다.
+이 문서는 **검증 계획서(test-plan)** 문서입니다.
+
+${priorSection}
+
+## 이번 버전 입력 데이터
+
+${specMetaSection}${xmlSection}
+
+## 출력 형식
+
+이번 버전에서 **변경된/추가된/삭제된** 검증 항목만 간결한 Markdown으로 작성하세요.
+이전 스펙에 이미 있는 검증 항목은 반복하지 마세요.
+Markdown만 출력 (다른 설명 없이)`
+          : `당신은 소프트웨어 생성물 검증 전문가입니다.
+아래 데이터를 분석하여 **검증 계획서(test-plan)** 를 Markdown 형식으로 작성하세요.
+
+## 입력 데이터
+
+${specMetaSection}${xmlSection}
+
+## 출력 형식
+
+다음 구조의 Markdown 문서를 작성하세요:
+
+# ${screenName || '화면'} 검증 계획
+
+## 문서 상태
+
+| 항목 | 값 |
+|------|-----|
+| 문서 유형 | 생성물 검증 계획서 |
+| 기준 화면 | (화면 ID + 화면명) |
+| 기준 파일 | (XML 파일명) |
+| 화면 패턴 | (CRUD_MAIN 등) |
+
+## 1. 목적
+
+이 문서는 ${screenName || '화면'}의 설계 기준 준수 여부를 검증하기 위한 생성물 체크리스트이다.
+
+## 2. 검증 항목
+
+### 2.1 화면 구조
+
+| ID | 검증 항목 | 기대 결과 | 관련 REQ |
+|----|----------|----------|----------|
+(V-01부터. 최상위 레이아웃 class, 버튼 개수 및 ID 목록 등)
+
+### 2.2 GridView
+
+| ID | 검증 항목 | 기대 결과 | 관련 REQ |
+|----|----------|----------|----------|
+(각 GridView별: 컬럼 개수 검증, dataList 바인딩 검증)
+
+### 2.3 데이터 바인딩
+
+| ID | 검증 항목 | 기대 결과 | 관련 REQ |
+|----|----------|----------|----------|
+(정적 submission 없음, 동적 서비스 호출 건수, DataCollection 개수)
+
+### 2.4 업무 로직
+
+| ID | 검증 항목 | 기대 결과 | 관련 REQ |
+|----|----------|----------|----------|
+(초기화, 조회, 저장, 행추가, 삭제, 셀클릭, 팝업, 엑셀, 콜백 등)
+
+### 2.x 유효성 검증
+
+| ID | 검증 항목 | 기대 결과 | 관련 REQ |
+|----|----------|----------|----------|
+(필수값 미입력 시 저장 차단 검증 - 각 필수 필드별)
+
+### 2.5 안정성 (금지 검증)
+
+| ID | 검증 항목 | 기대 결과 | 관련 REQ |
+|----|----------|----------|----------|
+(Native API 미사용, 원본 WRM API 미사용, 설계서에 없는 이벤트 핸들러/컬럼 미추가, 정적 submission 금지)
+
+### 2.6 메시지
+
+| ID | 검증 항목 | 기대 결과 | 관련 REQ |
+|----|----------|----------|----------|
+(사용되는 메시지 코드별 검증, 어느 핸들러에서 호출되는지)
+
+### 2.6.5 핸들러별 검증
+
+| ID | 검증 항목 | 기대 결과 | 관련 REQ |
+|----|----------|----------|----------|
+(각 핸들러 함수가 정상 실행되는지, 서비스 호출이 있으면 요청/응답 검증, 메시지 표시 검증)
+
+## 3. 판정 기준
+
+### 통과 기준
+- 검증 항목 전체 통과
+- 안정성(§2.5) 금지 항목 위반 0건
+- 콘솔 오류와 치명적 경고 없음
+
+### 조건부 통과 기준
+- 안정성 항목 통과
+- 업무 로직 항목에서 경미한 이슈만 존재
+
+### 실패 기준
+- 안정성 항목 1건 이상 위반
+- 원본 WRM API 잔존
+
+## 4. 실행 후 기록 위치
+
+- 검증 결과 표: check-result.md
+- API 캡처: evidence/api/
+- 화면 캡처: evidence/capture/
+
+규칙:
+- 한국어로 작성
+- XML 구조에서 컴포넌트, 핸들러, DataCollection, submission 등을 정확히 추출
+- 검증 항목 ID는 V-01부터 순차 부여
+- 관련 REQ가 있으면 REQ-xxx 형식으로 기재, 없으면 "-"
+- Markdown만 출력 (다른 설명 없이)`;
+      } else if (effectiveSpecType === 'interface-metadata') {
+        maxTokens = 8192;
+        prompt = hasPrior
+          ? `당신은 소프트웨어 화면 인터페이스 분석 전문가입니다.
+이 문서는 **인터페이스 메타데이터(interface-metadata)** JSON 문서입니다.
+
+${priorSection}
+
+## 이번 버전 입력 데이터
+
+${specMetaSection}${xmlSection}
+
+## 출력 형식
+
+이번 버전의 전체 인터페이스 메타데이터를 JSON으로 출력하세요 (이전 버전과의 변경사항이 반영된 최신 상태).
+JSON만 출력 (다른 설명이나 마크다운 코드블록 없이 순수 JSON만)`
+          : `당신은 소프트웨어 화면 인터페이스 분석 전문가입니다.
+아래 데이터를 분석하여 **인터페이스 메타데이터(interface-metadata)** 를 JSON 형식으로 작성하세요.
+
+## 입력 데이터
+
+${specMetaSection}${xmlSection}
+
+## 출력 형식
+
+다음 구조의 JSON을 작성하세요 (순수 JSON만 출력, 마크다운 코드블록이나 다른 설명 없이):
+
+{
+  "screenId": "(화면 ID)",
+  "screenName": "(화면명)",
+  "collections": [
+    {
+      "id": "(DataCollection ID, 예: dlt_INPUT)",
+      "type": "dataList | dataMap",
+      "fields": [
+        {
+          "name": "(필드명)",
+          "type": "string | number | date",
+          "required": true/false,
+          "description": "(필드 설명)"
+        }
+      ],
+      "initialData": [ ... ] // 초기 데이터가 있는 경우만 포함
+    }
+  ],
+  "submissions": [
+    {
+      "id": "(submission ID)",
+      "action": "(URL 또는 서비스명)",
+      "ref": "(관련 DataCollection ID)",
+      "target": "(결과 DataCollection ID)"
+    }
+  ],
+  "gridViews": [
+    {
+      "id": "(GridView ID)",
+      "dataList": "(바인딩된 DataCollection ID)",
+      "autoFit": "allColumn | none",
+      "rowStatusVisible": true/false,
+      "columns": [
+        {
+          "order": 1,
+          "headerId": "(헤더 ID)",
+          "headerValue": "(헤더 표시 텍스트)",
+          "columnId": "(컬럼 ID)",
+          "headerInputType": "text | checkbox",
+          "bodyInputType": "text | checkbox | select | textImage 등"
+        }
+      ]
+    }
+  ],
+  "popups": [
+    {
+      "id": "(팝업 식별자)",
+      "url": "(팝업 URL 또는 화면 ID)",
+      "type": "팝업호출 | 팝업수신 | LOV",
+      "caller": "(호출하는 핸들러 함수명)",
+      "params": ["(전달 파라미터 목록)"]
+    }
+  ]
+}
+
+규칙:
+- XML 구조에서 w2:dataCollection, w2:submission, w2:gridView 등을 정확히 추출
+- DataCollection의 필드는 XML의 w2:column 정의에서 추출
+- GridView 컬럼은 순서(order) 포함하여 정확히 기재
+- 팝업은 JS 코드에서 nova.popup 또는 유사 호출 패턴을 분석하여 추출
+- 초기 데이터(initialData)가 XML에 정의되어 있으면 포함
+- 순수 JSON만 출력 (마크다운 코드블록, 설명 텍스트 없이)`;
+      }
 
       try {
-        // 이미지가 있으면 fetch → base64
+        // 이미지가 있으면 base64 변환 (data URL 또는 HTTP URL)
         let imageBase64: string | null = null
+        let imageMediaType = 'image/png'
         if (imageUrl) {
           try {
-            const imgRes = await fetch(imageUrl as string)
-            if (imgRes.ok) {
-              const imgBuf = Buffer.from(await imgRes.arrayBuffer())
-              imageBase64 = imgBuf.toString('base64')
+            const imgUrlStr = imageUrl as string
+            const dataMatch = imgUrlStr.match(/^data:image\/(\w+);base64,(.+)$/)
+            if (dataMatch) {
+              imageMediaType = `image/${dataMatch[1]}`
+              imageBase64 = dataMatch[2]
+            } else {
+              const imgRes = await fetch(imgUrlStr)
+              if (imgRes.ok) {
+                const imgBuf = Buffer.from(await imgRes.arrayBuffer())
+                imageBase64 = imgBuf.toString('base64')
+              }
             }
           } catch { /* ignore */ }
         }
@@ -1718,7 +2041,7 @@ ${analysisGuide}`;
         if (imageBase64) {
           messageContent.push({
             type: 'image',
-            source: { type: 'base64', media_type: 'image/png', data: imageBase64 },
+            source: { type: 'base64', media_type: imageMediaType, data: imageBase64 },
           })
           messageContent.push({ type: 'text', text: '위 이미지는 화면 설계서(SDD) 캡쳐입니다. 이 이미지와 아래 데이터를 함께 분석하세요.\n\n' + prompt })
         } else {
@@ -1734,7 +2057,7 @@ ${analysisGuide}`;
           },
           body: JSON.stringify({
             model: 'claude-sonnet-4-6',
-            max_tokens: 8192,
+            max_tokens: maxTokens,
             messages: [{ role: 'user', content: messageContent }],
           }),
         });
@@ -1746,9 +2069,13 @@ ${analysisGuide}`;
         }
 
         const claudeData = await claudeRes.json() as { content: Array<{ type: string; text: string }> };
-        const markdown = claudeData.content?.find(c => c.type === 'text')?.text || '';
+        const resultText = claudeData.content?.find(c => c.type === 'text')?.text || '';
 
-        return json(res, { markdown });
+        // interface-metadata는 JSON으로 반환, 나머지는 markdown으로 반환
+        if (effectiveSpecType === 'interface-metadata') {
+          return json(res, { content: resultText, specType: effectiveSpecType });
+        }
+        return json(res, { markdown: resultText, specType: effectiveSpecType });
       } catch (err) {
         console.error('[Spec] Claude API call failed:', err);
         return json(res, { error: String(err) }, 500);

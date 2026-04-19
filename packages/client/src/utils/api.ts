@@ -644,15 +644,16 @@ export async function exportXml(
 
 // Spec 마크다운을 XML과 동일 경로의 현재 버전 폴더에 _spec.md로 저장
 export async function exportSpec(
-  markdown: string,
+  content: string,
   folderName: string,
   version: string,
-  exportPath: string
+  exportPath: string,
+  fileName?: string
 ): Promise<{ success: boolean; path: string }> {
   const res = await fetch(`${getApiBase()}/export-spec`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ markdown, folderName, version, exportPath }),
+    body: JSON.stringify({ markdown: content, folderName, version, exportPath, fileName }),
   });
   if (!res.ok) {
     const err = await res.json();
@@ -687,34 +688,40 @@ export async function autoMapSpec(textNodes: Array<{ nodeId: string; name: strin
   return await res.json();
 }
 
+// 스펙 유형 타입
+export type SpecType = 'screen-info' | 'test-plan' | 'interface-metadata';
+
 // 스펙문서 생성 (Claude API 경유)
 export async function generateSpec(
   specJson: object | null,
   convertedXml?: string,
   screenName?: string,
   imageUrl?: string,
-  priorSpecs?: Array<{ version: string; content: string }>
+  priorSpecs?: Array<{ version: string; content: string }>,
+  specType?: SpecType
 ): Promise<string> {
   const res = await fetch(`${getApiBase()}/generate-spec`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ specJson, convertedXml, screenName, imageUrl, priorSpecs }),
+    body: JSON.stringify({ specJson, convertedXml, screenName, imageUrl, priorSpecs, specType }),
   });
   if (!res.ok) {
     const err = await res.json();
     throw new Error(err.error || 'Failed to generate spec');
   }
   const data = await res.json();
-  return data.markdown || '';
+  return data.markdown || data.content || '';
 }
 
-// 이전 버전 스펙 .md 파일들 조회
+// 이전 버전 스펙 파일들 조회
 export async function fetchPriorSpecs(
   exportPath: string,
   folderName: string,
-  upToVersion: number
+  upToVersion: number,
+  fileName?: string
 ): Promise<Array<{ version: string; content: string }>> {
   const params = new URLSearchParams({ exportPath, folderName, upToVersion: String(upToVersion) });
+  if (fileName) params.set('fileName', fileName);
   const res = await fetch(`${getApiBase()}/export-spec/prior?${params}`);
   if (!res.ok) return [];
   const data = await res.json();

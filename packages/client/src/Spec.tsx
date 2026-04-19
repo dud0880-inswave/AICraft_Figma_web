@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import type { FigmaNode, BoundingBox } from './types/figma'
-import { fetchProjectSettings, saveProjectSettings, fetchMappings, fetchRegistry, fetchNodeSvgs, generateSpec, autoMapSpec, exportSpec, getFigmaFileXmlFilename, setFigmaFileXmlFilename, fetchProjectFiles, refreshFigmaFile, saveFigmaFileImage, bumpFigmaFileVersion, fetchFigmaFileData, getFigmaFileImageUrl, deleteFigmaFileData, deleteFigmaFileImage, fetchPriorSpecs, type NodeMapping, type RegistryItem } from './utils/api'
+import { fetchProjectSettings, saveProjectSettings, fetchMappings, fetchRegistry, generateSpec, autoMapSpec, exportSpec, getFigmaFileXmlFilename, setFigmaFileXmlFilename, fetchProjectFiles, refreshFigmaFile, saveFigmaFileImage, bumpFigmaFileVersion, fetchFigmaFileData, getFigmaFileImageUrl, deleteFigmaFileData, deleteFigmaFileImage, fetchPriorSpecs, type NodeMapping, type RegistryItem, type SpecType } from './utils/api'
 import { convertToXml } from './utils/convert-xml'
+import { useDialog } from './contexts/DialogContext'
 import { fetchFigmaFile, fetchNodeImages } from './utils/figma-api'
 import { findNodeById, calculatePageBounds } from './utils/tree-utils'
 import NodeTree from './components/NodeTree'
@@ -41,6 +42,25 @@ function collectLightTree(node: FigmaNode): LightNode | null {
   return light
 }
 
+// SVG URL → PNG data URL 변환 (Claude API는 SVG 미지원)
+function svgToPngDataUrl(svgUrl: string): Promise<string | null> {
+  return new Promise((resolve) => {
+    const img = new Image()
+    img.crossOrigin = 'anonymous'
+    img.onload = () => {
+      const canvas = document.createElement('canvas')
+      canvas.width = img.naturalWidth || 1024
+      canvas.height = img.naturalHeight || 768
+      const ctx = canvas.getContext('2d')
+      if (!ctx) { resolve(null); return }
+      ctx.drawImage(img, 0, 0)
+      resolve(canvas.toDataURL('image/png'))
+    }
+    img.onerror = () => resolve(null)
+    img.src = svgUrl
+  })
+}
+
 const META_OPTIONS = [
   { value: '', label: '선택 안함' },
   { value: 'description', label: '설명' },
@@ -48,6 +68,7 @@ const META_OPTIONS = [
 ]
 
 export default function Spec({ projectId, fileKey, nodeId, srcFileKey, srcNodeId, onClose }: SpecProps) {
+  const { showAlert, showConfirm } = useDialog()
 
   const [loading, setLoading] = useState(true)
   const [toast, setToast] = useState<{ type: 'success' | 'error' | 'info'; text: string } | null>(null)
@@ -163,8 +184,8 @@ export default function Spec({ projectId, fileKey, nodeId, srcFileKey, srcNodeId
           if (textNodes.length > 0 && nodeTree) {
             setAutoMapping(true)
             try {
-              const imgForMap = loadedImageUrl ?? undefined
-              const { metaTagMap: autoMap, markTargetMap: autoMarkMap } = await autoMapSpec(textNodes, nodeTree, imgForMap)
+              const pngForMap = loadedImageUrl ? await svgToPngDataUrl(loadedImageUrl) : null
+              const { metaTagMap: autoMap, markTargetMap: autoMarkMap } = await autoMapSpec(textNodes, nodeTree, pngForMap ?? undefined)
               if (Object.keys(autoMap).length > 0) {
                 setMetaTagMap(autoMap)
                 setMappedNodeIds(new Set(Object.keys(autoMap)))
@@ -278,7 +299,7 @@ export default function Spec({ projectId, fileKey, nodeId, srcFileKey, srcNodeId
       // 4. 매핑 파일(srcFile) 버전업 컨펌
       const versionFileKey = srcFileKey || fileKey
       const versionNodeId = srcFileKey ? srcNodeId : nodeId
-      if (window.confirm('스펙 문서에 변경사항이 있습니다.\n매핑 파일 버전을 올리시겠습니까?')) {
+      if (await showConfirm('스펙 문서에 변경사항이 있습니다.\n매핑 파일 버전을 올리시겠습니까?')) {
         try {
           const { version } = await bumpFigmaFileVersion(projectId, versionFileKey, versionNodeId)
           setFileVersion(version)
@@ -297,8 +318,9 @@ export default function Spec({ projectId, fileKey, nodeId, srcFileKey, srcNodeId
         const textNodes = collectTextNodes(displayRoot)
         const nodeTree = collectLightTree(displayRoot)
         if (textNodes.length > 0 && nodeTree) {
-          const imgForMap = `${getFigmaFileImageUrl(projectId, imgFileKey, imgNodeId, 'spec')}&t=${Date.now()}`
-          const { metaTagMap: autoMap, markTargetMap: autoMarkMap } = await autoMapSpec(textNodes, nodeTree, imgForMap)
+          const svgForMap = `${getFigmaFileImageUrl(projectId, imgFileKey, imgNodeId, 'spec')}&t=${Date.now()}`
+          const pngForMap = await svgToPngDataUrl(svgForMap)
+          const { metaTagMap: autoMap, markTargetMap: autoMarkMap } = await autoMapSpec(textNodes, nodeTree, pngForMap ?? undefined)
           const newMetaMap = autoMap || {}
           const newMarkMap = autoMarkMap || {}
           setMetaTagMap(newMetaMap)
@@ -422,7 +444,8 @@ export default function Spec({ projectId, fileKey, nodeId, srcFileKey, srcNodeId
 
     setAutoMapping(true)
     try {
-      const { metaTagMap: autoMap, markTargetMap: autoMarkMap } = await autoMapSpec(textNodes, nodeTree, imageUrl ?? undefined)
+      const pngForMap = imageUrl ? await svgToPngDataUrl(imageUrl) : null
+      const { metaTagMap: autoMap, markTargetMap: autoMarkMap } = await autoMapSpec(textNodes, nodeTree, pngForMap ?? undefined)
       if (Object.keys(autoMap).length > 0) {
         setMetaTagMap(autoMap)
         setMappedNodeIds(new Set(Object.keys(autoMap)))
@@ -435,7 +458,7 @@ export default function Spec({ projectId, fileKey, nodeId, srcFileKey, srcNodeId
       }
     } catch (err) {
       console.error('[Spec] 자동 매핑 실패:', err)
-      alert('자동 매핑에 실패했습니다.')
+      showAlert('자동 매핑에 실패했습니다.')
     } finally {
       setAutoMapping(false)
     }
@@ -443,7 +466,7 @@ export default function Spec({ projectId, fileKey, nodeId, srcFileKey, srcNodeId
 
   // 스펙 매핑 삭제
   const handleDeleteSpec = useCallback(async () => {
-    if (!confirm('스펙 매핑 정보를 모두 삭제하시겠습니까?')) return
+    if (!await showConfirm('스펙 매핑 정보를 모두 삭제하시겠습니까?')) return
     setMetaTagMap({})
     setMarkTargetMap({})
     setMappedNodeIds(new Set())
@@ -459,7 +482,7 @@ export default function Spec({ projectId, fileKey, nodeId, srcFileKey, srcNodeId
 
   // 스펙 문서 자체 삭제 (등록 해제 + 매핑 삭제 + 목록으로 이동)
   const handleDeleteDocument = useCallback(async () => {
-    if (!confirm('스펙 문서를 삭제하시겠습니까?\n매핑 정보와 등록 정보가 모두 삭제됩니다.')) return
+    if (!await showConfirm('스펙 문서를 삭제하시겠습니까?\n매핑 정보와 등록 정보가 모두 삭제됩니다.')) return
     try {
       // 1. spec-url-map에서 해당 엔트리 제거
       const settings = await fetchProjectSettings(projectId)
@@ -494,7 +517,7 @@ export default function Spec({ projectId, fileKey, nodeId, srcFileKey, srcNodeId
       onClose()
     } catch (err) {
       console.error('스펙 문서 삭제 실패:', err)
-      alert('삭제에 실패했습니다.')
+      showAlert('삭제에 실패했습니다.')
     }
   }, [projectId, fileKey, nodeId, srcFileKey, srcNodeId, specSettingsKey, markTargetKey, onClose])
 
@@ -680,30 +703,59 @@ export default function Spec({ projectId, fileKey, nodeId, srcFileKey, srcNodeId
                   }
                 }
 
-                // --- 4. v02 이상이면 이전 스펙 조회 (v01 ~ v(N-1)) ---
+                // --- 4. v02 이상이면 이전 스펙 조회 (v01 ~ v(N-1)) - 3종 각각 ---
                 const versionNum = parseInt(version, 10)
-                let priorSpecs: Array<{ version: string; content: string }> = []
+                const specTypes: Array<{ type: SpecType; fileName: string }> = [
+                  { type: 'screen-info', fileName: 'screen-info.md' },
+                  { type: 'test-plan', fileName: 'test-plan.md' },
+                  { type: 'interface-metadata', fileName: 'interface-metadata.json' },
+                ]
+
+                // 이전 스펙 조회 (3종 병렬)
+                const priorSpecsMap: Record<string, Array<{ version: string; content: string }>> = {}
                 if (versionNum > 1) {
-                  try {
-                    priorSpecs = await fetchPriorSpecs(exportPath, folderName, versionNum)
-                  } catch (e) {
-                    console.warn('이전 스펙 조회 실패:', e)
-                  }
+                  const priorResults = await Promise.all(
+                    specTypes.map(async (st) => {
+                      try {
+                        return { type: st.type, specs: await fetchPriorSpecs(exportPath, folderName, versionNum, st.fileName) }
+                      } catch (e) {
+                        console.warn(`이전 스펙 조회 실패 (${st.type}):`, e)
+                        return { type: st.type, specs: [] }
+                      }
+                    })
+                  )
+                  for (const r of priorResults) priorSpecsMap[r.type] = r.specs
                 }
 
-                // --- 5. LLM 호출 ---
-                const markdown = await generateSpec(
-                  includeSpecJson ? specJson : null,
-                  convertedXml,
-                  includeSpecJson ? (screenName || fileName) : undefined,
-                  imageUrl || undefined,
-                  priorSpecs.length > 0 ? priorSpecs : undefined,
+                // --- 5. LLM 호출 (SVG→PNG 변환 후 3종 병렬 생성) ---
+                const pngForSpec = imageUrl ? await svgToPngDataUrl(imageUrl) : null
+                const specJsonArg = includeSpecJson ? specJson : null
+                const screenNameArg = includeSpecJson ? (screenName || fileName) : undefined
+                const imgArg = pngForSpec || undefined
+
+                const generateResults = await Promise.all(
+                  specTypes.map(async (st) => {
+                    const priorSpecs = priorSpecsMap[st.type] || []
+                    const content = await generateSpec(
+                      specJsonArg,
+                      convertedXml,
+                      screenNameArg,
+                      imgArg,
+                      priorSpecs.length > 0 ? priorSpecs : undefined,
+                      st.type,
+                    )
+                    return { ...st, content }
+                  })
                 )
 
-                // --- 6. 서버에 저장 ---
-                const result = await exportSpec(markdown, folderName, version, exportPath)
-                const mode = priorSpecs.length > 0 ? `변경분 (이전 ${priorSpecs.length}개 스펙 참조)` : '전체 스펙'
-                showToast('success', `저장 완료 [${mode}]: ${result.path}`)
+                // --- 6. 서버에 3종 파일 저장 (병렬) ---
+                const saveResults = await Promise.all(
+                  generateResults.map(r => exportSpec(r.content, folderName, version, exportPath, r.fileName))
+                )
+                const hasPrior = Object.values(priorSpecsMap).some(specs => specs.length > 0)
+                const mode = hasPrior ? `변경분 (이전 스펙 참조)` : '전체 스펙'
+                const savedPaths = saveResults.map(r => r.path.split(/[/\\]/).pop()).join(', ')
+                showToast('success', `3종 문서 저장 완료 [${mode}]: ${savedPaths}`)
               } catch (err) {
                 console.error('문서 생성/저장 실패:', err)
                 showToast('error', '문서 생성/저장에 실패했습니다. 설정과 API 키를 확인하세요.')
