@@ -1,0 +1,30 @@
+/* =============================================================================
+ * WebSquare Tailwind CSS — tailwind-project.css (v3)
+ *
+ * 이 파일은 2단계 프로젝트 빌드의 입력 파일이다.
+ * 빌드 결과: tailwind-utilities.css (cm/css/에 배치)
+ *
+ * - preflight/base 제외 — theme + utilities만 import
+ * - prefix(wq) — 모든 유틸리티에 wq: 접두어
+ * - @source 없음 — safelist 기반 빌드
+ * ============================================================================= */
+
+@import "tailwindcss/theme" layer(theme) prefix(wq);
+@import "tailwindcss/utilities" layer(utilities) prefix(wq);
+
+@theme {
+  /* 프로젝트 디자인 토큰 — base.css의 --ws-* 변수 참조 */
+  --color-primary: var(--ws-color-primary, #2563eb);
+  --color-secondary: var(--ws-color-secondary, #64748b);
+  --radius-md: var(--ws-radius, 4px);
+}
+
+@layer components {
+  /* wq- 시맨틱 클래스 — 기존 WRM 클래스의 보조 의미 표현 */
+  .wq-search { /* 검색 영역 */ }
+  .wq-titbox { /* 타이틀 바 */ }
+  .wq-grid   { /* 그리드 래퍼 */ }
+  .wq-btnbox { /* 버튼 액션 바 */ }
+  .wq-form   { /* 상세 폼 */ }
+  .wq-detail { /* 상세 영역 */ }
+}

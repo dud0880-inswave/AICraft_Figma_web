@@ -34,6 +34,15 @@ export async function loadConfig(): Promise<ClientConfig> {
   }
 
   const loadPromise = (async (): Promise<ClientConfig> => {
+    // VS Code extension(webview)에서 주입한 config 우선
+    const injected = (window as unknown as { __AICRAFT_CONFIG__?: Partial<ClientConfig> }).__AICRAFT_CONFIG__;
+    if (injected && typeof injected === 'object') {
+      const config: ClientConfig = { ...DEFAULT_CONFIG, ...injected };
+      cachedConfig = config;
+      console.log('[Config] Loaded from __AICRAFT_CONFIG__:', config);
+      return config;
+    }
+    // 그 외엔 public/config.json
     try {
       const res = await fetch('/config.json');
       if (!res.ok) {

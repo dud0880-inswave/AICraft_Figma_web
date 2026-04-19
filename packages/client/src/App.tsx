@@ -4,6 +4,7 @@ import type { RegistryItem, AutoMappingSuggestion, FigmaNodeForSignature } from 
 import { saveFigmaFile, touchFigmaFile, fetchMappings, fetchFigmaFileData, saveFigmaFileData, saveMapping, fetchAutoMappingSuggestions, fetchDefaultRuleSuggestions, applyAutoMappingSuggestions, saveProjectSettings, fetchProjectSettings, refreshFigmaFile, saveFigmaFileImage, getFigmaFileImageUrl, bumpFigmaFileVersion, fetchProjectFiles } from './utils/api'
 import { parseFigmaUrl, fetchFigmaFile, fetchNodeImages } from './utils/figma-api'
 import { getConfig } from './config'
+import { useDialog } from './contexts/DialogContext'
 import { findNodeById, calculatePageBounds, groupNodes, ungroupNode, reorderNodes } from './utils/tree-utils'
 import Dashboard from './components/Dashboard'
 import AddFileModal from './components/AddFileModal'
@@ -59,6 +60,7 @@ const initialState: AppState = {
 
 
 export default function App() {
+  const { showAlert, showConfirm } = useDialog()
   const [state, setState] = useState<AppState>(initialState)
   const [view, setView] = useState<AppView>('dashboard')
   const [showSettings, setShowSettings] = useState(false)
@@ -381,7 +383,7 @@ export default function App() {
       console.log(`[Refresh] hasChanges=${result.hasChanges}, 삭제매핑=${result.deletedMappingsCount}, 신규노드=${result.newNodeIds.length}`)
 
       if (!result.hasChanges) {
-        window.alert('변경된 내용이 없습니다.')
+        await showAlert('변경된 내용이 없습니다.')
         return
       }
 
@@ -423,7 +425,7 @@ export default function App() {
       }
 
       // 5. 버전업 컨펌
-      if (window.confirm('Figma 파일에 변경사항이 있습니다.\n버전을 올리시겠습니까?')) {
+      if (await showConfirm('Figma 파일에 변경사항이 있습니다.\n버전을 올리시겠습니까?')) {
         try {
           const { version } = await bumpFigmaFileVersion(projectId, fileKey, nodeId)
           console.log(`[Refresh] 버전 증가 → v${version}`)

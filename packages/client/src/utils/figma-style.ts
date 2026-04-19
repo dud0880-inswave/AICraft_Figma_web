@@ -63,11 +63,11 @@ function parentHasAutoLayout(parentNode?: FigmaNode): boolean {
 // --- 공통 스타일 push 함수 ---
 
 // 사이징: layoutSizing에 따라 width/height 결정
-function pushSizing(styles: string[], node: FigmaNode, isParentAutoLayout: boolean, parentNode?: FigmaNode) {
+// @ts-ignore unused parentNode kept for future clipsContent support
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+function pushSizing(styles: string[], node: FigmaNode, isParentAutoLayout: boolean, _parentNode?: FigmaNode) {
   const bb = node.absoluteBoundingBox
   if (!bb) return
-
-  const parentClips = parentNode?.clipsContent === true
 
   // width
   if (isParentAutoLayout && node.layoutGrow === 1) {

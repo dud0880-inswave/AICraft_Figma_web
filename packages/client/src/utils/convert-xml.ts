@@ -46,6 +46,9 @@ export function convertToXml(options: ConvertOptions): string {
   const { rootNode, mappings, registry, imageSvgMap = new Map() } = options
   const mappingMap = new Map(mappings.map(m => [m.figmaNodeId, m]))
 
+  // 위젯 초기화 스크립트 수집 (여러 widgetContainer 대응)
+  const widgetInitScripts: string[] = []
+
   const traverse = (n: FigmaNode, depth: number, parent?: FigmaNode): string => {
     if (n.visible === false) return ''
 
@@ -275,6 +278,92 @@ export function convertToXml(options: ConvertOptions): string {
         return `${indentStr}<xf:group tagname="td" ${tdPropsStr}>${attrsBlock}${innerContent}</xf:group>`
       }
 
+      // widgetContainer: 하위 widgetItem 들을 스캔하여 addWidgets JS 코드 생성
+      if (regItemNameLower === 'widget') {
+        const widgetContainerId = mergedProps.id || n.name.replace(/[^a-zA-Z0-9_]/g, '_')
+        const widgetDefs: Array<{ id: string; title: string; src: string; x: number; y: number; unitWidth: number; unitHeight: number }> = []
+
+        // 하위 widgetItem 탐색
+        for (const child of n.children || []) {
+          const childMapping = mappingMap.get(child.id)
+          const childReg = childMapping?.registryId ? registry.find(r => r.id === childMapping.registryId) : null
+          if (childReg?.name.toLowerCase() !== 'widgetitem') continue
+
+          let title = ''
+          let contentId = ''
+          const childBB = child.absoluteBoundingBox
+          const parentBB = n.absoluteBoundingBox
+
+          for (const grandChild of child.children || []) {
+            const gcMapping = mappingMap.get(grandChild.id)
+            const gcReg = gcMapping?.registryId ? registry.find(r => r.id === gcMapping.registryId) : null
+            if (!gcReg) continue
+            const gcName = gcReg.name.toLowerCase()
+
+            if (gcName === 'widgettitle') {
+              // textbox로 매핑된 하위 노드의 텍스트만 추출
+              const findTextboxText = (node: FigmaNode): string => {
+                const m = mappingMap.get(node.id)
+                const r = m?.registryId ? registry.find(reg => reg.id === m.registryId) : null
+                if (r?.name.toLowerCase() === 'textbox') {
+                  return node.characters || ''
+                }
+                for (const c of node.children ?? []) {
+                  const t = findTextboxText(c)
+                  if (t) return t
+                }
+                return ''
+              }
+              title = findTextboxText(grandChild) || grandChild.name
+            }
+            if (gcName === 'widgetcontent') {
+              contentId = gcMapping?.customAttrs?.id || grandChild.name.replace(/[^a-zA-Z0-9_]/g, '_')
+            }
+          }
+
+          if (!contentId) contentId = child.name.replace(/[^a-zA-Z0-9_]/g, '_')
+          if (!title) title = child.name
+
+          widgetDefs.push({
+            id: contentId,
+            title,
+            src: `widgets/${contentId}.xml`,
+            x: childBB && parentBB ? Math.round(childBB.x - parentBB.x) : 0,
+            y: childBB && parentBB ? Math.round(childBB.y - parentBB.y) : 0,
+            unitWidth: childBB ? Math.round(childBB.width) : 240,
+            unitHeight: childBB ? Math.round(childBB.height) : 400,
+          })
+        }
+
+        // widgetContainer XML + JS 코드 수집 (onpageload에 삽입)
+        const wcPropsStr = Object.entries(mergedProps).map(([k, v]) => `${k}="${v}"`).join(' ')
+
+        if (widgetDefs.length > 0) {
+          const defsJson = widgetDefs.map(d =>
+            `        {id:"${d.id}", title:"${d.title}", src:"${d.src}", x:${d.x}, y:${d.y}, unitWidth:${d.unitWidth}, unitHeight:${d.unitHeight}}`
+          ).join(',\n')
+
+          widgetInitScripts.push(
+`    // --- ${widgetContainerId} 위젯 초기화 ---
+    const ${widgetContainerId}_items = [
+${defsJson}
+    ];
+    for (let i = 0; i < ${widgetContainerId}_items.length; i++) {
+        const opts = ${widgetContainerId}_items[i];
+        opts.scope = true;
+        opts.buttonFormatter = {"id": "btnMore", "className": "w2widget_btnMore", "isCustom": true, "title": "더보기", "ariaLabel": "더보기"};
+        ${widgetContainerId}.addWidgets(opts);
+    }`)
+        }
+
+        return `${indentStr}<${tagName} ${wcPropsStr}></${tagName}>`
+      }
+
+      // widgetItem / widgetTitle / widgetContent: 가상 컴포넌트 — XML 출력 안 함 (widget 변환에서 데이터로만 사용)
+      if (['widgetitem', 'widgettitle', 'widgetcontent'].includes(regItemNameLower)) {
+        return ''
+      }
+
       const propsStr = Object.entries(mergedProps).map(([k, v]) => `${k}="${v}"`).join(' ')
       if (childrenCode) {
         return propsStr ? `${indentStr}<${tagName} ${propsStr}>\n${childrenCode}\n${indentStr}</${tagName}>` : `${indentStr}<${tagName}>\n${childrenCode}\n${indentStr}</${tagName}>`
@@ -305,8 +394,7 @@ export function convertToXml(options: ConvertOptions): string {
         <w2:publicInfo method="" />
         <script lazy="false" type="text/javascript"><![CDATA[
 scwin.onpageload = function() {
-
-};
+${widgetInitScripts.length > 0 ? widgetInitScripts.join('\n\n') + '\n' : ''}};
 ]]></script>
     </head>
     <body ev:onpageload="scwin.onpageload">

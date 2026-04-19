@@ -16,6 +16,7 @@ import {
 } from '../utils/api'
 import type { RegistryItem, MappingRulesJson, DefaultMappingRuleGrouped } from '../utils/api'
 import { useTheme } from '../contexts/ThemeContext'
+import { useDialog } from '../contexts/DialogContext'
 
 interface SettingsModalProps {
   isOpen: boolean
@@ -118,7 +119,7 @@ export function autoMapClassesToComponents(
 
 
 // 기본 탭 컴포넌트
-function BasicTab({ onSaveToken, onClose, projectId }: { onSaveToken: (t: string) => void; onClose: () => void; projectId?: string | null }) {
+function BasicTab({ onSaveToken, onClose, projectId, onCssChange }: { onSaveToken: (t: string) => void; onClose: () => void; projectId?: string | null; onCssChange?: () => void }) {
   const [inputToken, setInputToken] = useState('')
   const [xmlExportPath, setXmlExportPath] = useState('')
   const [clusterIncludeNodeName, setClusterIncludeNodeName] = useState(true)
@@ -197,6 +198,7 @@ function BasicTab({ onSaveToken, onClose, projectId }: { onSaveToken: (t: string
     } catch (err) {
       console.error('Failed to save settings:', err)
     }
+    onCssChange?.()
     onClose()
   }
 
@@ -399,6 +401,7 @@ function BasicTab({ onSaveToken, onClose, projectId }: { onSaveToken: (t: string
 
 // 컴포넌트 탭 컴포넌트
 function ComponentsTab({ projectId, onRegistryChange }: { projectId?: string | null; onRegistryChange?: () => void }) {
+  const { showConfirm } = useDialog()
   const [registry, setRegistry] = useState<RegistryItem[]>([])
   const [loading, setLoading] = useState(true)
   const [showAddForm, setShowAddForm] = useState(false)
@@ -474,7 +477,7 @@ function ComponentsTab({ projectId, onRegistryChange }: { projectId?: string | n
   }
 
   const handleDelete = async (id: string) => {
-    if (!confirm('이 컴포넌트를 삭제하시겠습니까?')) return
+    if (!await showConfirm('이 컴포넌트를 삭제하시겠습니까?')) return
 
     try {
       await deleteRegistryItem(id)
@@ -633,6 +636,7 @@ type CssSubView = 'list' | 'edit' | 'mapping'
 
 // CSS 탭 컴포넌트
 function CssTab({ projectId, onCssChange }: { projectId?: string | null; onCssChange?: () => void }) {
+  const { showConfirm } = useDialog()
   const [cssList, setCssList] = useState<CssItem[]>([])
   const [editingItem, setEditingItem] = useState<CssItem | null>(null)
   const [subView, setSubView] = useState<CssSubView>('list')
@@ -919,9 +923,9 @@ function CssTab({ projectId, onCssChange }: { projectId?: string | null; onCssCh
   }
 
   // 선택된 CSS 파일의 매핑 초기화
-  const handleClearCssMappings = () => {
+  const handleClearCssMappings = async () => {
     if (!selectedCssId) return
-    if (!confirm('이 CSS 파일의 클래스 매핑을 초기화하시겠습니까?')) return
+    if (!await showConfirm('이 CSS 파일의 클래스 매핑을 초기화하시겠습니까?')) return
     const newMapping = { ...componentClassMapping }
     delete newMapping[selectedCssId]
     setComponentClassMapping(newMapping)
@@ -1226,6 +1230,7 @@ function CssTab({ projectId, onCssChange }: { projectId?: string | null; onCssCh
 type MappingRulesSubView = 'default' | 'export'
 
 function MappingRulesTab({ projectId, onCssChange }: { projectId?: string | null; onCssChange?: () => void }) {
+  const { showConfirm } = useDialog()
   const [subView, setSubView] = useState<MappingRulesSubView>('default')
   const [status, setStatus] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
   const [loading, setLoading] = useState(false)
@@ -1307,7 +1312,7 @@ function MappingRulesTab({ projectId, onCssChange }: { projectId?: string | null
   // 초기화 (기본값으로 복원)
   const handleReset = async () => {
     if (!projectId) return
-    if (!confirm('모든 기본 매핑 규칙을 삭제하고 기본값으로 복원하시겠습니까?')) return
+    if (!await showConfirm('모든 기본 매핑 규칙을 삭제하고 기본값으로 복원하시겠습니까?')) return
 
     setLoading(true)
     try {
@@ -1684,7 +1689,7 @@ export default function SettingsModal({ isOpen, onClose, onSaveToken, onCssChang
         {/* 탭 컨텐츠 */}
         <div className="p-6 flex-1 overflow-auto">
           {activeTab === 'basic' && (
-            <BasicTab onSaveToken={onSaveToken} onClose={onClose} projectId={projectId} />
+            <BasicTab onSaveToken={onSaveToken} onClose={onClose} projectId={projectId} onCssChange={onCssChange} />
           )}
           {activeTab === 'components' && <ComponentsTab projectId={projectId} onRegistryChange={onRegistryChange} />}
           {activeTab === 'css' && <CssTab projectId={projectId} onCssChange={onCssChange} />}

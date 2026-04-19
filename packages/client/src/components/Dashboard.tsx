@@ -3,6 +3,7 @@ import type { FigmaFileRecord, Project } from '../utils/api'
 import { fetchProjects, fetchProjectFiles, deleteProject, createProject, updateProject, deleteFigmaFile, generateClusters, fetchProjectSettings, saveProjectSettings, saveFigmaFileData, saveFigmaFileImage } from '../utils/api'
 import { parseFigmaUrl, fetchFigmaFile, fetchNodeImages } from '../utils/figma-api'
 import { findNodeById } from '../utils/tree-utils'
+import { useDialog } from '../contexts/DialogContext'
 
 interface DashboardProps {
   onSelectFile: (fileKey: string, nodeId: string | null, projectId: string, projectName?: string, version?: string) => void
@@ -16,6 +17,7 @@ interface DashboardProps {
 type ViewMode = 'projects' | 'files'
 
 export default function Dashboard({ onSelectFile, onAddNewFile, onOpenSettings, onRefreshFile, onOpenSpec, initialProjectId }: DashboardProps) {
+  const { showAlert, showConfirm } = useDialog()
   const [viewMode, setViewMode] = useState<ViewMode>('projects')
   const [projects, setProjects] = useState<Project[]>([])
   const [selectedProject, setSelectedProject] = useState<Project | null>(null)
@@ -93,7 +95,7 @@ export default function Dashboard({ onSelectFile, onAddNewFile, onOpenSettings, 
 
   const handleDeleteProject = async (project: Project, e: React.MouseEvent) => {
     e.stopPropagation()
-    if (!confirm(`프로젝트 "${project.name}"을(를) 삭제하시겠습니까?\n하위 파일도 모두 삭제됩니다.`)) return
+    if (!await showConfirm(`프로젝트 "${project.name}"을(를) 삭제하시겠습니까?\n하위 파일도 모두 삭제됩니다.`)) return
 
     try {
       await deleteProject(project.id)
@@ -106,7 +108,7 @@ export default function Dashboard({ onSelectFile, onAddNewFile, onOpenSettings, 
   const handleDeleteFile = async (fileKey: string, nodeId: string | null, e: React.MouseEvent) => {
     e.stopPropagation()
     if (!selectedProject) return
-    if (!confirm('이 파일을 삭제하시겠습니까?')) return
+    if (!await showConfirm('이 파일을 삭제하시겠습니까?')) return
 
     try {
       await deleteFigmaFile(selectedProject.id, fileKey, nodeId)
@@ -372,7 +374,7 @@ export default function Dashboard({ onSelectFile, onAddNewFile, onOpenSettings, 
                             await loadProjectFiles(selectedProject)
                           } catch (err) {
                             console.error('Failed to refresh file:', err)
-                            alert('파일을 새로고침하는데 실패했습니다.')
+                            showAlert('파일을 새로고침하는데 실패했습니다.')
                           } finally {
                             setRefreshingFileKey(null)
                           }
@@ -504,7 +506,7 @@ export default function Dashboard({ onSelectFile, onAddNewFile, onOpenSettings, 
                 if (!specUrl) return
 
                 const parsed = parseFigmaUrl(specUrl)
-                if (!parsed) { alert('올바른 Figma URL이 아닙니다'); return }
+                if (!parsed) { showAlert('올바른 Figma URL이 아닙니다'); return }
 
                 if (!specModalFile) return
                 setSpecLoading(true)
@@ -513,7 +515,7 @@ export default function Dashboard({ onSelectFile, onAddNewFile, onOpenSettings, 
                   const settings = await fetchProjectSettings(selectedProject.id)
                   const token = settings['figma-token']
                   if (!token) {
-                    alert('Figma Access Token이 설정되어 있지 않습니다.')
+                    showAlert('Figma Access Token이 설정되어 있지 않습니다.')
                     return
                   }
 
@@ -530,7 +532,7 @@ export default function Dashboard({ onSelectFile, onAddNewFile, onOpenSettings, 
                     displayRoot = pages[0] || null
                   }
                   if (!displayRoot) {
-                    alert('해당 노드를 찾을 수 없습니다.')
+                    showAlert('해당 노드를 찾을 수 없습니다.')
                     return
                   }
 
@@ -561,7 +563,7 @@ export default function Dashboard({ onSelectFile, onAddNewFile, onOpenSettings, 
                   onOpenSpec(selectedProject.id, parsed.fileKey, parsed.nodeId, specModalFile.fileKey, specModalFile.nodeId)
                 } catch (err) {
                   console.error('스펙문서 등록 실패:', err)
-                  alert('스펙문서 등록에 실패했습니다.')
+                  showAlert('스펙문서 등록에 실패했습니다.')
                 } finally {
                   setSpecLoading(false)
                 }

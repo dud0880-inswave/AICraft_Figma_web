@@ -133,14 +133,14 @@ export default function ConvertedCodeEditor({
   nodeId,
   projectId,
   rootNode,
-  document,
+  document: _document,
   registry,
   visible,
   onToggle,
   convertTrigger,
   cssRefreshKey,
   onComplete,
-  token,
+  token: _token,
 }: ConvertedCodeEditorProps) {
   const [convertedCode, setConvertedCode] = useState<string | null>(null)
   const [converting, setConverting] = useState(false)
@@ -364,6 +364,8 @@ export default function ConvertedCodeEditor({
     if (!fileKey || !rootNode || !projectId) return
 
     setConverting(true)
+    // 위젯 초기화 스크립트 수집
+    const widgetInitScripts: string[] = []
     try {
       // 모든 매핑 가져오기
       const allMappings = await fetchMappings(projectId, fileKey, nodeId)
@@ -454,14 +456,6 @@ export default function ConvertedCodeEditor({
             })(n)
 
             // characterStyleOverrides로 mixed style 감지 → 구간별 분리
-            console.log('[Textbox]', n.id, n.name, {
-              hasTextNode: !!textNode,
-              chars: (textNode?.characters || n.characters || '').substring(0, 30),
-              charsLen: (textNode?.characters || n.characters || '').length,
-              overridesLen: textNode?.characterStyleOverrides?.length,
-              tableKeys: textNode?.styleOverrideTable ? Object.keys(textNode.styleOverrideTable) : null,
-              lineTypes: textNode?.lineTypes,
-            })
             const overrides = textNode?.characterStyleOverrides
             const overrideTable = textNode?.styleOverrideTable
             const chars = textNode?.characters || n.characters || ''
@@ -481,8 +475,6 @@ export default function ConvertedCodeEditor({
                 }
               }
               if (currentText) segments.push({ text: currentText, overrideKey: currentKey })
-
-              console.log('[Textbox segments]', n.id, segments.map(s => ({ key: s.overrideKey, text: s.text.substring(0, 20) })))
 
               // 복수 구간이면 분리
               if (segments.length > 1) {
@@ -789,6 +781,88 @@ ${indentStr}    </w2:attributes>`
             return `${indentStr}<xf:group tagname="td" ${tdPropsStr}>${attrsBlock}${innerContent}</xf:group>`
           }
 
+          // widgetContainer: 하위 widgetItem 스캔 → addWidgets JS 코드 생성
+          if (regItemNameLower === 'widget') {
+            const widgetContainerId = mergedProps.id || n.name.replace(/[^a-zA-Z0-9_]/g, '_')
+            const widgetDefs: Array<{ id: string; title: string; src: string; x: number; y: number; unitWidth: number; unitHeight: number }> = []
+
+            for (const child of n.children || []) {
+              const childMapping = mappingMap.get(child.id)
+              const childReg = childMapping?.registryId ? registry.find(r => r.id === childMapping.registryId) : null
+              if (childReg?.name.toLowerCase() !== 'widgetitem') continue
+
+              let title = ''
+              let contentId = ''
+              const childBB = child.absoluteBoundingBox
+              const parentBB = n.absoluteBoundingBox
+
+              for (const gc of child.children || []) {
+                const gcMapping = mappingMap.get(gc.id)
+                const gcReg = gcMapping?.registryId ? registry.find(r => r.id === gcMapping.registryId) : null
+                if (!gcReg) continue
+                const gcName = gcReg.name.toLowerCase()
+                if (gcName === 'widgettitle') {
+                  // textbox로 매핑된 하위 노드의 텍스트만 추출
+                  const findTextboxText = (node: FigmaNode): string => {
+                    const m = mappingMap.get(node.id)
+                    const r = m?.registryId ? registry.find(reg => reg.id === m.registryId) : null
+                    if (r?.name.toLowerCase() === 'textbox') {
+                      return node.characters || ''
+                    }
+                    for (const c of node.children ?? []) {
+                      const t = findTextboxText(c)
+                      if (t) return t
+                    }
+                    return ''
+                  }
+                  title = findTextboxText(gc) || gc.name
+                }
+                if (gcName === 'widgetcontent') {
+                  contentId = gcMapping?.customAttrs?.id || gc.name.replace(/[^a-zA-Z0-9_]/g, '_')
+                }
+              }
+
+              if (!contentId) contentId = child.name.replace(/[^a-zA-Z0-9_]/g, '_')
+              if (!title) title = child.name
+
+              widgetDefs.push({
+                id: contentId, title,
+                src: `widgets/${contentId}.xml`,
+                x: childBB && parentBB ? Math.round(childBB.x - parentBB.x) : 0,
+                y: childBB && parentBB ? Math.round(childBB.y - parentBB.y) : 0,
+                unitWidth: childBB ? Math.round(childBB.width) : 240,
+                unitHeight: childBB ? Math.round(childBB.height) : 400,
+              })
+            }
+
+            const wcPropsStr = Object.entries(mergedProps).map(([k, v]) => `${k}="${v}"`).join(' ')
+
+            if (widgetDefs.length > 0) {
+              const defsJson = widgetDefs.map(d =>
+                `        {id:"${d.id}", title:"${d.title}", src:"${d.src}", x:${d.x}, y:${d.y}, unitWidth:${d.unitWidth}, unitHeight:${d.unitHeight}}`
+              ).join(',\n')
+
+              widgetInitScripts.push(
+`    // --- ${widgetContainerId} 위젯 초기화 ---
+    const ${widgetContainerId}_items = [
+${defsJson}
+    ];
+    for (let i = 0; i < ${widgetContainerId}_items.length; i++) {
+        const opts = ${widgetContainerId}_items[i];
+        opts.scope = true;
+        opts.buttonFormatter = {"id": "btnMore", "className": "w2widget_btnMore", "isCustom": true, "title": "더보기", "ariaLabel": "더보기"};
+        ${widgetContainerId}.addWidgets(opts);
+    }`)
+            }
+
+            return `${indentStr}<${tagName} ${wcPropsStr}></${tagName}>`
+          }
+
+          // widgetItem / widgetTitle / widgetContent: 가상 컴포넌트 — XML 출력 안 함
+          if (['widgetitem', 'widgettitle', 'widgetcontent'].includes(regItemNameLower)) {
+            return ''
+          }
+
           const propsStr = Object.entries(mergedProps).map(([k, v]) => `${k}="${v}"`).join(' ')
 
           // 자식 코드가 있으면 중첩 구조로
@@ -832,8 +906,7 @@ ${indentStr}    </w2:attributes>`
         <w2:publicInfo method="" />
         <script lazy="false" type="text/javascript"><![CDATA[
 scwin.onpageload = function() {
-
-};
+${widgetInitScripts.length > 0 ? widgetInitScripts.join('\n\n') + '\n' : ''}};
 ]]></script>
     </head>
     <body ev:onpageload="scwin.onpageload">

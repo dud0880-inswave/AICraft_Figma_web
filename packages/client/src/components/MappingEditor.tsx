@@ -6,6 +6,7 @@ import { type CssItem, type ComponentClassMapping } from './SettingsModal'
 import { findTextInChildren, collectAllTexts, collectTopLevelTexts } from '../utils/text-utils'
 import { findParentNode } from '../utils/tree-utils'
 import { extractInlineStyle } from '../utils/figma-style'
+import { useDialog } from '../contexts/DialogContext'
 import hljs from 'highlight.js/lib/core'
 import xml from 'highlight.js/lib/languages/xml'
 
@@ -39,7 +40,8 @@ function convertNodeForSignature(node: FigmaNode): FigmaNodeForSignature {
   }
 }
 
-export default function MappingEditor({ node, nodes, tree, fileKey, rootNodeId, projectId, cssRefreshKey, registryRefreshKey, token, onRegistryLoad, onMappingChange }: MappingEditorProps) {
+export default function MappingEditor({ node, nodes, tree, fileKey, rootNodeId, projectId, cssRefreshKey, registryRefreshKey, token: _token, onRegistryLoad, onMappingChange }: MappingEditorProps) {
+  const { showAlert, showConfirm } = useDialog()
   const [registry, setRegistry] = useState<RegistryItem[]>([])
   const [mapping, setMapping] = useState<NodeMapping | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
@@ -336,7 +338,7 @@ export default function MappingEditor({ node, nodes, tree, fileKey, rootNodeId, 
   const handleClearAllMappings = async () => {
     if (!fileKey || !projectId) return
 
-    if (!confirm('현재 파일의 모든 매핑을 초기화하시겠습니까?\n이 작업은 되돌릴 수 없습니다.')) {
+    if (!await showConfirm('현재 파일의 모든 매핑을 초기화하시겠습니까?\n이 작업은 되돌릴 수 없습니다.')) {
       return
     }
 
@@ -348,7 +350,7 @@ export default function MappingEditor({ node, nodes, tree, fileKey, rootNodeId, 
       onMappingChange?.()
     } catch (error) {
       console.error('Failed to clear all mappings:', error)
-      alert('매핑 초기화에 실패했습니다.')
+      showAlert('매핑 초기화에 실패했습니다.')
     } finally {
       setSaving(false)
     }
@@ -1135,9 +1137,7 @@ ${bodyCols}
 
               return (
                 <pre className="mt-3 p-3 theme-bg-primary border theme-border rounded text-sm font-mono overflow-x-auto">
-                  <code className="language-xml" ref={(el) => { if (el) { el.removeAttribute('data-highlighted'); hljs.highlightElement(el) } }}>
-                    {code}
-                  </code>
+                  <code className="language-xml" ref={(el) => { if (el) { el.removeAttribute('data-highlighted'); el.textContent = code; hljs.highlightElement(el) } }} />
                 </pre>
               )
             })()}
@@ -1302,9 +1302,9 @@ ${bodyCols}
                   })
                   setUniqueCheck(null)
                   onMappingChange?.()
-                  alert(`${result.appliedCount}개 노드에 매핑이 적용되었습니다.`)
+                  showAlert(`${result.appliedCount}개 노드에 매핑이 적용되었습니다.`)
                 } catch {
-                  alert('전체 적용에 실패했습니다.')
+                  showAlert('전체 적용에 실패했습니다.')
                 }
               }}
               className="px-3 py-1.5 text-xs bg-blue-600 hover:bg-blue-500 text-white rounded"
