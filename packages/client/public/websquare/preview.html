@@ -6,6 +6,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>WebSquare Preview</title>
 
+    <!-- WebSquare 엔진 기본 CSS -->
+    <link rel="stylesheet" href="/websquare/_websquare_/skin/stylesheet.css">
+    <link rel="stylesheet" href="/websquare/_websquare_/skin/stylesheet_ext.css">
+
     <style>
         body {
             margin: 0;
@@ -122,6 +126,9 @@
         if (event?.data?.event === 'previewFrame.sendXML') {
             const xml = event.data.xml;
             const css = event.data.css;
+            const cssPaths = event.data.cssPaths;
+            const initScript = event.data.initScript;
+            const widgetStyle = event.data.widgetStyle;
             const response = {
                 event: 'previewFrame.sendXMLResponse',
                 success: false,
@@ -132,12 +139,41 @@
                 const res = await previewFrame.render(xml);
                 if (res === true) {
                     response.success = true;
-                    // 렌더링 후 CSS 적용 (WebSquare가 DOM을 조작한 후)
-                    if (css) {
-                        setTimeout(() => {
-                            previewFrame.applyCss(css);
-                        }, 50);
-                    }
+                    // 렌더링 후 CSS 적용 + onpageload 수동 호출
+                    setTimeout(() => {
+                        if (css) previewFrame.applyCss(css);
+                        // CSS 파일 경로 → <link> 태그로 로드 (url() 상대경로 해석 보장)
+                        document.querySelectorAll('link[data-css-path]').forEach(el => el.remove());
+                        if (cssPaths && cssPaths.length > 0) {
+                            cssPaths.forEach(function(p, i) {
+                                if (!p) return;
+                                var link = document.createElement('link');
+                                link.rel = 'stylesheet';
+                                link.setAttribute('data-css-path', 'css-' + i);
+                                // 절대 URL로 설정 (MutationObserver가 /websquare/ 기준으로 재작성하는 것 방지)
+                                link.href = window.location.origin + '/' + p.replace(/^\//, '');
+                                document.head.appendChild(link);
+                            });
+                        }
+                        // 위젯 인라인 스타일 주입
+                        if (widgetStyle) {
+                            var existingWs = document.querySelector('style[data-widget-style]');
+                            if (existingWs) existingWs.remove();
+                            var wsEl = document.createElement('style');
+                            wsEl.setAttribute('data-widget-style', 'true');
+                            wsEl.textContent = widgetStyle;
+                            document.head.appendChild(wsEl);
+                        }
+                        // 초기화 스크립트 실행 (widget addWidgets 등)
+                        if (initScript) {
+                            try {
+                                console.log('[preview] initScript 실행');
+                                new Function(initScript)();
+                            } catch (e) {
+                                console.warn('[preview] initScript error:', e);
+                            }
+                        }
+                    }, 50);
                 } else {
                     response.success = false;
                     response.error = res?.toString() || 'Unknown error';

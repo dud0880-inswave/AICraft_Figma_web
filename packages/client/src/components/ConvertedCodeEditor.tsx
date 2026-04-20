@@ -143,6 +143,8 @@ export default function ConvertedCodeEditor({
   token: _token,
 }: ConvertedCodeEditorProps) {
   const [convertedCode, setConvertedCode] = useState<string | null>(null)
+  const [currentInitScript, setCurrentInitScript] = useState('')
+  const [currentWidgetStyle, setCurrentWidgetStyle] = useState('')
   const [converting, setConverting] = useState(false)
   const [activeTab, setActiveTab] = useState<'code' | 'preview'>('code')
   const [previewError, setPreviewError] = useState<string | null>(null)
@@ -152,7 +154,8 @@ export default function ConvertedCodeEditor({
   const [completing, setCompleting] = useState(false)
   const [saving, setSaving] = useState(false)
   const [saveMessage, setSaveMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
-  const [cssContents, setCssContents] = useState<string[]>([])
+  const [cssContents, setCssContents] = useState<string[]>([])  // CSS 내용 (클래스 매핑용)
+  const [cssPaths, setCssPaths] = useState<string[]>([])        // CSS 파일 경로 (preview <link>용)
   const [enableInlineStyle, setEnableInlineStyle] = useState(true)
   const [showFilenameModal, setShowFilenameModal] = useState(false)
   const [inputFilename, setInputFilename] = useState('')
@@ -170,14 +173,18 @@ export default function ConvertedCodeEditor({
         const settings = await fetchProjectSettings(projectId)
         const cssListData = settings['css-list']
         if (cssListData) {
-          const cssList = JSON.parse(cssListData) as Array<{ content: string }>
-          setCssContents(cssList.map(item => item.content))
+          const cssList = JSON.parse(cssListData) as Array<{ content?: string; filePath?: string }>
+          // filePath 있는 항목은 <link>로 로드 → cssContents에서 제외 (inline <style> 방지)
+          setCssContents(cssList.filter(item => !item.filePath).map(item => item.content || '').filter(Boolean))
+          setCssPaths(cssList.map(item => item.filePath || '').filter(Boolean))
         } else {
           setCssContents([])
+          setCssPaths([])
         }
         setEnableInlineStyle(settings['enable-inline-style'] !== 'false')
       } catch {
         setCssContents([])
+        setCssPaths([])
       }
     }
     loadCss()
@@ -250,7 +257,7 @@ export default function ConvertedCodeEditor({
     }
   }
 
-  // XML 저장 버튼 클릭: 이전에 저장한 파일명이 있으면 모달 없이 즉시 저장
+  // XML 저장 버튼 클릭: 항상 모달 열어 파일명 확인/변경 가능
   const handleSaveXml = async () => {
     if (!convertedCode || !rootNode) return
     if (!projectId || !fileKey) {
@@ -259,18 +266,12 @@ export default function ConvertedCodeEditor({
       return
     }
 
-    // 기존 파일명 조회
+    let current = rootNode.name.replace(/[<>:"/\\|?*]/g, '_')
     try {
-      const existing = await getFigmaFileXmlFilename(projectId, fileKey, nodeId)
-      if (existing) {
-        await doExportXml(existing)
-        return
-      }
+      const saved = await getFigmaFileXmlFilename(projectId, fileKey, nodeId)
+      if (saved) current = saved
     } catch { /* ignore */ }
-
-    // 최초 저장: 모달 열어 파일명 입력 받기
-    const defaultFilename = rootNode.name.replace(/[<>:"/\\|?*]/g, '_')
-    setInputFilename(defaultFilename)
+    setInputFilename(current)
     setShowFilenameModal(true)
   }
 
@@ -319,13 +320,13 @@ export default function ConvertedCodeEditor({
     if (activeTab === 'preview' && convertedCode && iframeReady && iframeRef.current?.contentWindow) {
       const timer = setTimeout(() => {
         iframeRef.current?.contentWindow?.postMessage(
-          { event: 'previewFrame.sendXML', xml: convertedCode, css: cssContents },
+          { event: 'previewFrame.sendXML', xml: convertedCode, css: cssContents, cssPaths: cssPaths, initScript: currentInitScript, widgetStyle: currentWidgetStyle },
           '*'
         )
       }, 100)
       return () => clearTimeout(timer)
     }
-  }, [activeTab, convertedCode, iframeReady, cssContents])
+  }, [activeTab, convertedCode, iframeReady, cssContents, cssPaths, currentInitScript])
 
   // 코드 하이라이팅 적용
   useEffect(() => {
@@ -354,7 +355,7 @@ export default function ConvertedCodeEditor({
     setPreviewError(null)
 
     iframeRef.current.contentWindow.postMessage(
-      { event: 'previewFrame.sendXML', xml: convertedCode, css: cssContents },
+      { event: 'previewFrame.sendXML', xml: convertedCode, css: cssContents, cssPaths: cssPaths, initScript: currentInitScript, widgetStyle: currentWidgetStyle },
       '*'
     )
   }, [convertedCode, iframeReady, cssContents])
@@ -366,6 +367,7 @@ export default function ConvertedCodeEditor({
     setConverting(true)
     // 위젯 초기화 스크립트 수집
     const widgetInitScripts: string[] = []
+    let widgetTitleHeight = 0
     try {
       // 모든 매핑 가져오기
       const allMappings = await fetchMappings(projectId, fileKey, nodeId)
@@ -411,6 +413,7 @@ export default function ConvertedCodeEditor({
         // 매핑된 노드인 경우
         if (regItem) {
           const { tagName, properties } = regItem
+          // console.log(`[traverse] ${regItem.name} (${n.name})`, { tagName, properties, customAttrs: nodeMapping?.customAttrs, absoluteBoundingBox: n.absoluteBoundingBox ? 'exists' : 'null' })
           const mergedProps: Record<string, string> = { ...properties, 'data-nodeid': n.id }
           const regItemNameLower = regItem.name.toLowerCase()
 
@@ -783,6 +786,11 @@ ${indentStr}    </w2:attributes>`
 
           // widgetContainer: 하위 widgetItem 스캔 → addWidgets JS 코드 생성
           if (regItemNameLower === 'widget') {
+            // cols: width 값으로 설정
+            if (n.absoluteBoundingBox) {
+              mergedProps.cols = String(Math.round(n.absoluteBoundingBox.width))
+            }
+            // console.log('[widget] cols:', mergedProps.cols, 'mergedProps keys:', Object.keys(mergedProps))
             const widgetContainerId = mergedProps.id || n.name.replace(/[^a-zA-Z0-9_]/g, '_')
             const widgetDefs: Array<{ id: string; title: string; src: string; x: number; y: number; unitWidth: number; unitHeight: number }> = []
 
@@ -793,6 +801,7 @@ ${indentStr}    </w2:attributes>`
 
               let title = ''
               let contentId = ''
+              let titleHeight = 0
               const childBB = child.absoluteBoundingBox
               const parentBB = n.absoluteBoundingBox
 
@@ -802,6 +811,9 @@ ${indentStr}    </w2:attributes>`
                 if (!gcReg) continue
                 const gcName = gcReg.name.toLowerCase()
                 if (gcName === 'widgettitle') {
+                  // widgetTitle 높이 기록
+                  titleHeight = gc.absoluteBoundingBox?.height || 0
+                  if (titleHeight > widgetTitleHeight) widgetTitleHeight = Math.round(titleHeight)
                   // textbox로 매핑된 하위 노드의 텍스트만 추출
                   const findTextboxText = (node: FigmaNode): string => {
                     const m = mappingMap.get(node.id)
@@ -836,6 +848,7 @@ ${indentStr}    </w2:attributes>`
             }
 
             const wcPropsStr = Object.entries(mergedProps).map(([k, v]) => `${k}="${v}"`).join(' ')
+            // console.log('[widget] wcPropsStr:', wcPropsStr)
 
             if (widgetDefs.length > 0) {
               const defsJson = widgetDefs.map(d =>
@@ -904,8 +917,8 @@ ${defsJson}
         <w2:mfeSubmission />
         <w2:layoutInfo />
         <w2:publicInfo method="" />
-        <script lazy="false" type="text/javascript"><![CDATA[
-scwin.onpageload = function() {
+${widgetInitScripts.length > 0 ? `        <style type="text/css"><![CDATA[.w2widget_content {padding:0}${widgetTitleHeight > 0 ? ` .w2widget_title {height:${widgetTitleHeight}px}` : ''}]]></style>\n` : ''}        <script lazy="false" type="text/javascript"><![CDATA[
+scwin.onpageload = function onpageload() {
 ${widgetInitScripts.length > 0 ? widgetInitScripts.join('\n\n') + '\n' : ''}};
 ]]></script>
     </head>
@@ -915,6 +928,12 @@ ${innerCode}
 </html>`
 
       setConvertedCode(formatXml(result))
+      setCurrentInitScript(widgetInitScripts.length > 0 ? widgetInitScripts.join('\n\n') : '')
+      // 위젯 관련 인라인 스타일 수집 (preview에서 별도 주입)
+      const widgetCss = widgetInitScripts.length > 0
+        ? `.w2widget_content {padding:0}${widgetTitleHeight > 0 ? ` .w2widget_title {height:${widgetTitleHeight}px}` : ''}`
+        : ''
+      setCurrentWidgetStyle(widgetCss)
     } catch (e) {
       console.error('Failed to convert XML:', e)
     } finally {

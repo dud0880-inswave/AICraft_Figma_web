@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
 import type { FigmaNode } from '../types/figma'
 import type { RegistryItem, NodeMapping, FigmaNodeForSignature } from '../utils/api'
-import { fetchRegistry, fetchMapping, saveMapping, deleteMapping, clearAllMappings, fetchProjectSettings, getRecommendedClasses, checkUniqueCluster, applyMappingBySignature, type RecommendedClass, type UniqueClusterCheck } from '../utils/api'
+import { fetchRegistry, fetchMapping, fetchMappings, saveMapping, deleteMapping, clearAllMappings, fetchProjectSettings, getRecommendedClasses, checkUniqueCluster, applyMappingBySignature, type RecommendedClass, type UniqueClusterCheck } from '../utils/api'
 import { type CssItem, type ComponentClassMapping } from './SettingsModal'
 import { findTextInChildren, collectAllTexts, collectTopLevelTexts } from '../utils/text-utils'
 import { findParentNode } from '../utils/tree-utils'
@@ -236,6 +236,49 @@ export default function MappingEditor({ node, nodes, tree, fileKey, rootNodeId, 
     pushUndo(mapping)
     setSaving(true)
     try {
+      // widget / widgetContent 선택 시 자동 id 부여
+      let autoAttrs: Record<string, string> = {}
+      const itemNameLower = item.name.toLowerCase()
+      if (itemNameLower === 'widget') {
+        // wg_01, wg_02...
+        try {
+          const allMappings = await fetchMappings(projectId, fileKey, rootNodeId)
+          const widgetReg = registry.find(r => r.name.toLowerCase() === 'widget')
+          const existingCount = widgetReg
+            ? allMappings.filter(m => m.registryId === widgetReg.id && m.status === 'mapped').length
+            : 0
+          autoAttrs = { id: `wg_${String(existingCount + 1).padStart(2, '0')}` }
+        } catch { /* ignore */ }
+      } else if (itemNameLower === 'widgetcontent' && tree) {
+        // wg_01_wc_01, wg_01_wc_02...
+        try {
+          const allMappings = await fetchMappings(projectId, fileKey, rootNodeId)
+          const targetNode = targetNodes[0]
+          // 상위로 올라가면서 widget 매핑된 조상 찾기
+          let ancestorId = targetNode.id
+          let widgetId = ''
+          const widgetReg = registry.find(r => r.name.toLowerCase() === 'widget')
+          for (let i = 0; i < 10; i++) {
+            const parent = findParentNode(tree, ancestorId)
+            if (!parent) break
+            const parentMapping = allMappings.find(m => m.figmaNodeId === parent.id && m.status === 'mapped')
+            if (parentMapping && widgetReg && parentMapping.registryId === widgetReg.id) {
+              widgetId = parentMapping.customAttrs?.id || ''
+              break
+            }
+            ancestorId = parent.id
+          }
+          if (widgetId) {
+            // 같은 widget 하위의 기존 widgetContent 개수
+            const wcReg = registry.find(r => r.name.toLowerCase() === 'widgetcontent')
+            const existingWcCount = wcReg
+              ? allMappings.filter(m => m.registryId === wcReg.id && m.status === 'mapped').length
+              : 0
+            autoAttrs = { id: `${widgetId}_wc_${String(existingWcCount + 1).padStart(2, '0')}` }
+          }
+        } catch { /* ignore */ }
+      }
+
       let lastMapping: NodeMapping | null = null
       for (const n of targetNodes) {
         lastMapping = await saveMapping({
@@ -248,7 +291,7 @@ export default function MappingEditor({ node, nodes, tree, fileKey, rootNodeId, 
           registryId: item.id,
           registryName: item.name,
           registryTag: '',
-          customAttrs: {},
+          customAttrs: autoAttrs,
           status: 'mapped',
         })
       }
@@ -961,6 +1004,11 @@ export default function MappingEditor({ node, nodes, tree, fileKey, rootNodeId, 
                 }
               }
 
+
+              // widget: cols 속성 추가
+              if (selectedItemNameLower === 'widget' && displayNode?.absoluteBoundingBox) {
+                mergedProps.cols = String(Math.round(displayNode.absoluteBoundingBox.width))
+              }
 
               if (selectedItemNameLower === 'checkbox') {
                 const texts = collectAllTexts(displayNode)

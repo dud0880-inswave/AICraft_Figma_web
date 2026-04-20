@@ -84,7 +84,7 @@ export function convertToXml(options: ConvertOptions): string {
       }
 
       const hasCustomStyleKey = nodeMapping?.customAttrs && 'style' in nodeMapping.customAttrs
-      if (!hasCustomStyleKey && (!mergedProps.class || ['table', 'gridview'].includes(regItemNameLower))) {
+      if (!hasCustomStyleKey && (!mergedProps.class || ['table', 'gridview', 'widget'].includes(regItemNameLower))) {
         const inlineStyle = extractInlineStyle(n, regItemNameLower, parent)
         if (inlineStyle) {
           const existingStyle = mergedProps.style ? `${mergedProps.style};` : ''
@@ -355,7 +355,7 @@ ${defsJson}
         ${widgetContainerId}.addWidgets(opts);
     }`)
         }
-
+        console.log("wcPropsStr >>", wcPropsStr)
         return `${indentStr}<${tagName} ${wcPropsStr}></${tagName}>`
       }
 
@@ -393,7 +393,7 @@ ${defsJson}
         <w2:layoutInfo />
         <w2:publicInfo method="" />
         <script lazy="false" type="text/javascript"><![CDATA[
-scwin.onpageload = function() {
+scwin.onpageload = function onpageload() {
 ${widgetInitScripts.length > 0 ? widgetInitScripts.join('\n\n') + '\n' : ''}};
 ]]></script>
     </head>

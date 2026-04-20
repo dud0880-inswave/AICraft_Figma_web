@@ -34,6 +34,7 @@ export interface CssItem {
   id: string
   name: string
   content: string
+  filePath?: string     // CSS 파일 경로 (워크스페이스 기준, link 로드용)
   classNames: string[]  // CSS에서 추출한 클래스명
 }
 
@@ -729,32 +730,24 @@ function CssTab({ projectId, onCssChange }: { projectId?: string | null; onCssCh
     }
   }, [subView, cssList, selectedCssId])
 
+  // 브라우저: input file로 content 읽기
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files
     if (!files || files.length === 0) return
 
     const newItems: CssItem[] = []
-
     for (let i = 0; i < files.length; i++) {
       const file = files[i]
       if (!file.name.endsWith('.css')) continue
-
       const content = await file.text()
       const classNames = extractClassNames(content)
-      newItems.push({
-        id: `css-${Date.now()}-${i}`,
-        name: file.name,
-        content,
-        classNames,
-      })
+      newItems.push({ id: `css-${Date.now()}-${i}`, name: file.name, content, classNames })
     }
 
     if (newItems.length > 0) {
       const updated = [...cssList, ...newItems]
       setCssList(updated)
       saveCssListToSettings(updated)
-
-      // 각 CSS 파일별로 자동 매핑 적용
       if (registry.length > 0) {
         let currentMapping = { ...componentClassMapping }
         for (const item of newItems) {
@@ -767,8 +760,51 @@ function CssTab({ projectId, onCssChange }: { projectId?: string | null; onCssCh
       }
       onCssChange?.()
     }
-
     e.target.value = ''
+  }
+
+  // Extension: VS Code 파일 다이얼로그로 상대경로 획득 → filePath + content 저장
+  const handleVsCodeFileSelect = () => {
+    const vsc = (window as unknown as { __vscode?: { postMessage: (msg: unknown) => void } }).__vscode
+    if (!vsc) return
+    const requestId = `pick-${Date.now()}`
+    const handler = async (e: MessageEvent) => {
+      if (e.data?.type === 'filePicked' && e.data?.requestId === requestId) {
+        window.removeEventListener('message', handler)
+        const relativePath = e.data.relativePath as string
+        const fileName = relativePath.split('/').pop() || ''
+        // 파일 내용을 extension host에 요청하여 읽기
+        const readId = `read-${Date.now()}`
+        let content = ''
+        let classNames: string[] = []
+        try {
+          content = await new Promise<string>((resolve) => {
+            const readHandler = (ev: MessageEvent) => {
+              if (ev.data?.type === 'fileContent' && ev.data?.requestId === readId) {
+                window.removeEventListener('message', readHandler)
+                resolve(ev.data.content || '')
+              }
+            }
+            window.addEventListener('message', readHandler)
+            setTimeout(() => { window.removeEventListener('message', readHandler); resolve('') }, 5000)
+            vsc.postMessage({ type: 'readFile', requestId: readId, relativePath })
+          })
+          if (content) classNames = extractClassNames(content)
+        } catch { /* ignore */ }
+        const newItem: CssItem = { id: `css-${Date.now()}`, name: fileName, content, filePath: relativePath, classNames }
+        const updated = [...cssList, newItem]
+        setCssList(updated)
+        saveCssListToSettings(updated)
+        if (classNames.length > 0 && registry.length > 0) {
+          const mapped = autoMapClassesToComponents(newItem.id, classNames, registry, componentClassMapping)
+          setComponentClassMapping(mapped)
+          saveMappingToSettings(mapped)
+        }
+        onCssChange?.()
+      }
+    }
+    window.addEventListener('message', handler)
+    vsc.postMessage({ type: 'pickFile', requestId, filters: { 'CSS': ['css'] } })
   }
 
   const handleDelete = (id: string) => {
@@ -794,7 +830,6 @@ function CssTab({ projectId, onCssChange }: { projectId?: string | null; onCssCh
     setCssList(updated)
     saveCssListToSettings(updated)
 
-    // 새로 추출된 클래스에 대해 자동 매핑 적용
     if (classNames.length > 0 && registry.length > 0) {
       const autoMapped = autoMapClassesToComponents(editingItem.id, classNames, registry, componentClassMapping)
       setComponentClassMapping(autoMapped)
@@ -825,7 +860,6 @@ function CssTab({ projectId, onCssChange }: { projectId?: string | null; onCssCh
     setCssList(updated)
     saveCssListToSettings(updated)
 
-    // 새로 추출된 클래스에 대해 자동 매핑 적용
     if (classNames.length > 0 && registry.length > 0) {
       const autoMapped = autoMapClassesToComponents(editingItem.id, classNames, registry, componentClassMapping)
       setComponentClassMapping(autoMapped)
@@ -1142,21 +1176,35 @@ function CssTab({ projectId, onCssChange }: { projectId?: string | null; onCssCh
 
       {/* 파일 업로드 */}
       <div>
-        <label className="flex items-center justify-center px-4 py-3 border-2 border-dashed theme-border rounded-lg cursor-pointer hover:border-blue-500 theme-bg-hover transition-colors">
-          <input
-            type="file"
-            accept=".css"
-            multiple
-            onChange={handleFileSelect}
-            className="hidden"
-          />
-          <div className="text-center">
-            <svg className="w-6 h-6 mx-auto theme-text-secondary mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-            </svg>
-            <span className="text-sm theme-text-secondary">클릭하여 CSS 파일 선택</span>
-          </div>
-        </label>
+        {(window as unknown as { __vscode?: unknown }).__vscode ? (
+          <button
+            onClick={handleVsCodeFileSelect}
+            className="w-full flex items-center justify-center px-4 py-3 border-2 border-dashed theme-border rounded-lg cursor-pointer hover:border-blue-500 theme-bg-hover transition-colors"
+          >
+            <div className="text-center">
+              <svg className="w-6 h-6 mx-auto theme-text-secondary mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+              </svg>
+              <span className="text-sm theme-text-secondary">클릭하여 CSS 파일 선택</span>
+            </div>
+          </button>
+        ) : (
+          <label className="flex items-center justify-center px-4 py-3 border-2 border-dashed theme-border rounded-lg cursor-pointer hover:border-blue-500 theme-bg-hover transition-colors">
+            <input
+              type="file"
+              accept=".css"
+              multiple
+              onChange={handleFileSelect}
+              className="hidden"
+            />
+            <div className="text-center">
+              <svg className="w-6 h-6 mx-auto theme-text-secondary mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+              </svg>
+              <span className="text-sm theme-text-secondary">클릭하여 CSS 파일 선택</span>
+            </div>
+          </label>
+        )}
       </div>
 
       {/* CSS 목록 */}

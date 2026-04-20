@@ -43,7 +43,7 @@ const INITIAL_COMPONENTS: ComponentData[] = [
   { name: "group", tagName: "xf:group", properties: {} },
   { name: "anchor", tagName: "w2:anchor", properties: { outerDiv: "false" } },
   { name: "image", tagName: "xf:image", properties: {} },
-  { name: "widget", tagName: "w2:widgetContainer", properties: { horizontalMargin: "8", verticalMargin: "8", preventMaximizeByTitle: "true", widgetMove: "true", mode: "pushpull" } },
+  { name: "widget", tagName: "w2:widgetContainer", properties: { horizontalMargin: "0", verticalMargin: "0", preventMaximizeByTitle: "true", widgetMove: "true", mode: "pushpull", unitHeightPixel: "1" } },
   { name: "widgetItem", tagName: "__widgetItem__", properties: {} },
   { name: "widgetTitle", tagName: "__widgetTitle__", properties: {} },
   { name: "widgetContent", tagName: "__widgetContent__", properties: {} },
@@ -130,4 +130,5 @@ export class RegistryStore {
   deleteByProject(projectId: string): void {
     this.db.prepare('DELETE FROM registry WHERE project_id = ?').run(projectId);
   }
+
 }

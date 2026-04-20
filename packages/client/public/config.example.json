@@ -1,6 +1,7 @@
 {
   "_comment": "이 파일을 config.json으로 복사하여 사용하세요",
-  "serverHost": "0.0.0.0",
+  "serverHost": "",
   "serverPort": 5181,
-  "appTitle": "AICraft Figma Viewer"
+  "appTitle": "AICraft Figma Viewer",
+  "enableDebugJson": false
 }

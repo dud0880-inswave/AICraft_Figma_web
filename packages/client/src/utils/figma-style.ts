@@ -322,9 +322,12 @@ function extractTextboxStyle(node: FigmaNode, parentNode?: FigmaNode): string {
   const isParentAL = parentHasAutoLayout(parentNode)
   const styles: string[] = []
 
-  // white-space: WIDTH_AND_HEIGHT이거나 가로세로 모두 HUG면 nowrap
-  if (textNode?.textAutoResize === 'WIDTH_AND_HEIGHT' ||
-      (node.layoutSizingHorizontal === 'HUG' && node.layoutSizingVertical === 'HUG')) {
+  // white-space: 단일 라인이면 nowrap
+  const isSingleLine = textNode?.characters ? !textNode.characters.includes('\n') : true
+  const textAutoResize = textNode?.textAutoResize || (textNode?.style as Record<string, unknown>)?.textAutoResize as string | undefined
+  if (textAutoResize === 'WIDTH_AND_HEIGHT' ||
+      (node.layoutSizingHorizontal === 'HUG' && node.layoutSizingVertical === 'HUG') ||
+      (textAutoResize === 'HEIGHT' && isSingleLine)) {
     styles.push('white-space:nowrap')
   }
 
@@ -344,7 +347,7 @@ function extractTextboxStyle(node: FigmaNode, parentNode?: FigmaNode): string {
       styles.push(`width:${Math.round(bb.width)}px`)
     }
     // height: textAutoResize가 HEIGHT나 WIDTH_AND_HEIGHT면 auto
-    if (textNode?.textAutoResize !== 'HEIGHT' && textNode?.textAutoResize !== 'WIDTH_AND_HEIGHT' && node.layoutSizingVertical !== 'HUG') {
+    if (textAutoResize !== 'HEIGHT' && textAutoResize !== 'WIDTH_AND_HEIGHT' && node.layoutSizingVertical !== 'HUG') {
       styles.push(`height:${Math.round(bb.height)}px`)
     }
   }
@@ -502,6 +505,16 @@ function extractSelectStyle(node: FigmaNode, parentNode?: FigmaNode): string {
 }
 
 // ============================================================
+// widget (widgetContainer): position + size
+// ============================================================
+function extractWidgetStyle(node: FigmaNode, parentNode?: FigmaNode): string {
+  const isParentAL = parentHasAutoLayout(parentNode)
+  const styles: string[] = []
+  pushPositionAndSizing(styles, node, parentNode, isParentAL)
+  return styles.join(';')
+}
+
+// ============================================================
 // 컴포넌트 이름 → 스타일 추출 함수 라우팅
 // parentNode: 부모 노드 (flex/absolute 판단용)
 // ============================================================
@@ -520,6 +533,7 @@ export function extractInlineStyle(node: FigmaNode, componentName?: string, pare
     case 'image':    return extractImageStyle(node, parentNode)
     case 'gridview': return extractGridStyle(node, parentNode)
     case 'table':    return extractTableStyle(node, parentNode)
+    case 'widget':   return extractWidgetStyle(node, parentNode)
     default:         return ''
   }
 }

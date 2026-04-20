@@ -101,6 +101,44 @@ export default function App() {
     return params.get('projectId')
   })
 
+  // Extension 메시지 수신
+  useEffect(() => {
+    const handler = (e: MessageEvent) => {
+      // 프로젝트 선택 → 파일 대시보드 직행
+      if (e.data?.type === 'selectProject') {
+        const { projectId, projectName } = e.data
+        setState(s => ({ ...s, projectId, projectName }))
+        setNavigateToProjectId(projectId)
+        setView('dashboard')
+        setDashboardKey(k => k + 1)
+      }
+      // 사이드바 노드 클릭 → 선택 (파란색 하이라이트)
+      if (e.data?.type === 'selectNode') {
+        const { nodeId } = e.data
+        setState(s => ({
+          ...s,
+          selectedNodeIds: [nodeId],
+          primarySelectedId: nodeId,
+        }))
+      }
+      // 사이드바 노드 포커스 이동 → 호버 (노란색 하이라이트)
+      if (e.data?.type === 'hoverNode') {
+        const { nodeId } = e.data
+        console.log('[App] hoverNode received:', nodeId)
+        setState(s => ({ ...s, hoveredNodeId: nodeId }))
+      }
+      // 프로젝트 목록으로 돌아가기
+      if (e.data?.type === 'backToProjects') {
+        setState(s => ({ ...initialState, token: s.token }))
+        setView('dashboard')
+        setNavigateToProjectId(null)
+        setDashboardKey(k => k + 1)
+      }
+    }
+    window.addEventListener('message', handler)
+    return () => window.removeEventListener('message', handler)
+  }, [])
+
   // 왼쪽 패널 리사이즈
   const handleLeftResize = useCallback((delta: number) => {
     setLeftPanelWidth(prev => Math.max(320, Math.min(600, prev + delta)))
@@ -197,6 +235,11 @@ export default function App() {
       setShowAddFileModal(false)
       setAddFileProjectId(null)
       setNavigateToProjectId(projectId) // 프로젝트 선택 상태 유지
+      // Extension 사이드바 프로젝트 목록 갱신
+      try {
+        const vsc = (window as unknown as { __vscode?: { postMessage: (msg: unknown) => void } }).__vscode
+        if (vsc) vsc.postMessage({ type: 'refreshProjects' })
+      } catch { /* ignore */ }
       setDashboardKey((k) => k + 1) // 대시보드 새로고침
 
       // 자동 매핑 제안 확인
@@ -352,6 +395,11 @@ export default function App() {
     setState((s) => ({ ...initialState, token: s.token }))  // 토큰은 유지
     setNavigateToProjectId(projectId)
     setView('dashboard')
+    // Extension 사이드바 다시 열기
+    try {
+      const vsc = (window as unknown as { __vscode?: { postMessage: (msg: unknown) => void } }).__vscode
+      if (vsc) vsc.postMessage({ type: 'backToProject' })
+    } catch { /* ignore */ }
   }, [state.projectId])
 
   // 파일 새로고침
@@ -606,6 +654,12 @@ export default function App() {
         fileVersion: resolvedVersion || null,
       }))
       setView('editor')
+
+      // Extension에 파일 열림 알림 (사이드바 노드트리 전환)
+      try {
+        const vsc = (window as unknown as { __vscode?: { postMessage: (msg: unknown) => void } }).__vscode
+        if (vsc) vsc.postMessage({ type: 'fileOpened', projectId, fileKey, nodeId })
+      } catch { /* ignore */ }
 
     } catch (err) {
       setState((s) => ({
@@ -1193,7 +1247,13 @@ export default function App() {
               registryRefreshKey={registryRefreshKey}
               token={state.token}
               onRegistryLoad={setRegistry}
-              onMappingChange={() => setConvertTrigger(t => t + 1)}
+              onMappingChange={() => {
+                setConvertTrigger(t => t + 1)
+                try {
+                  const vsc = (window as unknown as { __vscode?: { postMessage: (msg: unknown) => void } }).__vscode
+                  if (vsc && state.projectId && state.fileKey) vsc.postMessage({ type: 'mappingChanged', projectId: state.projectId, fileKey: state.fileKey, nodeId: state.targetNodeId })
+                } catch { /* ignore */ }
+              }}
             />
           </div>
 

@@ -132,25 +132,6 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
   console.log(`[Server] ${req.method} ${path}`);
 
   try {
-    // ---- 정적 파일 서빙: /websquare/* (미리보기 iframe + CSS 이미지 경로) ----
-    if (path.startsWith('/websquare/')) {
-      const clientPublicDir = resolve(__dirname, '..', '..', 'client', 'public');
-      const filePath = join(clientPublicDir, path);
-      if (!filePath.startsWith(clientPublicDir)) { res.writeHead(403); res.end(); return; }
-      if (existsSync(filePath)) {
-        const buf = readFileSync(filePath);
-        const ext = (path.split('.').pop() || '').toLowerCase();
-        const mime: Record<string, string> = {
-          html: 'text/html; charset=utf-8', js: 'application/javascript; charset=utf-8',
-          css: 'text/css; charset=utf-8', json: 'application/json; charset=utf-8',
-          png: 'image/png', jpg: 'image/jpeg', gif: 'image/gif', svg: 'image/svg+xml',
-          woff: 'font/woff', woff2: 'font/woff2', ttf: 'font/ttf', eot: 'application/vnd.ms-fontobject',
-        };
-        res.writeHead(200, { 'Content-Type': mime[ext] || 'application/octet-stream', 'Access-Control-Allow-Origin': origin });
-        res.end(buf);
-        return;
-      }
-    }
 
     // ---- Figma API Proxy (VS Code extension 및 운영 환경에서 Vite proxy 대체) ----
     if (path.startsWith('/api/figma-proxy/')) {
