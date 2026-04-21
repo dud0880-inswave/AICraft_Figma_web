@@ -236,51 +236,48 @@ export default function MappingEditor({ node, nodes, tree, fileKey, rootNodeId, 
     pushUndo(mapping)
     setSaving(true)
     try {
-      // widget / widgetContent 선택 시 자동 id 부여
-      let autoAttrs: Record<string, string> = {}
+      // widget / widgetContent: 다중 선택 시 개별 채번을 위한 사전 조회
       const itemNameLower = item.name.toLowerCase()
+      let allMappings: NodeMapping[] = []
+      let baseCount = 0
+      let widgetIdForWc = ''
+      if (itemNameLower === 'widget' || (itemNameLower === 'widgetcontent' && tree)) {
+        try { allMappings = await fetchMappings(projectId, fileKey, rootNodeId) } catch { /* ignore */ }
+      }
       if (itemNameLower === 'widget') {
-        // wg_01, wg_02...
-        try {
-          const allMappings = await fetchMappings(projectId, fileKey, rootNodeId)
-          const widgetReg = registry.find(r => r.name.toLowerCase() === 'widget')
-          const existingCount = widgetReg
-            ? allMappings.filter(m => m.registryId === widgetReg.id && m.status === 'mapped').length
-            : 0
-          autoAttrs = { id: `wg_${String(existingCount + 1).padStart(2, '0')}` }
-        } catch { /* ignore */ }
-      } else if (itemNameLower === 'widgetcontent' && tree) {
-        // wg_01_wc_01, wg_01_wc_02...
-        try {
-          const allMappings = await fetchMappings(projectId, fileKey, rootNodeId)
-          const targetNode = targetNodes[0]
-          // 상위로 올라가면서 widget 매핑된 조상 찾기
-          let ancestorId = targetNode.id
-          let widgetId = ''
-          const widgetReg = registry.find(r => r.name.toLowerCase() === 'widget')
-          for (let i = 0; i < 10; i++) {
-            const parent = findParentNode(tree, ancestorId)
-            if (!parent) break
-            const parentMapping = allMappings.find(m => m.figmaNodeId === parent.id && m.status === 'mapped')
-            if (parentMapping && widgetReg && parentMapping.registryId === widgetReg.id) {
-              widgetId = parentMapping.customAttrs?.id || ''
-              break
-            }
-            ancestorId = parent.id
+        const widgetReg = registry.find(r => r.name.toLowerCase() === 'widget')
+        baseCount = widgetReg ? allMappings.filter(m => m.registryId === widgetReg.id && m.status === 'mapped').length : 0
+      } else if (itemNameLower === 'widgetcontent' && tree && targetNodes.length > 0) {
+        // 첫 노드 기준으로 상위 widget 찾기
+        let ancestorId = targetNodes[0].id
+        const widgetReg = registry.find(r => r.name.toLowerCase() === 'widget')
+        for (let i = 0; i < 10; i++) {
+          const parent = findParentNode(tree, ancestorId)
+          if (!parent) break
+          const parentMapping = allMappings.find(m => m.figmaNodeId === parent.id && m.status === 'mapped')
+          if (parentMapping && widgetReg && parentMapping.registryId === widgetReg.id) {
+            widgetIdForWc = parentMapping.customAttrs?.id || ''
+            break
           }
-          if (widgetId) {
-            // 같은 widget 하위의 기존 widgetContent 개수
-            const wcReg = registry.find(r => r.name.toLowerCase() === 'widgetcontent')
-            const existingWcCount = wcReg
-              ? allMappings.filter(m => m.registryId === wcReg.id && m.status === 'mapped').length
-              : 0
-            autoAttrs = { id: `${widgetId}_wc_${String(existingWcCount + 1).padStart(2, '0')}` }
-          }
-        } catch { /* ignore */ }
+          ancestorId = parent.id
+        }
+        if (widgetIdForWc) {
+          const wcReg = registry.find(r => r.name.toLowerCase() === 'widgetcontent')
+          baseCount = wcReg ? allMappings.filter(m => m.registryId === wcReg.id && m.status === 'mapped' && m.customAttrs?.id?.startsWith(`${widgetIdForWc}_wc_`)).length : 0
+        }
       }
 
       let lastMapping: NodeMapping | null = null
-      for (const n of targetNodes) {
+      for (let idx = 0; idx < targetNodes.length; idx++) {
+        const n = targetNodes[idx]
+        // 개별 채번
+        let autoAttrs: Record<string, string> = {}
+        if (itemNameLower === 'widget') {
+          autoAttrs = { id: `wg_${String(baseCount + idx + 1).padStart(2, '0')}` }
+        } else if (itemNameLower === 'widgetcontent' && widgetIdForWc) {
+          autoAttrs = { id: `${widgetIdForWc}_wc_${String(baseCount + idx + 1).padStart(2, '0')}` }
+        }
+
         lastMapping = await saveMapping({
           projectId,
           figmaFileKey: fileKey,

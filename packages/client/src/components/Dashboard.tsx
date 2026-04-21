@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import type { FigmaFileRecord, Project } from '../utils/api'
-import { fetchProjects, fetchProjectFiles, deleteProject, createProject, updateProject, deleteFigmaFile, generateClusters, fetchProjectSettings, saveProjectSettings, saveFigmaFileData, saveFigmaFileImage } from '../utils/api'
+import { fetchProjects, fetchProjectFiles, deleteProject, createProject, updateProject, deleteFigmaFile, generateClusters, fetchProjectSettings, saveProjectSettings, saveFigmaFileData, saveFigmaFileImage, deleteFigmaFileData, deleteFigmaFileImage } from '../utils/api'
 import { parseFigmaUrl, fetchFigmaFile, fetchNodeImages } from '../utils/figma-api'
 import { findNodeById } from '../utils/tree-utils'
 import { useDialog } from '../contexts/DialogContext'
@@ -104,6 +104,30 @@ export default function Dashboard({ onSelectFile, onAddNewFile, onOpenSettings, 
     if (!await showConfirm('이 파일을 삭제하시겠습니까?')) return
 
     try {
+      // 연결된 스펙 문서 삭제
+      const specKey = `${fileKey}-${nodeId || ''}`
+      const specEntry = specUrlMap[specKey]
+      if (specEntry) {
+        try {
+          // 스펙 트리 데이터 삭제
+          await deleteFigmaFileData(selectedProject.id, specEntry.specFileKey, specEntry.specNodeId)
+          // 스펙 이미지 (_spec.svg) 삭제
+          await deleteFigmaFileImage(selectedProject.id, fileKey, nodeId, 'spec')
+          // 스펙 매핑 설정 삭제
+          const specSettingsKey = `spec-meta-${specEntry.specFileKey}-${specEntry.specNodeId || ''}`
+          const markTargetKey = `spec-mark-target-${specEntry.specFileKey}-${specEntry.specNodeId || ''}`
+          await saveProjectSettings(selectedProject.id, {
+            [specSettingsKey]: JSON.stringify({}),
+            [markTargetKey]: JSON.stringify({}),
+          })
+          // spec-url-map에서 제거
+          const newMap = { ...specUrlMap }
+          delete newMap[specKey]
+          await saveProjectSettings(selectedProject.id, { 'spec-url-map': JSON.stringify(newMap) })
+          setSpecUrlMap(newMap)
+        } catch (e) { console.warn('스펙 삭제 실패:', e) }
+      }
+
       await deleteFigmaFile(selectedProject.id, fileKey, nodeId)
       setFiles(files.filter(f => !(f.fileKey === fileKey && f.nodeId === nodeId)))
       generateClusters(selectedProject.id).catch((e) => console.error('Failed to regenerate clusters:', e))

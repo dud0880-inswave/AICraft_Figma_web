@@ -1938,7 +1938,7 @@ ${specMetaSection}${xmlSection}
   "collections": [
     {
       "id": "(DataCollection ID, 예: dlt_INPUT)",
-      "type": "dataList | dataMap",
+      "type": "dataList | dataMap",  // initialData가 배열(다건)이면 dataList, 단건이면 dataMap
       "fields": [
         {
           "name": "(필드명)",
@@ -1947,7 +1947,7 @@ ${specMetaSection}${xmlSection}
           "description": "(필드 설명)"
         }
       ],
-      "initialData": [ ... ] // 초기 데이터가 있는 경우만 포함
+      "initialData": [ ... ] // 초기 데이터가 있는 경우만 포함. 다건이면 배열, 단건이면 객체
     }
   ],
   "submissions": [
@@ -1990,6 +1990,7 @@ ${specMetaSection}${xmlSection}
 규칙:
 - XML 구조에서 w2:dataCollection, w2:submission, w2:gridView 등을 정확히 추출
 - DataCollection의 필드는 XML의 w2:column 정의에서 추출
+- collections.type 판단: initialData가 배열(다건 데이터)이면 "dataList", 단건이면 "dataMap"
 - GridView 컬럼은 순서(order) 포함하여 정확히 기재
 - 팝업은 JS 코드에서 nova.popup 또는 유사 호출 패턴을 분석하여 추출
 - 초기 데이터(initialData)가 XML에 정의되어 있으면 포함
