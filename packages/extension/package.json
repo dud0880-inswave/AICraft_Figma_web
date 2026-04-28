@@ -1,0 +1,150 @@
+{
+  "name": "aicraft-figma-extension",
+  "displayName": "AICraft Figma",
+  "description": "Figma 파일 노드 매핑 및 XML/Spec 문서 생성 VS Code Extension",
+  "version": "0.0.1",
+  "publisher": "aicraft",
+  "engines": {
+    "vscode": "^1.80.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": ""
+  },
+  "activationEvents": [],
+  "main": "./out/extension.js",
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "aicraftFigma",
+          "title": "AICraft Figma",
+          "icon": "resources/icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "aicraftFigma": [
+        {
+          "id": "aicraftFigma.projects",
+          "name": "프로젝트"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "aicraftFigma.open",
+        "title": "Open Viewer",
+        "category": "AICraft Figma"
+      },
+      {
+        "command": "aicraftFigma.selectProject",
+        "title": "Select Project",
+        "category": "AICraft Figma"
+      },
+      {
+        "command": "aicraftFigma.addProject",
+        "title": "프로젝트 추가",
+        "category": "AICraft Figma",
+        "icon": "$(add)"
+      },
+      {
+        "command": "aicraftFigma.deleteProject",
+        "title": "프로젝트 삭제",
+        "category": "AICraft Figma",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "aicraftFigma.renameProject",
+        "title": "프로젝트 이름 변경",
+        "category": "AICraft Figma",
+        "icon": "$(edit)"
+      },
+      {
+        "command": "aicraftFigma.refreshProjects",
+        "title": "새로고침",
+        "category": "AICraft Figma",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "aicraftFigma.setServerUrl",
+        "title": "Set Server URL",
+        "category": "AICraft Figma",
+        "icon": "$(gear)"
+      },
+      {
+        "command": "aicraftFigma.reload",
+        "title": "Reload Viewer",
+        "category": "AICraft Figma"
+      },
+      {
+        "command": "aicraftFigma.selectNode",
+        "title": "Select Node",
+        "category": "AICraft Figma"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "aicraftFigma.addProject",
+          "when": "view == aicraftFigma.projects",
+          "group": "navigation"
+        },
+        {
+          "command": "aicraftFigma.refreshProjects",
+          "when": "view == aicraftFigma.projects",
+          "group": "navigation"
+        },
+        {
+          "command": "aicraftFigma.setServerUrl",
+          "when": "view == aicraftFigma.projects",
+          "group": "navigation"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "aicraftFigma.renameProject",
+          "when": "viewItem == project",
+          "group": "inline"
+        },
+        {
+          "command": "aicraftFigma.deleteProject",
+          "when": "viewItem == project"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "AICraft Figma",
+      "properties": {
+        "aicraftFigma.serverHost": {
+          "type": "string",
+          "default": "localhost",
+          "description": "AICraft Figma 서버 호스트 (예: localhost, 192.168.0.10)"
+        },
+        "aicraftFigma.serverPort": {
+          "type": "number",
+          "default": 5181,
+          "description": "AICraft Figma 서버 포트"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "build-client": "node scripts/build-client.js",
+    "build": "npm run build-client && npm run compile",
+    "package": "vsce package"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "@types/vscode": "^1.80.0",
+    "@vscode/vsce": "^2.22.0",
+    "typescript": "^5.3.0"
+  }
+}

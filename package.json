@@ -3,7 +3,8 @@
   "version": "1.0.0",
   "private": true,
   "workspaces": [
-    "packages/*"
+    "packages/client",
+    "packages/server"
   ],
   "scripts": {
     "dev": "concurrently \"npm run dev -w @aicraft/server\" \"npm run dev -w @aicraft/client\"",
@@ -12,6 +13,8 @@
     "build": "npm run build -w @aicraft/server && npm run build -w @aicraft/client",
     "build:client": "npm run build -w @aicraft/client",
     "build:server": "npm run build -w @aicraft/server",
+    "build:ext": "cd packages/extension && npm install && npm run build-client && npm run compile",
+    "package:ext": "npm run build:ext && cd packages/extension && npx vsce package --allow-missing-repository -o ../../",
     "test": "npm run test -w @aicraft/client",
     "test:run": "npm run test:run -w @aicraft/client",
     "server": "npm run start -w @aicraft/server"

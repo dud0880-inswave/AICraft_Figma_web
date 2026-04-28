@@ -124,7 +124,6 @@ export default function App() {
       // 사이드바 노드 포커스 이동 → 호버 (노란색 하이라이트)
       if (e.data?.type === 'hoverNode') {
         const { nodeId } = e.data
-        console.log('[App] hoverNode received:', nodeId)
         setState(s => ({ ...s, hoveredNodeId: nodeId }))
       }
       // 프로젝트 목록으로 돌아가기
@@ -1223,6 +1222,13 @@ export default function App() {
             hoveredNode={hoveredNode}
             loading={state.imageLoading}
             imageScale={1}
+            rootNode={displayRootNode}
+            onHoverNode={(node) => setState(s => ({ ...s, hoveredNodeId: node?.id || null }))}
+            onSelectNode={(node) => setState(s => ({
+              ...s,
+              selectedNodeIds: [node.id],
+              primarySelectedId: node.id,
+            }))}
           />
         </div>
 

@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import type { FigmaNode, BoundingBox } from './types/figma'
-import { fetchProjectSettings, saveProjectSettings, fetchMappings, fetchRegistry, generateSpec, autoMapSpec, exportSpec, getFigmaFileXmlFilename, setFigmaFileXmlFilename, fetchProjectFiles, refreshFigmaFile, saveFigmaFileImage, bumpFigmaFileVersion, fetchFigmaFileData, getFigmaFileImageUrl, deleteFigmaFileData, deleteFigmaFileImage, fetchPriorSpecs, type NodeMapping, type RegistryItem, type SpecType } from './utils/api'
+import { fetchProjectSettings, saveProjectSettings, fetchMappings, fetchRegistry, generateSpec, autoMapSpec, getFigmaFileXmlFilename, setFigmaFileXmlFilename, fetchProjectFiles, refreshFigmaFile, saveFigmaFileImage, bumpFigmaFileVersion, fetchFigmaFileData, getFigmaFileImageUrl, deleteFigmaFileData, deleteFigmaFileImage, type NodeMapping, type RegistryItem, type SpecType } from './utils/api'
 import { convertToXml } from './utils/convert-xml'
 import { useDialog } from './contexts/DialogContext'
 import { fetchFigmaFile, fetchNodeImages } from './utils/figma-api'
@@ -673,11 +673,7 @@ export default function Spec({ projectId, fileKey, nodeId, srcFileKey, srcNodeId
               try {
                 // --- 3. 경로/파일명/버전 준비 ---
                 const settingsForPath = await fetchProjectSettings(projectId)
-                const exportPath = settingsForPath['xml-export-path']
-                if (!exportPath) {
-                  showToast('error', '설정에서 XML Export 경로를 지정해주세요')
-                  return
-                }
+                const exportPath = settingsForPath['xml-export-path'] || ''
 
                 const folderFileKey = srcFileKey || fileKey
                 const folderNodeId = srcFileKey ? srcNodeId : nodeId
@@ -703,6 +699,42 @@ export default function Spec({ projectId, fileKey, nodeId, srcFileKey, srcNodeId
                   }
                 }
 
+                const exportWsFolder = settingsForPath['xml-export-ws-folder'] || ''
+
+                // --- Extension host 헬퍼 ---
+                const vscApi = (window as unknown as { __vscode?: { postMessage: (msg: unknown) => void } }).__vscode
+                const saveFileViaExtension = (content: string, relativePath: string): Promise<{ path: string }> => {
+                  return new Promise((resolve, reject) => {
+                    if (!vscApi) { reject(new Error('Not in extension')); return }
+                    const rid = `save-${Date.now()}-${Math.random()}`
+                    const handler = (ev: MessageEvent) => {
+                      if (ev.data?.type === 'fileSaved' && ev.data?.requestId === rid) {
+                        window.removeEventListener('message', handler)
+                        if (ev.data.error) reject(new Error(ev.data.error))
+                        else resolve({ path: ev.data.path })
+                      }
+                    }
+                    window.addEventListener('message', handler)
+                    setTimeout(() => { window.removeEventListener('message', handler); reject(new Error('Timeout')) }, 30000)
+                    vscApi.postMessage({ type: 'saveFile', requestId: rid, content, relativePath, wsFolder: exportWsFolder })
+                  })
+                }
+                const readPriorSpecs = (basePath: string, upToVersion: number, specFileName: string): Promise<Array<{ version: string; content: string }>> => {
+                  return new Promise((resolve) => {
+                    if (!vscApi) { resolve([]); return }
+                    const rid = `prior-${Date.now()}-${Math.random()}`
+                    const handler = (ev: MessageEvent) => {
+                      if (ev.data?.type === 'priorSpecsLoaded' && ev.data?.requestId === rid) {
+                        window.removeEventListener('message', handler)
+                        resolve(ev.data.priorSpecs || [])
+                      }
+                    }
+                    window.addEventListener('message', handler)
+                    setTimeout(() => { window.removeEventListener('message', handler); resolve([]) }, 10000)
+                    vscApi.postMessage({ type: 'readPriorSpecs', requestId: rid, wsFolder: exportWsFolder, basePath, upToVersion, fileName: specFileName })
+                  })
+                }
+
                 // --- 4. v02 이상이면 이전 스펙 조회 (v01 ~ v(N-1)) - 3종 각각 ---
                 const versionNum = parseInt(version, 10)
                 const specTypes: Array<{ type: SpecType; fileName: string }> = [
@@ -711,13 +743,15 @@ export default function Spec({ projectId, fileKey, nodeId, srcFileKey, srcNodeId
                   { type: 'interface-metadata', fileName: 'interface-metadata.json' },
                 ]
 
-                // 이전 스펙 조회 (3종 병렬)
+                const basePath = exportPath ? `${exportPath}/${folderName}` : folderName
+
+                // 이전 스펙 조회 (3종 병렬) — extension host에서 워크스페이스 파일 읽기
                 const priorSpecsMap: Record<string, Array<{ version: string; content: string }>> = {}
                 if (versionNum > 1) {
                   const priorResults = await Promise.all(
                     specTypes.map(async (st) => {
                       try {
-                        return { type: st.type, specs: await fetchPriorSpecs(exportPath, folderName, versionNum, st.fileName) }
+                        return { type: st.type, specs: await readPriorSpecs(basePath, versionNum, st.fileName) }
                       } catch (e) {
                         console.warn(`이전 스펙 조회 실패 (${st.type}):`, e)
                         return { type: st.type, specs: [] }
@@ -748,9 +782,12 @@ export default function Spec({ projectId, fileKey, nodeId, srcFileKey, srcNodeId
                   })
                 )
 
-                // --- 6. 서버에 3종 파일 저장 (병렬) ---
+                // --- 6. Extension host로 3종 파일 저장 (병렬) ---
+                const versionFolder = `v${version.padStart(2, '0')}`
                 const saveResults = await Promise.all(
-                  generateResults.map(r => exportSpec(r.content, folderName, version, exportPath, r.fileName))
+                  generateResults.map(r =>
+                    saveFileViaExtension(r.content, `${basePath}/${versionFolder}/${r.fileName}`)
+                  )
                 )
                 const hasPrior = Object.values(priorSpecsMap).some(specs => specs.length > 0)
                 const mode = hasPrior ? `변경분 (이전 스펙 참조)` : '전체 스펙'
@@ -803,6 +840,9 @@ export default function Spec({ projectId, fileKey, nodeId, srcFileKey, srcNodeId
             hoveredNode={hoveredNode}
             loading={false}
             imageScale={1}
+            rootNode={rootNode}
+            onHoverNode={(node) => setHoveredNode(node)}
+            onSelectNode={(node) => handleSelectNode(node, false)}
           />
         </div>
 
@@ -818,7 +858,7 @@ export default function Spec({ projectId, fileKey, nodeId, srcFileKey, srcNodeId
                   <div className="text-xs theme-text-secondary mb-1">선택된 노드</div>
                   <div className="text-sm font-medium theme-text-primary truncate">{selectedNode.name}</div>
                   {getNodeText(selectedNode) && (
-                    <div className="text-xs theme-text-secondary mt-1 truncate">"{getNodeText(selectedNode)}"</div>
+                    <div className="text-xs theme-text-secondary mt-1 truncate max-w-full overflow-hidden" title={getNodeText(selectedNode)}>"{getNodeText(selectedNode)}"</div>
                   )}
                 </div>
 

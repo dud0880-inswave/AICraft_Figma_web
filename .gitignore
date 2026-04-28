@@ -35,6 +35,12 @@ Thumbs.db
 # TypeScript
 *.tsbuildinfo
 
+# Extension
+packages/extension/out/
+packages/extension/media/
+packages/extension/node_modules/
+*.vsix
+
 # Temp
 *.tmp
 *.temp

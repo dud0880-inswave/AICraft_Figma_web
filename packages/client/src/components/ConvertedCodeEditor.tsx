@@ -54,7 +54,7 @@ function formatXml(xml: string): string {
 
 
 import type { RegistryItem } from '../utils/api'
-import { fetchMappings, updateFigmaFileCompleted, generateClusters, exportXml, saveFigmaFileData, fetchProjectSettings, fetchNodeSvgs, getFigmaFileXmlFilename, setFigmaFileXmlFilename, fetchProjectFiles } from '../utils/api'
+import { fetchMappings, updateFigmaFileCompleted, generateClusters, saveFigmaFileData, fetchProjectSettings, fetchNodeSvgs, getFigmaFileXmlFilename, setFigmaFileXmlFilename, fetchProjectFiles } from '../utils/api'
 import { extractInlineStyle } from '../utils/figma-style'
 
 
@@ -173,10 +173,13 @@ export default function ConvertedCodeEditor({
         const settings = await fetchProjectSettings(projectId)
         const cssListData = settings['css-list']
         if (cssListData) {
-          const cssList = JSON.parse(cssListData) as Array<{ content?: string; filePath?: string }>
-          // filePath 있는 항목은 <link>로 로드 → cssContents에서 제외 (inline <style> 방지)
+          const cssList = JSON.parse(cssListData) as Array<{ content?: string; filePath?: string; wsFolder?: string }>
           setCssContents(cssList.filter(item => !item.filePath).map(item => item.content || '').filter(Boolean))
-          setCssPaths(cssList.map(item => item.filePath || '').filter(Boolean))
+          // wsFolder가 있으면 {wsFolder}/{filePath}로 조합
+          setCssPaths(cssList
+            .filter(item => item.filePath)
+            .map(item => item.wsFolder ? `${item.wsFolder}/${item.filePath}` : item.filePath!)
+          )
         } else {
           setCssContents([])
           setCssPaths([])
@@ -215,6 +218,25 @@ export default function ConvertedCodeEditor({
     }
   }
 
+  // Extension host에 파일 저장 요청
+  const saveFileViaExtension = (content: string, relativePath: string, wsFolder?: string): Promise<{ path: string }> => {
+    return new Promise((resolve, reject) => {
+      const vsc = (window as unknown as { __vscode?: { postMessage: (msg: unknown) => void } }).__vscode
+      if (!vsc) { reject(new Error('Not in extension')); return }
+      const requestId = `save-${Date.now()}`
+      const handler = (e: MessageEvent) => {
+        if (e.data?.type === 'fileSaved' && e.data?.requestId === requestId) {
+          window.removeEventListener('message', handler)
+          if (e.data.error) reject(new Error(e.data.error))
+          else resolve({ path: e.data.path })
+        }
+      }
+      window.addEventListener('message', handler)
+      setTimeout(() => { window.removeEventListener('message', handler); reject(new Error('Timeout')) }, 10000)
+      vsc.postMessage({ type: 'saveFile', requestId, content, relativePath, wsFolder })
+    })
+  }
+
   // 실제 export 실행 (파일명 확보된 상태에서 호출)
   const doExportXml = async (rawFilename: string) => {
     if (!convertedCode || !projectId || !fileKey) return
@@ -223,12 +245,8 @@ export default function ConvertedCodeEditor({
     setSaveMessage(null)
     try {
       const settings = await fetchProjectSettings(projectId)
-      const exportPath = settings['xml-export-path'] || null
-      if (!exportPath) {
-        setSaveMessage({ type: 'error', text: '설정에서 XML Export 경로를 지정해주세요' })
-        setTimeout(() => setSaveMessage(null), 3000)
-        return
-      }
+      const exportPath = settings['xml-export-path'] || ''
+      const exportWsFolder = settings['xml-export-ws-folder'] || ''
 
       // 현재 파일 버전 조회 (DB 기준, 자동 증가 안 함)
       let version = '01'
@@ -239,9 +257,13 @@ export default function ConvertedCodeEditor({
       } catch { /* ignore */ }
 
       const filename = rawFilename.replace(/[<>:"/\\|?*]/g, '_')
-      const result = await exportXml(convertedCode, filename, exportPath, version)
 
-      // 최초 저장 시 figma_files.xmlFilename에 기록 → 다음 다운로드부터 모달 생략
+      // Extension: 워크스페이스 기준 상대경로로 저장
+      const basePath = exportPath ? `${exportPath}/${filename}` : filename
+      const relativePath = `${basePath}/v${version.padStart(2, '0')}/${filename}.xml`
+      const result = await saveFileViaExtension(convertedCode, relativePath, exportWsFolder)
+
+      // 최초 저장 시 figma_files.xmlFilename에 기록
       try {
         await setFigmaFileXmlFilename(projectId, fileKey, nodeId, filename)
       } catch { /* ignore */ }

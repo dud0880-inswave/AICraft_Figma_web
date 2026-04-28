@@ -34,7 +34,8 @@ export interface CssItem {
   id: string
   name: string
   content: string
-  filePath?: string     // CSS 파일 경로 (워크스페이스 기준, link 로드용)
+  filePath?: string     // CSS 파일 경로 (워크스페이스 폴더 기준 상대경로)
+  wsFolder?: string     // 워크스페이스 폴더 이름 (멀티 루트 대응)
   classNames: string[]  // CSS에서 추출한 클래스명
 }
 
@@ -123,6 +124,7 @@ export function autoMapClassesToComponents(
 function BasicTab({ onSaveToken, onClose, projectId, onCssChange }: { onSaveToken: (t: string) => void; onClose: () => void; projectId?: string | null; onCssChange?: () => void }) {
   const [inputToken, setInputToken] = useState('')
   const [xmlExportPath, setXmlExportPath] = useState('')
+  const [xmlExportWsFolder, setXmlExportWsFolder] = useState('')
   const [clusterIncludeNodeName, setClusterIncludeNodeName] = useState(true)
   const [enableInlineStyle, setEnableInlineStyle] = useState(true)
   const [loading, setLoading] = useState(true)
@@ -143,6 +145,7 @@ function BasicTab({ onSaveToken, onClose, projectId, onCssChange }: { onSaveToke
         const settings = await fetchProjectSettings(projectId)
         setInputToken(settings['figma-token'] || '')
         setXmlExportPath(settings['xml-export-path'] || '')
+        setXmlExportWsFolder(settings['xml-export-ws-folder'] || '')
         const includeNodeName = settings['cluster-include-node-name'] !== 'false'
         setClusterIncludeNodeName(includeNodeName)
         previousClusterSetting.current = includeNodeName
@@ -178,6 +181,7 @@ function BasicTab({ onSaveToken, onClose, projectId, onCssChange }: { onSaveToke
       await saveProjectSettings(projectId, {
         'figma-token': inputToken,
         'xml-export-path': xmlExportPath,
+        'xml-export-ws-folder': xmlExportWsFolder,
         'cluster-include-node-name': clusterIncludeNodeName ? 'true' : 'false',
         'enable-inline-style': enableInlineStyle ? 'true' : 'false',
       })
@@ -209,6 +213,7 @@ function BasicTab({ onSaveToken, onClose, projectId, onCssChange }: { onSaveToke
 
   const handleClearPath = () => {
     setXmlExportPath('')
+    setXmlExportWsFolder('')
   }
 
   if (loading) {
@@ -289,20 +294,42 @@ function BasicTab({ onSaveToken, onClose, projectId, onCssChange }: { onSaveToke
         )}
       </div>
 
-      {/* XML Export Path */}
+      {/* 저장 경로 */}
       <div>
         <label className="block text-sm font-medium theme-text-primary mb-2">
-          XML Export 경로
+          저장 경로
         </label>
-        <input
-          type="text"
-          value={xmlExportPath}
-          onChange={(e) => setXmlExportPath(e.target.value)}
-          placeholder="C:\exports\xml 또는 /home/user/exports"
-          className="w-full px-4 py-2 theme-bg-secondary border theme-border rounded-lg theme-text-primary placeholder-gray-400 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 font-mono text-sm"
-        />
+        <div className="flex gap-2">
+          <input
+            type="text"
+            value={xmlExportWsFolder ? `${xmlExportWsFolder}/${xmlExportPath}` : xmlExportPath}
+            readOnly
+            placeholder="폴더를 선택해주세요"
+            className="flex-1 px-4 py-2 theme-bg-secondary border theme-border rounded-lg theme-text-primary placeholder-gray-400 font-mono text-sm cursor-default"
+          />
+          <button
+            type="button"
+            onClick={() => {
+              const vsc = (window as unknown as { __vscode?: { postMessage: (msg: unknown) => void } }).__vscode
+              if (!vsc) return
+              const requestId = `pickFolder-${Date.now()}`
+              const handler = (e: MessageEvent) => {
+                if (e.data?.type === 'folderPicked' && e.data?.requestId === requestId) {
+                  window.removeEventListener('message', handler)
+                  setXmlExportPath(e.data.relativePath)
+                  setXmlExportWsFolder(e.data.wsFolder || '')
+                }
+              }
+              window.addEventListener('message', handler)
+              vsc.postMessage({ type: 'pickFolder', requestId })
+            }}
+            className="px-3 py-2 text-sm theme-bg-tertiary border theme-border rounded-lg hover:border-blue-500 theme-text-secondary whitespace-nowrap"
+          >
+            폴더 선택
+          </button>
+        </div>
         <p className="text-xs theme-text-secondary mt-1">
-          XML 파일을 저장할 기본 경로 (비어있으면 다운로드 폴더 사용)
+          XML, 스펙 문서가 저장될 위치 (프로젝트 기준 상대경로)
         </p>
         {xmlExportPath && (
           <div className="flex items-center justify-between mt-2">
@@ -772,6 +799,7 @@ function CssTab({ projectId, onCssChange }: { projectId?: string | null; onCssCh
       if (e.data?.type === 'filePicked' && e.data?.requestId === requestId) {
         window.removeEventListener('message', handler)
         const relativePath = e.data.relativePath as string
+        const wsFolder = (e.data.wsFolder as string) || ''
         const fileName = relativePath.split('/').pop() || ''
         // 파일 내용을 extension host에 요청하여 읽기
         const readId = `read-${Date.now()}`
@@ -787,18 +815,18 @@ function CssTab({ projectId, onCssChange }: { projectId?: string | null; onCssCh
             }
             window.addEventListener('message', readHandler)
             setTimeout(() => { window.removeEventListener('message', readHandler); resolve('') }, 5000)
-            vsc.postMessage({ type: 'readFile', requestId: readId, relativePath })
+            vsc.postMessage({ type: 'readFile', requestId: readId, relativePath, wsFolder })
           })
           if (content) classNames = extractClassNames(content)
         } catch { /* ignore */ }
-        const newItem: CssItem = { id: `css-${Date.now()}`, name: fileName, content, filePath: relativePath, classNames }
+        const newItem: CssItem = { id: `css-${Date.now()}`, name: fileName, content, filePath: relativePath, wsFolder, classNames }
         const updated = [...cssList, newItem]
         setCssList(updated)
-        saveCssListToSettings(updated)
+        await saveCssListToSettings(updated)
         if (classNames.length > 0 && registry.length > 0) {
           const mapped = autoMapClassesToComponents(newItem.id, classNames, registry, componentClassMapping)
           setComponentClassMapping(mapped)
-          saveMappingToSettings(mapped)
+          await saveMappingToSettings(mapped)
         }
         onCssChange?.()
       }
@@ -807,10 +835,15 @@ function CssTab({ projectId, onCssChange }: { projectId?: string | null; onCssCh
     vsc.postMessage({ type: 'pickFile', requestId, filters: { 'CSS': ['css'] } })
   }
 
-  const handleDelete = (id: string) => {
+  const handleDelete = async (id: string) => {
     const updated = cssList.filter(item => item.id !== id)
     setCssList(updated)
-    saveCssListToSettings(updated)
+    await saveCssListToSettings(updated)
+    // 해당 CSS의 클래스 매핑도 삭제
+    const newMapping = { ...componentClassMapping }
+    delete newMapping[id]
+    setComponentClassMapping(newMapping)
+    await saveMappingToSettings(newMapping)
     onCssChange?.()
   }
 

@@ -42,6 +42,11 @@ const HOST = process.env.HOST || '0.0.0.0';
 const CORS_ORIGINS = process.env.CORS_ORIGINS || '*';
 const ENABLE_DEBUG_JSON = process.env.ENABLE_DEBUG_JSON === 'true';
 
+// LLM 설정 (LiteLLM OpenAI 호환)
+const LLM_BASE_URL = process.env.LLM_BASE_URL || 'http://localhost:4000';
+const LLM_API_KEY = process.env.LLM_API_KEY || '';
+const LLM_MODEL = process.env.LLM_MODEL || 'claude-sonnet-4-6';
+
 // ============================================================
 // 헬퍼 함수: 클러스터에서 공통 클래스 추출 (Base 모드용)
 // ============================================================
@@ -1306,129 +1311,6 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
       return json(res, { success: true, defaultAdded, clusterUpdated, cssImported });
     }
 
-    // ---- XML Export API ----
-    if (path === '/api/export-xml' && req.method === 'POST') {
-      const body = await parseBody(req);
-      const { xml, filename, exportPath, version } = body as {
-        xml: string;
-        filename: string;
-        exportPath?: string;
-        version?: string;
-      };
-
-      if (!xml || !filename) {
-        return badRequest(res, 'xml and filename required');
-      }
-
-      if (!exportPath) {
-        return badRequest(res, 'exportPath required. Set it in Settings.');
-      }
-      if (!version) {
-        return badRequest(res, 'version required');
-      }
-
-      try {
-        const baseName = filename.replace(/\.xml$/i, '');
-
-        // 1. {exportPath}/{filename} 폴더 생성
-        const fileDir = join(exportPath, baseName);
-        if (!existsSync(fileDir)) {
-          mkdirSync(fileDir, { recursive: true });
-        }
-
-        // 2. 전달받은 현재 버전 폴더에 저장 (자동 증가 X)
-        const versionDir = join(fileDir, `v${String(version).padStart(2, '0')}`);
-        if (!existsSync(versionDir)) {
-          mkdirSync(versionDir, { recursive: true });
-        }
-
-        // 4. 버전 폴더 하위에 xml 저장
-        const fullPath = join(versionDir, `${baseName}.xml`);
-        writeFileSync(fullPath, xml, 'utf-8');
-        console.log(`[Server] XML saved to: ${fullPath}`);
-
-        return json(res, { success: true, path: fullPath });
-      } catch (err) {
-        console.error('[Server] Failed to save XML:', err);
-        return json(res, { error: `Failed to save: ${String(err)}` }, 500);
-      }
-    }
-
-    // Spec 마크다운 저장: XML과 동일 경로 구조로 저장 (현재 버전 폴더에 _spec.md)
-    if (path === '/api/export-spec' && req.method === 'POST') {
-      const body = await parseBody(req);
-      const { markdown, content, exportPath, folderName, version, fileName } = body as {
-        markdown?: string;
-        content?: string;
-        exportPath?: string;
-        folderName: string;
-        version: string;
-        fileName?: string;
-      };
-
-      const fileContent = markdown || content;
-      if (!fileContent || !folderName || !version) {
-        return badRequest(res, 'markdown/content, folderName, version required');
-      }
-      if (!exportPath) {
-        return badRequest(res, 'exportPath required. Set it in Settings.');
-      }
-
-      try {
-        const baseName = folderName.replace(/\.xml$/i, '');
-        const fileDir = join(exportPath, baseName);
-        if (!existsSync(fileDir)) mkdirSync(fileDir, { recursive: true });
-
-        const versionDir = join(fileDir, `v${String(version).padStart(2, '0')}`);
-        if (!existsSync(versionDir)) mkdirSync(versionDir, { recursive: true });
-
-        const outputFileName = fileName || `${baseName}_spec.md`;
-        const fullPath = join(versionDir, outputFileName);
-        writeFileSync(fullPath, fileContent, 'utf-8');
-        console.log(`[Server] Spec saved to: ${fullPath}`);
-
-        return json(res, { success: true, path: fullPath });
-      } catch (err) {
-        console.error('[Server] Failed to save spec:', err);
-        return json(res, { error: `Failed to save: ${String(err)}` }, 500);
-      }
-    }
-
-    // 이전 버전 스펙들 조회: v01 ~ v(upToVersion-1) 폴더에서 해당 파일을 순서대로 반환
-    if (path === '/api/export-spec/prior' && req.method === 'GET') {
-      const exportPath = url.searchParams.get('exportPath');
-      const folderName = url.searchParams.get('folderName');
-      const upToVersion = parseInt(url.searchParams.get('upToVersion') || '0', 10);
-      const fileName = url.searchParams.get('fileName');
-
-      if (!exportPath || !folderName || !upToVersion) {
-        return badRequest(res, 'exportPath, folderName, upToVersion required');
-      }
-
-      try {
-        const baseName = folderName.replace(/\.xml$/i, '');
-        const fileDir = join(exportPath, baseName);
-        const result: Array<{ version: string; content: string }> = [];
-        const targetFileName = fileName || `${baseName}_spec.md`;
-
-        for (let v = 1; v < upToVersion; v++) {
-          const versionStr = String(v).padStart(2, '0');
-          const filePath = join(fileDir, `v${versionStr}`, targetFileName);
-          if (existsSync(filePath)) {
-            try {
-              const content = readFileSync(filePath, 'utf-8');
-              result.push({ version: versionStr, content });
-            } catch { /* ignore unreadable */ }
-          }
-        }
-
-        return json(res, { priorSpecs: result });
-      } catch (err) {
-        console.error('[Server] Failed to list prior specs:', err);
-        return json(res, { error: String(err) }, 500);
-      }
-    }
-
     // ---- Health ----
     if (path === '/api/health') {
       return json(res, { status: 'ok' });
@@ -1476,8 +1358,7 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
       const { textNodes, nodeTree, imageUrl } = body;
       if (!textNodes || !Array.isArray(textNodes)) return badRequest(res, 'textNodes required');
 
-      const apiKey = process.env.ANTHROPIC_API_KEY;
-      if (!apiKey) return json(res, { error: 'ANTHROPIC_API_KEY not configured' }, 500);
+      if (!LLM_API_KEY) return json(res, { error: 'LLM_API_KEY not configured' }, 500);
 
       const nodesJson = JSON.stringify(textNodes, null, 2);
       const treeSection = nodeTree ? `\n## 노드 트리 구조 (대상 매칭용)
@@ -1547,39 +1428,36 @@ ${treeSection}
           } catch { /* ignore */ }
         }
 
-        const messageContent: Array<{ type: string; text?: string; source?: { type: string; media_type: string; data: string } }> = []
+        // OpenAI 호환 메시지 구성 (LiteLLM)
+        const userContent: Array<{ type: string; text?: string; image_url?: { url: string } }> = []
         if (imageBase64) {
-          messageContent.push({
-            type: 'image',
-            source: { type: 'base64', media_type: imageMediaType, data: imageBase64 },
-          })
-          messageContent.push({ type: 'text', text: '위 이미지는 스펙 문서 캡쳐입니다. 이미지와 텍스트 노드를 함께 분석하세요.\n\n' + prompt })
+          userContent.push({ type: 'image_url', image_url: { url: `data:${imageMediaType};base64,${imageBase64}` } })
+          userContent.push({ type: 'text', text: '위 이미지는 스펙 문서 캡쳐입니다. 이미지와 텍스트 노드를 함께 분석하세요.\n\n' + prompt })
         } else {
-          messageContent.push({ type: 'text', text: prompt })
+          userContent.push({ type: 'text', text: prompt })
         }
 
-        const claudeRes = await fetch('https://api.anthropic.com/v1/messages', {
+        const llmRes = await fetch(`${LLM_BASE_URL}/v1/chat/completions`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'x-api-key': apiKey,
-            'anthropic-version': '2023-06-01',
+            'Authorization': `Bearer ${LLM_API_KEY}`,
           },
           body: JSON.stringify({
-            model: 'claude-sonnet-4-6',
+            model: LLM_MODEL,
             max_tokens: 4096,
-            messages: [{ role: 'user', content: messageContent }],
+            messages: [{ role: 'user', content: userContent }],
           }),
         });
 
-        if (!claudeRes.ok) {
-          const err = await claudeRes.text();
-          console.error('[AutoMap] Claude API error:', err);
-          return json(res, { error: `Claude API error: ${claudeRes.status}` }, 500);
+        if (!llmRes.ok) {
+          const err = await llmRes.text();
+          console.error('[AutoMap] LLM API error:', err);
+          return json(res, { error: `LLM API error: ${llmRes.status}` }, 500);
         }
 
-        const claudeData = await claudeRes.json() as { content: Array<{ type: string; text: string }> };
-        const rawText = claudeData.content?.find(c => c.type === 'text')?.text || '';
+        const llmData = await llmRes.json() as { choices: Array<{ message: { content: string } }> };
+        const rawText = llmData.choices?.[0]?.message?.content || '';
 
         // JSON 파싱 (```json ... ``` 블록 또는 순수 JSON)
         const jsonMatch = rawText.match(/```json\s*([\s\S]*?)```/) || rawText.match(/(\{[\s\S]*\})/);
@@ -1624,8 +1502,7 @@ ${treeSection}
       };
       if (!specJson && !convertedXml) return badRequest(res, 'specJson or convertedXml required');
 
-      const apiKey = process.env.ANTHROPIC_API_KEY;
-      if (!apiKey) return json(res, { error: 'ANTHROPIC_API_KEY not configured' }, 500);
+      if (!LLM_API_KEY) return json(res, { error: 'LLM_API_KEY not configured' }, 500);
 
       const effectiveSpecType = specType || 'screen-info';
       const hasSpecMeta = !!specJson;
@@ -2018,40 +1895,36 @@ ${specMetaSection}${xmlSection}
           } catch { /* ignore */ }
         }
 
-        // Claude 메시지 구성 (이미지 포함 여부에 따라)
-        const messageContent: Array<{ type: string; text?: string; source?: { type: string; media_type: string; data: string } }> = []
+        // OpenAI 호환 메시지 구성 (LiteLLM)
+        const userContent: Array<{ type: string; text?: string; image_url?: { url: string } }> = []
         if (imageBase64) {
-          messageContent.push({
-            type: 'image',
-            source: { type: 'base64', media_type: imageMediaType, data: imageBase64 },
-          })
-          messageContent.push({ type: 'text', text: '위 이미지는 화면 설계서(SDD) 캡쳐입니다. 이 이미지와 아래 데이터를 함께 분석하세요.\n\n' + prompt })
+          userContent.push({ type: 'image_url', image_url: { url: `data:${imageMediaType};base64,${imageBase64}` } })
+          userContent.push({ type: 'text', text: '위 이미지는 화면 설계서(SDD) 캡쳐입니다. 이 이미지와 아래 데이터를 함께 분석하세요.\n\n' + prompt })
         } else {
-          messageContent.push({ type: 'text', text: prompt })
+          userContent.push({ type: 'text', text: prompt })
         }
 
-        const claudeRes = await fetch('https://api.anthropic.com/v1/messages', {
+        const llmRes = await fetch(`${LLM_BASE_URL}/v1/chat/completions`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'x-api-key': apiKey,
-            'anthropic-version': '2023-06-01',
+            'Authorization': `Bearer ${LLM_API_KEY}`,
           },
           body: JSON.stringify({
-            model: 'claude-sonnet-4-6',
+            model: LLM_MODEL,
             max_tokens: maxTokens,
-            messages: [{ role: 'user', content: messageContent }],
+            messages: [{ role: 'user', content: userContent }],
           }),
         });
 
-        if (!claudeRes.ok) {
-          const err = await claudeRes.text();
-          console.error('[Spec] Claude API error:', err);
-          return json(res, { error: `Claude API error: ${claudeRes.status}` }, 500);
+        if (!llmRes.ok) {
+          const err = await llmRes.text();
+          console.error('[Spec] LLM API error:', err);
+          return json(res, { error: `LLM API error: ${llmRes.status}` }, 500);
         }
 
-        const claudeData = await claudeRes.json() as { content: Array<{ type: string; text: string }> };
-        const resultText = claudeData.content?.find(c => c.type === 'text')?.text || '';
+        const llmData = await llmRes.json() as { choices: Array<{ message: { content: string } }> };
+        const resultText = llmData.choices?.[0]?.message?.content || '';
 
         // interface-metadata는 JSON으로 반환, 나머지는 markdown으로 반환
         if (effectiveSpecType === 'interface-metadata') {
