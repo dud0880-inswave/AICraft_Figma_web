@@ -409,8 +409,7 @@ export default function ConvertedCodeEditor({
         }
         if (imageNodeIds.length > 0) {
           try {
-            const personalForToken = await getPersonalSettings(projectId)
-            const svgs = await fetchNodeSvgs(projectId, fileKey, imageNodeIds, personalForToken['figma-token'])
+            const svgs = await fetchNodeSvgs(projectId, fileKey, imageNodeIds, _token)
             for (const [id, svg] of Object.entries(svgs)) {
               imageSvgMap.set(id, svg)
             }
