@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import type { FigmaFileRecord, Project } from '../utils/api'
-import { fetchProjects, fetchProjectFiles, deleteProject, createProject, updateProject, deleteFigmaFile, generateClusters, fetchProjectSettings, saveProjectSettings, saveFigmaFileData, saveFigmaFileImage, deleteFigmaFileData, deleteFigmaFileImage } from '../utils/api'
+import { fetchProjects, fetchProjectFiles, deleteProject, createProject, updateProject, deleteFigmaFile, generateClusters, fetchProjectSettings, saveProjectSettings, saveFigmaFileData, saveFigmaFileImage, deleteFigmaFileData, deleteFigmaFileImage, getPersonalSettings } from '../utils/api'
 import { parseFigmaUrl, fetchFigmaFile, fetchNodeImages } from '../utils/figma-api'
 import { findNodeById } from '../utils/tree-utils'
 import { useDialog } from '../contexts/DialogContext'
@@ -519,9 +519,9 @@ export default function Dashboard({ onSelectFile, onAddNewFile, onOpenSettings, 
                 if (!specModalFile) return
                 setSpecLoading(true)
                 try {
-                  // 토큰
-                  const settings = await fetchProjectSettings(selectedProject.id)
-                  const token = settings['figma-token']
+                  // 토큰 (개인 설정)
+                  const personal = await getPersonalSettings(selectedProject.id)
+                  const token = personal['figma-token']
                   if (!token) {
                     showAlert('Figma Access Token이 설정되어 있지 않습니다.')
                     return

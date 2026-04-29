@@ -129,6 +129,11 @@
           "type": "number",
           "default": 5181,
           "description": "AICraft Figma 서버 포트"
+        },
+        "aicraftFigma.personalSettings": {
+          "type": "object",
+          "default": {},
+          "description": "프로젝트별 개인 설정 (자동 관리, 직접 편집 불필요)"
         }
       }
     }

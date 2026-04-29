@@ -727,3 +727,41 @@ export async function fetchPriorSpecs(
   const data = await res.json();
   return data.priorSpecs || [];
 }
+
+// ---- 개인 설정 (VS Code settings.json 경유) ----
+
+const _vscApi = () => (window as unknown as { __vscode?: { postMessage: (msg: unknown) => void } }).__vscode;
+
+export async function getPersonalSettings(projectId: string): Promise<Record<string, string>> {
+  const vsc = _vscApi();
+  if (!vsc) return {};
+  return new Promise((resolve) => {
+    const requestId = `ps-get-${Date.now()}`;
+    const handler = (e: MessageEvent) => {
+      if (e.data?.type === 'personalSettings' && e.data?.requestId === requestId) {
+        window.removeEventListener('message', handler);
+        resolve(e.data.settings || {});
+      }
+    };
+    window.addEventListener('message', handler);
+    setTimeout(() => { window.removeEventListener('message', handler); resolve({}); }, 5000);
+    vsc.postMessage({ type: 'getPersonalSettings', requestId, projectId });
+  });
+}
+
+export async function savePersonalSettings(projectId: string, settings: Record<string, string>): Promise<void> {
+  const vsc = _vscApi();
+  if (!vsc) return;
+  return new Promise((resolve) => {
+    const requestId = `ps-save-${Date.now()}`;
+    const handler = (e: MessageEvent) => {
+      if (e.data?.type === 'personalSettingsSaved' && e.data?.requestId === requestId) {
+        window.removeEventListener('message', handler);
+        resolve();
+      }
+    };
+    window.addEventListener('message', handler);
+    setTimeout(() => { window.removeEventListener('message', handler); resolve(); }, 5000);
+    vsc.postMessage({ type: 'savePersonalSettings', requestId, projectId, settings });
+  });
+}

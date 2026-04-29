@@ -1928,7 +1928,9 @@ ${specMetaSection}${xmlSection}
 
         // interface-metadata는 JSON으로 반환, 나머지는 markdown으로 반환
         if (effectiveSpecType === 'interface-metadata') {
-          return json(res, { content: resultText, specType: effectiveSpecType });
+          // LLM이 ```json ... ``` 코드블록으로 감쌀 수 있으므로 벗기기
+          const stripped = resultText.replace(/^```(?:json)?\s*\n?/, '').replace(/\n?```\s*$/, '');
+          return json(res, { content: stripped, specType: effectiveSpecType });
         }
         return json(res, { markdown: resultText, specType: effectiveSpecType });
       } catch (err) {

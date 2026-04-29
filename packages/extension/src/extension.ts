@@ -394,6 +394,27 @@ async function openViewer(context: vscode.ExtensionContext): Promise<void> {
         }
       }
     }
+    // 개인 설정 읽기 (VS Code settings.json)
+    if (msg && msg.type === 'getPersonalSettings') {
+      const config = vscode.workspace.getConfiguration(EXTENSION_ID);
+      const projectId = msg.projectId || '';
+      const allPersonal = config.get<Record<string, unknown>>('personalSettings') || {};
+      const projectSettings = (allPersonal[projectId] as Record<string, unknown>) || {};
+      panel.webview.postMessage({
+        type: 'personalSettings',
+        requestId: msg.requestId,
+        settings: projectSettings,
+      });
+    }
+    // 개인 설정 쓰기 (VS Code settings.json)
+    if (msg && msg.type === 'savePersonalSettings') {
+      const config = vscode.workspace.getConfiguration(EXTENSION_ID);
+      const projectId = msg.projectId || '';
+      const allPersonal = { ...(config.get<Record<string, unknown>>('personalSettings') || {}) };
+      allPersonal[projectId] = { ...((allPersonal[projectId] as Record<string, unknown>) || {}), ...msg.settings };
+      await config.update('personalSettings', allPersonal, vscode.ConfigurationTarget.Global);
+      panel.webview.postMessage({ type: 'personalSettingsSaved', requestId: msg.requestId });
+    }
     // 프로젝트 목록 갱신 (파일 추가/삭제 등)
     if (msg && msg.type === 'refreshProjects') {
       projectTree?.refresh();

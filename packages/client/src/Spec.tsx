@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import type { FigmaNode, BoundingBox } from './types/figma'
-import { fetchProjectSettings, saveProjectSettings, fetchMappings, fetchRegistry, generateSpec, autoMapSpec, getFigmaFileXmlFilename, setFigmaFileXmlFilename, fetchProjectFiles, refreshFigmaFile, saveFigmaFileImage, bumpFigmaFileVersion, fetchFigmaFileData, getFigmaFileImageUrl, deleteFigmaFileData, deleteFigmaFileImage, type NodeMapping, type RegistryItem, type SpecType } from './utils/api'
+import { fetchProjectSettings, saveProjectSettings, fetchMappings, fetchRegistry, generateSpec, autoMapSpec, getFigmaFileXmlFilename, setFigmaFileXmlFilename, fetchProjectFiles, refreshFigmaFile, saveFigmaFileImage, bumpFigmaFileVersion, fetchFigmaFileData, getFigmaFileImageUrl, deleteFigmaFileData, deleteFigmaFileImage, getPersonalSettings, type NodeMapping, type RegistryItem, type SpecType } from './utils/api'
 import { convertToXml } from './utils/convert-xml'
 import { useDialog } from './contexts/DialogContext'
 import { fetchFigmaFile, fetchNodeImages } from './utils/figma-api'
@@ -126,7 +126,8 @@ export default function Spec({ projectId, fileKey, nodeId, srcFileKey, srcNodeId
       setLoading(true)
       try {
         const settings = await fetchProjectSettings(projectId)
-        const token = settings['figma-token']
+        const personal = await getPersonalSettings(projectId)
+        const token = personal['figma-token']
         if (!token) { setLoading(false); return }
 
         // 버전: 매핑 파일(srcFile) 기준
@@ -249,8 +250,8 @@ export default function Spec({ projectId, fileKey, nodeId, srcFileKey, srcNodeId
     if (!projectId || !fileKey || refreshing) return
     setRefreshing(true)
     try {
-      const settings = await fetchProjectSettings(projectId)
-      const token = settings['figma-token']
+      const personal = await getPersonalSettings(projectId)
+      const token = personal['figma-token']
       if (!token) {
         showToast('error', 'Figma Access Token이 설정되어 있지 않습니다.')
         return
@@ -672,8 +673,8 @@ export default function Spec({ projectId, fileKey, nodeId, srcFileKey, srcNodeId
               setGenerating(true)
               try {
                 // --- 3. 경로/파일명/버전 준비 ---
-                const settingsForPath = await fetchProjectSettings(projectId)
-                const exportPath = settingsForPath['xml-export-path'] || ''
+                const personalForPath = await getPersonalSettings(projectId)
+                const exportPath = personalForPath['xml-export-path'] || ''
 
                 const folderFileKey = srcFileKey || fileKey
                 const folderNodeId = srcFileKey ? srcNodeId : nodeId
@@ -699,7 +700,7 @@ export default function Spec({ projectId, fileKey, nodeId, srcFileKey, srcNodeId
                   }
                 }
 
-                const exportWsFolder = settingsForPath['xml-export-ws-folder'] || ''
+                const exportWsFolder = personalForPath['xml-export-ws-folder'] || ''
 
                 // --- Extension host 헬퍼 ---
                 const vscApi = (window as unknown as { __vscode?: { postMessage: (msg: unknown) => void } }).__vscode

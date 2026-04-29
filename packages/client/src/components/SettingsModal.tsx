@@ -13,6 +13,8 @@ import {
   fetchProjectSettings,
   saveProjectSettings,
   generateClusters,
+  getPersonalSettings,
+  savePersonalSettings,
 } from '../utils/api'
 import type { RegistryItem, MappingRulesJson, DefaultMappingRuleGrouped } from '../utils/api'
 import { useTheme } from '../contexts/ThemeContext'
@@ -142,14 +144,18 @@ function BasicTab({ onSaveToken, onClose, projectId, onCssChange }: { onSaveToke
       }
       setLoading(true)
       try {
+        // 공용 설정 (서버 DB)
         const settings = await fetchProjectSettings(projectId)
-        setInputToken(settings['figma-token'] || '')
-        setXmlExportPath(settings['xml-export-path'] || '')
-        setXmlExportWsFolder(settings['xml-export-ws-folder'] || '')
         const includeNodeName = settings['cluster-include-node-name'] !== 'false'
         setClusterIncludeNodeName(includeNodeName)
         previousClusterSetting.current = includeNodeName
         setEnableInlineStyle(settings['enable-inline-style'] !== 'false')
+
+        // 개인 설정 (VS Code settings.json)
+        const personal = await getPersonalSettings(projectId)
+        setInputToken(personal['figma-token'] || '')
+        setXmlExportPath(personal['xml-export-path'] || '')
+        setXmlExportWsFolder(personal['xml-export-ws-folder'] || '')
       } catch (err) {
         console.error('Failed to load settings:', err)
       } finally {
@@ -177,13 +183,16 @@ function BasicTab({ onSaveToken, onClose, projectId, onCssChange }: { onSaveToke
       // 클러스터 설정 변경 여부 확인
       const clusterSettingChanged = previousClusterSetting.current !== clusterIncludeNodeName
 
-      // 설정 저장
+      // 공용 설정 저장 (서버 DB)
       await saveProjectSettings(projectId, {
+        'cluster-include-node-name': clusterIncludeNodeName ? 'true' : 'false',
+        'enable-inline-style': enableInlineStyle ? 'true' : 'false',
+      })
+      // 개인 설정 저장 (VS Code settings.json)
+      await savePersonalSettings(projectId, {
         'figma-token': inputToken,
         'xml-export-path': xmlExportPath,
         'xml-export-ws-folder': xmlExportWsFolder,
-        'cluster-include-node-name': clusterIncludeNodeName ? 'true' : 'false',
-        'enable-inline-style': enableInlineStyle ? 'true' : 'false',
       })
       onSaveToken(inputToken)
 
@@ -675,12 +684,12 @@ function CssTab({ projectId, onCssChange }: { projectId?: string | null; onCssCh
   const [loading, setLoading] = useState(true)
   const [classSearchQuery, setClassSearchQuery] = useState('')
 
-  // 프로젝트 설정 로드/저장 헬퍼
+  // 프로젝트 설정 로드/저장 헬퍼 (개인 설정 - VS Code settings.json)
   const loadCssListFromSettings = async (): Promise<CssItem[]> => {
     if (!projectId) return []
     try {
-      const settings = await fetchProjectSettings(projectId)
-      const data = settings['css-list']
+      const personal = await getPersonalSettings(projectId)
+      const data = personal['css-list']
       if (data) {
         return JSON.parse(data)
       }
@@ -692,9 +701,13 @@ function CssTab({ projectId, onCssChange }: { projectId?: string | null; onCssCh
 
   const saveCssListToSettings = async (items: CssItem[]) => {
     if (!projectId) return
-    const value = JSON.stringify(items)
+    // filePath가 있는 항목은 content 제외 (파일에서 읽으면 됨)
+    const stripped = items.map(item =>
+      item.filePath ? { ...item, content: '' } : item
+    )
+    const value = JSON.stringify(stripped)
     try {
-      await saveProjectSettings(projectId, { 'css-list': value })
+      await savePersonalSettings(projectId, { 'css-list': value })
     } catch (err) {
       console.error('Failed to save CSS list:', err)
     }
@@ -703,8 +716,8 @@ function CssTab({ projectId, onCssChange }: { projectId?: string | null; onCssCh
   const loadMappingFromSettings = async (): Promise<ComponentClassMapping> => {
     if (!projectId) return {}
     try {
-      const settings = await fetchProjectSettings(projectId)
-      const data = settings['css-class-mapping']
+      const personal = await getPersonalSettings(projectId)
+      const data = personal['css-class-mapping']
       if (data) {
         return JSON.parse(data)
       }
@@ -718,7 +731,7 @@ function CssTab({ projectId, onCssChange }: { projectId?: string | null; onCssCh
     if (!projectId) return
     const value = JSON.stringify(mapping)
     try {
-      await saveProjectSettings(projectId, { 'css-class-mapping': value })
+      await savePersonalSettings(projectId, { 'css-class-mapping': value })
     } catch (err) {
       console.error('Failed to save CSS mapping:', err)
     }
@@ -847,7 +860,28 @@ function CssTab({ projectId, onCssChange }: { projectId?: string | null; onCssCh
     onCssChange?.()
   }
 
-  const handleEdit = (item: CssItem) => {
+  const handleEdit = async (item: CssItem) => {
+    // filePath가 있고 content가 없으면 파일에서 읽기
+    if (item.filePath && !item.content) {
+      const vsc = (window as unknown as { __vscode?: { postMessage: (msg: unknown) => void } }).__vscode
+      if (vsc) {
+        const readId = `read-${Date.now()}`
+        const content = await new Promise<string>((resolve) => {
+          const handler = (e: MessageEvent) => {
+            if (e.data?.type === 'fileContent' && e.data?.requestId === readId) {
+              window.removeEventListener('message', handler)
+              resolve(e.data.content || '')
+            }
+          }
+          window.addEventListener('message', handler)
+          setTimeout(() => { window.removeEventListener('message', handler); resolve('') }, 5000)
+          vsc.postMessage({ type: 'readFile', requestId: readId, relativePath: item.filePath, wsFolder: item.wsFolder || '' })
+        })
+        setEditingItem({ ...item, content })
+        setSubView('edit')
+        return
+      }
+    }
     setEditingItem({ ...item })
     setSubView('edit')
   }

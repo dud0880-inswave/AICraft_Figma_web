@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { fetchProjectSettings } from '../utils/api'
+import { getPersonalSettings } from '../utils/api'
 
 interface AddFileModalProps {
   isOpen: boolean
@@ -25,8 +25,8 @@ export default function AddFileModal({
       setFileUrl('')
       const loadToken = async () => {
         try {
-          const settings = await fetchProjectSettings(projectId)
-          setToken(settings['figma-token'] || '')
+          const personal = await getPersonalSettings(projectId)
+          setToken(personal['figma-token'] || '')
         } catch {
           setToken('')
         }

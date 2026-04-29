@@ -54,7 +54,7 @@ function formatXml(xml: string): string {
 
 
 import type { RegistryItem } from '../utils/api'
-import { fetchMappings, updateFigmaFileCompleted, generateClusters, saveFigmaFileData, fetchProjectSettings, fetchNodeSvgs, getFigmaFileXmlFilename, setFigmaFileXmlFilename, fetchProjectFiles } from '../utils/api'
+import { fetchMappings, updateFigmaFileCompleted, generateClusters, saveFigmaFileData, fetchProjectSettings, fetchNodeSvgs, getFigmaFileXmlFilename, setFigmaFileXmlFilename, fetchProjectFiles, getPersonalSettings } from '../utils/api'
 import { extractInlineStyle } from '../utils/figma-style'
 
 
@@ -170,8 +170,11 @@ export default function ConvertedCodeEditor({
         return
       }
       try {
-        const settings = await fetchProjectSettings(projectId)
-        const cssListData = settings['css-list']
+        const [personal, settings] = await Promise.all([
+          getPersonalSettings(projectId),
+          fetchProjectSettings(projectId),
+        ])
+        const cssListData = personal['css-list']
         if (cssListData) {
           const cssList = JSON.parse(cssListData) as Array<{ content?: string; filePath?: string; wsFolder?: string }>
           setCssContents(cssList.filter(item => !item.filePath).map(item => item.content || '').filter(Boolean))
@@ -244,9 +247,9 @@ export default function ConvertedCodeEditor({
     setSaving(true)
     setSaveMessage(null)
     try {
-      const settings = await fetchProjectSettings(projectId)
-      const exportPath = settings['xml-export-path'] || ''
-      const exportWsFolder = settings['xml-export-ws-folder'] || ''
+      const personal = await getPersonalSettings(projectId)
+      const exportPath = personal['xml-export-path'] || ''
+      const exportWsFolder = personal['xml-export-ws-folder'] || ''
 
       // 현재 파일 버전 조회 (DB 기준, 자동 증가 안 함)
       let version = '01'
