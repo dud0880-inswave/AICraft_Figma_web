@@ -429,13 +429,20 @@ async function openViewer(context: vscode.ExtensionContext): Promise<void> {
     }
     // 파일 읽기 요청 (CSS 파싱용)
     if (msg && msg.type === 'readFile') {
-      const folders = vscode.workspace.workspaceFolders || [];
-      const folder = msg.wsFolder
-        ? folders.find(f => f.name === msg.wsFolder)
-        : folders[0];
-      if (folder && msg.relativePath) {
+      if (msg.relativePath) {
         try {
-          const fileUri = vscode.Uri.joinPath(folder.uri, msg.relativePath);
+          let fileUri: vscode.Uri;
+          // 절대경로 판별 (드라이브 문자 또는 / 시작)
+          if (/^[a-zA-Z]:[\\/]/.test(msg.relativePath) || msg.relativePath.startsWith('/')) {
+            fileUri = vscode.Uri.file(msg.relativePath);
+          } else {
+            const folders = vscode.workspace.workspaceFolders || [];
+            const folder = msg.wsFolder
+              ? folders.find(f => f.name === msg.wsFolder)
+              : folders[0];
+            if (!folder) throw new Error('No workspace folder');
+            fileUri = vscode.Uri.joinPath(folder.uri, msg.relativePath);
+          }
           const buf = await vscode.workspace.fs.readFile(fileUri);
           panel.webview.postMessage({
             type: 'fileContent',
@@ -457,15 +464,17 @@ async function openViewer(context: vscode.ExtensionContext): Promise<void> {
       });
       if (result?.[0]) {
         const selectedFolder = vscode.workspace.getWorkspaceFolder(result[0]);
+        const isExternal = !selectedFolder;
         const relativePath = selectedFolder
           ? path.relative(selectedFolder.uri.fsPath, result[0].fsPath)
-          : vscode.workspace.asRelativePath(result[0]);
+          : result[0].fsPath;
         const wsFolder = selectedFolder?.name || '';
         panel.webview.postMessage({
           type: 'filePicked',
           requestId: msg.requestId,
           relativePath: relativePath.replace(/\\/g, '/'),
           wsFolder,
+          external: isExternal,
         });
       }
     }

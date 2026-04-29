@@ -813,6 +813,7 @@ function CssTab({ projectId, onCssChange }: { projectId?: string | null; onCssCh
         window.removeEventListener('message', handler)
         const relativePath = e.data.relativePath as string
         const wsFolder = (e.data.wsFolder as string) || ''
+        const isExternal = !!e.data.external
         const fileName = relativePath.split('/').pop() || ''
         // 파일 내용을 extension host에 요청하여 읽기
         const readId = `read-${Date.now()}`
@@ -832,7 +833,11 @@ function CssTab({ projectId, onCssChange }: { projectId?: string | null; onCssCh
           })
           if (content) classNames = extractClassNames(content)
         } catch { /* ignore */ }
-        const newItem: CssItem = { id: `css-${Date.now()}`, name: fileName, content, filePath: relativePath, wsFolder, classNames }
+        // 워크스페이스 내부: filePath(상대경로) 저장, content는 저장 시 제외
+        // 워크스페이스 외부: filePath 없이 content 포함하여 저장
+        const newItem: CssItem = isExternal
+          ? { id: `css-${Date.now()}`, name: fileName, content, classNames }
+          : { id: `css-${Date.now()}`, name: fileName, content, filePath: relativePath, wsFolder, classNames }
         const updated = [...cssList, newItem]
         setCssList(updated)
         await saveCssListToSettings(updated)

@@ -1322,9 +1322,8 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
       const { projectId, fileKey, nodeIds } = body;
       if (!projectId || !fileKey || !nodeIds?.length) return badRequest(res, 'projectId, fileKey, nodeIds required');
 
-      const settings = settingsStore.listByProject(projectId);
-      const token = settings.find(s => s.key === 'figma-token')?.value;
-      if (!token) return badRequest(res, 'figma-token not configured');
+      const token = req.headers['x-figma-token'] as string | undefined;
+      if (!token) return badRequest(res, 'figma-token not configured (send via x-figma-token header)');
 
       // Figma API로 SVG URL 가져오기
       const ids = (nodeIds as string[]).join(',');

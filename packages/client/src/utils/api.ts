@@ -663,10 +663,12 @@ export async function exportSpec(
 }
 
 // 노드 SVG 가져오기 (서버 경유)
-export async function fetchNodeSvgs(projectId: string, fileKey: string, nodeIds: string[]): Promise<Record<string, string>> {
+export async function fetchNodeSvgs(projectId: string, fileKey: string, nodeIds: string[], figmaToken?: string): Promise<Record<string, string>> {
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (figmaToken) headers['x-figma-token'] = figmaToken;
   const res = await fetch(`${getApiBase()}/node-svgs`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers,
     body: JSON.stringify({ projectId, fileKey, nodeIds }),
   });
   if (!res.ok) throw new Error('Failed to fetch node SVGs');
