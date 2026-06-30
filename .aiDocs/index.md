@@ -134,8 +134,8 @@ start-server.bat      # Windows 배치파일
 | 스펙 에디터 | `packages/client/src/Spec.tsx` |
 | API 클라이언트 | `packages/client/src/utils/api.ts` |
 | Figma API | `packages/client/src/utils/figma-api.ts` |
-| XML 변환 (공유) | `packages/client/src/utils/convert-xml.ts` |
-| XML 변환 (에디터) | `packages/client/src/components/ConvertedCodeEditor.tsx` |
+| XML 변환 (공유, 현재 미사용) | `packages/client/src/utils/convert-xml.ts` |
+| XML 변환 (에디터, **실제 출력 생성**) | `packages/client/src/components/ConvertedCodeEditor.tsx` |
 | 인라인 스타일 | `packages/client/src/utils/figma-style.ts` |
 | 클라이언트 설정 | `packages/client/src/config/index.ts` |
 | 커스텀 다이얼로그 | `packages/client/src/contexts/DialogContext.tsx` |
@@ -204,7 +204,10 @@ ANTHROPIC_API_KEY=sk-ant-...
 3. **SVG 이미지**: Claude API는 SVG 처리 불가 → 자동매핑/스펙생성 시 canvas로 PNG 변환 후 전달
 4. **Extension webview sandbox**: confirm/alert 차단, iframe 중첩 제한
 5. **widgetContainer**: widgetItem/Title/Content는 가상 컴포넌트 (XML 출력 X, 데이터 추출용)
+6. **변환 로직 이중화**: `convert-xml.ts`와 `ConvertedCodeEditor.tsx` 인라인 `traverse`가 중복. 변환 동작 수정 시 **실제 출력을 만드는 `ConvertedCodeEditor.tsx`** 를 고쳐야 함 (한쪽만 고치면 반영 안 됨)
+7. **커스텀 속성 `label`**: 버튼류(button/span/trigger/anchor)는 커스텀 `label`이 Figma 텍스트보다 우선(덮어쓰기)
+8. **전역 Space 패닝**: input 포커스 시 비활성화됨(`FigmaViewer.tsx isTypingTarget`). 새 전역 키 핸들러 추가 시 입력 포커스 가드 주의
 
 ---
 
-*마지막 업데이트: 2026-04-27 (Extension 통합, 버전 관리, 스펙 delta 체인, widgetContainer)*
+*마지막 업데이트: 2026-06-30 (미리보기 디바이스 비율, 공백 입력 수정, 버튼 label 덮어쓰기, CSS 검색 완전일치 정렬)*

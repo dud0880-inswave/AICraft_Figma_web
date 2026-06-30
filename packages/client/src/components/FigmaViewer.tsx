@@ -157,10 +157,20 @@ export default function FigmaViewer({
 
   // Space 키 (패닝 모드)
   useEffect(() => {
+    // 입력 요소(input/textarea/contenteditable)에 포커스가 있으면 패닝 모드를 발동하지 않음
+    // (그렇지 않으면 커스텀 속성 등 입력란에서 공백 입력이 막힘)
+    const isTypingTarget = (target: EventTarget | null): boolean => {
+      const el = target as HTMLElement | null
+      if (!el) return false
+      const tag = el.tagName
+      return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || el.isContentEditable
+    }
     const down = (e: KeyboardEvent) => {
+      if (isTypingTarget(e.target)) return
       if (e.code === 'Space' && !spaceDown) { setSpaceDown(true); e.preventDefault() }
     }
     const up = (e: KeyboardEvent) => {
+      if (isTypingTarget(e.target)) return
       if (e.code === 'Space') { setSpaceDown(false); e.preventDefault() }
     }
     window.addEventListener('keydown', down)

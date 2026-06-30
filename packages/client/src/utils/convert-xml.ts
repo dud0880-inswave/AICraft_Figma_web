@@ -192,19 +192,29 @@ export function convertToXml(options: ConvertOptions): string {
         }
       }
 
+      // 커스텀 속성으로 label을 지정했는지 여부 (지정 시 Figma 텍스트보다 우선 = 덮어쓰기)
+      const customLabel = nodeMapping?.customAttrs && 'label' in nodeMapping.customAttrs
+        ? nodeMapping.customAttrs.label
+        : undefined
       if (regItemNameLower === 'button' || regItemNameLower === 'span') {
-        const text = n.characters || findTextInChildren(n)
-        if (text) mergedProps.label = text
+        // 커스텀 label이 있으면 그것을 사용(이미 mergedProps.label에 병합됨), 없으면 Figma 텍스트 사용
+        if (customLabel === undefined) {
+          const text = n.characters || findTextInChildren(n)
+          if (text) mergedProps.label = text
+        }
       }
       if (regItemNameLower === 'trigger') {
-        const text = n.characters || findTextInChildren(n)
-        const propsStr = Object.entries(mergedProps).map(([k, v]) => `${k}="${v}"`).join(' ')
+        // 커스텀 label은 attribute가 아니라 <xf:label> 내용으로 사용
+        const text = customLabel !== undefined ? customLabel : (n.characters || findTextInChildren(n))
+        const { label: _omitLabel, ...triggerProps } = mergedProps
+        const propsStr = Object.entries(triggerProps).map(([k, v]) => `${k}="${v}"`).join(' ')
         const labelTag = text ? `\n${indentStr}    <xf:label><![CDATA[${text}]]></xf:label>\n${indentStr}` : ''
         return `${indentStr}<${tagName} ${propsStr}>${labelTag}</${tagName}>`
       }
       if (regItemNameLower === 'anchor') {
-        const text = n.characters || findTextInChildren(n)
-        const anchorPropsStr = Object.entries(mergedProps).map(([k, v]) => `${k}="${v}"`).join(' ')
+        const text = customLabel !== undefined ? customLabel : (n.characters || findTextInChildren(n))
+        const { label: _omitLabel, ...anchorProps } = mergedProps
+        const anchorPropsStr = Object.entries(anchorProps).map(([k, v]) => `${k}="${v}"`).join(' ')
         const cdataText = text?.replace(/&#x([0-9a-fA-F]+);/g, (_, hex: string) => String.fromCodePoint(parseInt(hex, 16))) || ''
         const labelTag = cdataText ? `\n${indentStr}    <xf:label><![CDATA[${cdataText}]]></xf:label>\n${indentStr}` : ''
         return `${indentStr}<${tagName} ${anchorPropsStr}>${labelTag}</${tagName}>`

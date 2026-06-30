@@ -564,10 +564,12 @@ export default function MappingEditor({ node, nodes, tree, fileKey, rootNodeId, 
     item.name.toLowerCase().includes(searchQuery.toLowerCase())
   )
 
-  // CSS 클래스 검색 필터링 (선택된 클래스 > 추천 클래스 > 매핑된 클래스 > 나머지)
+  // CSS 클래스 검색 필터링 (검색어 완전일치 > 선택된 클래스 > 추천 클래스 > 매핑된 클래스 > 나머지)
   const filteredClasses = useMemo(() => {
-    const base = classSearchQuery
-      ? allClassesInCss.filter(cls => cls.toLowerCase().includes(classSearchQuery.toLowerCase()))
+    // 맨 앞 점(.) 제거 — 칩은 ".btn"으로 표시되지만 클래스명 자체는 "btn"
+    const query = classSearchQuery.trim().replace(/^\./, '').toLowerCase()
+    const base = query
+      ? allClassesInCss.filter(cls => cls.toLowerCase().includes(query))
       : allClassesInCss
     const selected = new Set(selectedClasses)
     const recommended = new Set([
@@ -575,11 +577,12 @@ export default function MappingEditor({ node, nodes, tree, fileKey, rootNodeId, 
       ...recommendedClasses.map(r => r.className)
     ])
     const bound = new Set(boundClasses)
-    return [...base].sort((a: string, b: string) => {
-      const aPriority = selected.has(a) ? 0 : recommended.has(a) ? 1 : bound.has(a) ? 2 : 3
-      const bPriority = selected.has(b) ? 0 : recommended.has(b) ? 1 : bound.has(b) ? 2 : 3
-      return aPriority - bPriority
-    })
+    const priority = (c: string) => {
+      // 검색어와 완전히 동일한 클래스는 항상 최상단
+      if (query && c.toLowerCase() === query) return -1
+      return selected.has(c) ? 0 : recommended.has(c) ? 1 : bound.has(c) ? 2 : 3
+    }
+    return [...base].sort((a: string, b: string) => priority(a) - priority(b))
   }, [allClassesInCss, classSearchQuery, selectedClasses, commonClasses, recommendedClasses, boundClasses])
 
   // 드롭다운 외부 클릭 시 닫기
