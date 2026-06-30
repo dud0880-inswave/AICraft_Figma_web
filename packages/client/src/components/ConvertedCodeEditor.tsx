@@ -6,6 +6,15 @@ import xml from 'highlight.js/lib/languages/xml'
 
 hljs.registerLanguage('xml', xml)
 
+// 미리보기 디바이스(뷰포트) 프리셋
+type DevicePresetKey = 'desktop' | 'mobile' | 'mobileL' | 'tablet'
+const DEVICE_PRESETS: Record<DevicePresetKey, { label: string; width: number | null; height: number | null }> = {
+  desktop: { label: '데스크탑', width: null, height: null },  // 패널을 꽉 채움
+  mobile: { label: '모바일', width: 375, height: 667 },        // iPhone SE/8 기준
+  mobileL: { label: '모바일 L', width: 414, height: 896 },     // iPhone 11/XR 기준
+  tablet: { label: '태블릿', width: 768, height: 1024 },       // iPad 기준
+}
+
 function formatXml(xml: string): string {
   const INDENT = '    '
 
@@ -151,6 +160,7 @@ export default function ConvertedCodeEditor({
   const [previewLoading, setPreviewLoading] = useState(false)
   const [iframeReady, setIframeReady] = useState(false)
   const [previewZoom, setPreviewZoom] = useState(1)
+  const [previewDevice, setPreviewDevice] = useState<DevicePresetKey>('desktop')
   const [completing, setCompleting] = useState(false)
   const [saving, setSaving] = useState(false)
   const [saveMessage, setSaveMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
@@ -1075,6 +1085,28 @@ ${innerCode}
                     {previewLoading ? '렌더링 중...' : iframeReady ? '준비됨' : '엔진 로딩...'}
                   </span>
                   <div className="flex items-center gap-2">
+                    {/* 디바이스(뷰포트) 비율 선택 */}
+                    <div className="flex items-center gap-0.5 mr-1">
+                      {(Object.keys(DEVICE_PRESETS) as DevicePresetKey[]).map((key) => (
+                        <button
+                          key={key}
+                          onClick={() => setPreviewDevice(key)}
+                          title={
+                            DEVICE_PRESETS[key].width
+                              ? `${DEVICE_PRESETS[key].label} (${DEVICE_PRESETS[key].width}×${DEVICE_PRESETS[key].height})`
+                              : DEVICE_PRESETS[key].label
+                          }
+                          className={`text-xs px-1.5 py-0.5 rounded ${
+                            previewDevice === key
+                              ? 'bg-blue-600 text-white'
+                              : 'text-gray-400 hover:text-gray-200'
+                          }`}
+                        >
+                          {DEVICE_PRESETS[key].label}
+                        </button>
+                      ))}
+                    </div>
+                    <span className="text-gray-600">|</span>
                     <button
                       onClick={() => setPreviewZoom(z => Math.max(0.25, +(z - 0.25).toFixed(2)))}
                       className="text-xs text-gray-400 hover:text-gray-200 w-5 h-5 flex items-center justify-center"
@@ -1097,27 +1129,57 @@ ${innerCode}
                     </button>
                   </div>
                 </div>
-                {/* iframe은 항상 패널을 꽉 채움. 1/zoom 크기로 키운 뒤 scale(zoom) 적용 */}
-                <div className="flex-1 relative overflow-hidden">
-                  {previewError && (
-                    <div className="absolute top-0 left-0 right-0 p-2 bg-red-900/80 text-red-200 text-xs z-10">
-                      {previewError}
+                {/* 데스크탑: 패널을 꽉 채움(1/zoom 확대 후 scale). 모바일/태블릿: 고정 px 뷰포트를 가운데 배치.
+                    iframe은 재마운트(재로딩) 방지를 위해 항상 동일한 DOM 위치에 유지하고 wrapper 스타일만 변경 */}
+                {(() => {
+                  const preset = DEVICE_PRESETS[previewDevice]
+                  const isFluid = preset.width === null
+                  return (
+                    <div
+                      className={`flex-1 relative ${
+                        isFluid
+                          ? 'overflow-hidden'
+                          : 'overflow-auto flex items-start justify-center p-4 theme-bg-tertiary'
+                      }`}
+                    >
+                      {previewError && (
+                        <div className="absolute top-0 left-0 right-0 p-2 bg-red-900/80 text-red-200 text-xs z-10">
+                          {previewError}
+                        </div>
+                      )}
+                      {/* 스케일된 크기만큼 공간을 차지하도록 wrapper로 감싸 스크롤이 정상 동작하게 함 */}
+                      <div
+                        style={
+                          isFluid
+                            ? { width: '100%', height: '100%' }
+                            : {
+                                width: preset.width! * previewZoom,
+                                height: preset.height! * previewZoom,
+                                flexShrink: 0,
+                              }
+                        }
+                      >
+                        <iframe
+                          ref={iframeRef}
+                          src="/websquare/preview.html"
+                          style={{
+                            display: 'block',
+                            border: 'none',
+                            width: isFluid ? `${100 / previewZoom}%` : preset.width!,
+                            height: isFluid ? `${100 / previewZoom}%` : preset.height!,
+                            background: '#fff',
+                            boxShadow: isFluid
+                              ? undefined
+                              : '0 0 0 1px rgba(0,0,0,0.1), 0 4px 16px rgba(0,0,0,0.15)',
+                            transform: `scale(${previewZoom})`,
+                            transformOrigin: 'top left',
+                          }}
+                          title="WebSquare Preview"
+                        />
+                      </div>
                     </div>
-                  )}
-                  <iframe
-                    ref={iframeRef}
-                    src="/websquare/preview.html"
-                    style={{
-                      display: 'block',
-                      border: 'none',
-                      width: `${100 / previewZoom}%`,
-                      height: `${100 / previewZoom}%`,
-                      transform: `scale(${previewZoom})`,
-                      transformOrigin: 'top left',
-                    }}
-                    title="WebSquare Preview"
-                  />
-                </div>
+                  )
+                })()}
               </div>
             )}
           </>
