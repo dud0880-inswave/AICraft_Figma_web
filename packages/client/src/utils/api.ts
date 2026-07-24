@@ -259,6 +259,35 @@ export async function fetchProjectFiles(projectId: string): Promise<FigmaFileRec
   return res.json();
 }
 
+// ---- Assets API (업로드한 CSS/이미지) ----
+
+// 에셋 정적 URL (미리보기 <link>/<img> 및 CSS url() 해석 기준)
+export function assetUrl(projectId: string, relPath: string): string {
+  const encoded = relPath.split('/').map(encodeURIComponent).join('/');
+  return `${getApiBase()}/assets/${encodeURIComponent(projectId)}/${encoded}`;
+}
+
+export async function uploadAsset(projectId: string, relPath: string, data: Blob | ArrayBuffer | string): Promise<void> {
+  const res = await fetch(assetUrl(projectId, relPath), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/octet-stream' },
+    body: data,
+  });
+  if (!res.ok) throw new Error(`Failed to upload asset: ${relPath}`);
+}
+
+export async function listAssets(projectId: string): Promise<string[]> {
+  const res = await fetch(`${getApiBase()}/assets/${encodeURIComponent(projectId)}?list=1`);
+  if (!res.ok) return [];
+  const data = await res.json();
+  return data.paths || [];
+}
+
+export async function deleteAsset(projectId: string, relPath?: string): Promise<void> {
+  const target = relPath ? assetUrl(projectId, relPath) : `${getApiBase()}/assets/${encodeURIComponent(projectId)}`;
+  await fetch(target, { method: 'DELETE' });
+}
+
 // ---- Settings API ----
 
 export async function fetchProjectSettings(projectId: string): Promise<Record<string, string>> {
@@ -766,4 +795,30 @@ export async function savePersonalSettings(projectId: string, settings: Record<s
     setTimeout(() => { window.removeEventListener('message', handler); resolve(); }, 5000);
     vsc.postMessage({ type: 'savePersonalSettings', requestId, projectId, settings });
   });
+}
+
+// 구 개인 설정(VS Code settings.json) → 서버 DB 1회성 마이그레이션
+// DB에 아직 없는 키만 올린다. 웹 환경에서는 이관할 로컬 데이터가 없으므로 no-op.
+const MIGRATE_KEYS = ['figma-token', 'xml-export-path', 'xml-export-ws-folder', 'css-list', 'css-class-mapping'];
+const _migratedProjects = new Set<string>();
+
+export async function migratePersonalSettingsToDb(projectId: string): Promise<void> {
+  if (!_vscApi() || _migratedProjects.has(projectId)) return;
+  _migratedProjects.add(projectId);
+  try {
+    const [personal, existing] = await Promise.all([
+      getPersonalSettings(projectId),
+      fetchProjectSettings(projectId),
+    ]);
+    const toMigrate: Record<string, string> = {};
+    for (const key of MIGRATE_KEYS) {
+      if (personal[key] && !existing[key]) toMigrate[key] = personal[key];
+    }
+    if (Object.keys(toMigrate).length > 0) {
+      await saveProjectSettings(projectId, toMigrate);
+      console.log(`[Migration] personal settings → DB (${projectId}):`, Object.keys(toMigrate));
+    }
+  } catch (e) {
+    console.warn('[Migration] personal settings migration failed:', e);
+  }
 }

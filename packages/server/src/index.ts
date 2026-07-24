@@ -4,8 +4,8 @@
 import { config as dotenvConfig } from 'dotenv';
 import { createServer, IncomingMessage, ServerResponse } from 'http';
 import { randomUUID } from 'crypto';
-import { writeFileSync, existsSync, mkdirSync, readFileSync, unlinkSync } from 'fs';
-import { join, resolve, dirname } from 'path';
+import { writeFileSync, existsSync, mkdirSync, readFileSync, unlinkSync, readdirSync, rmSync } from 'fs';
+import { join, resolve, dirname, sep, extname } from 'path';
 import { fileURLToPath } from 'url';
 import { initDb, closeDb, getDb } from './db.js';
 import { RegistryStore } from './registry-store.js';
@@ -84,6 +84,49 @@ function extractClassesFromCluster(cluster: any, mode: 'common' | 'all'): Record
 const IMAGES_DIR = resolve(__dirname, '..', 'data', 'images');
 if (!existsSync(IMAGES_DIR)) mkdirSync(IMAGES_DIR, { recursive: true });
 
+// 프로젝트별 에셋(업로드한 CSS/이미지) 저장 경로
+const ASSETS_DIR = resolve(__dirname, '..', 'data', 'assets');
+if (!existsSync(ASSETS_DIR)) mkdirSync(ASSETS_DIR, { recursive: true });
+
+const ASSET_MIME: Record<string, string> = {
+  '.css': 'text/css; charset=utf-8',
+  '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
+  '.gif': 'image/gif', '.svg': 'image/svg+xml', '.webp': 'image/webp',
+  '.ico': 'image/x-icon', '.bmp': 'image/bmp',
+  '.woff': 'font/woff', '.woff2': 'font/woff2', '.ttf': 'font/ttf',
+  '.eot': 'application/vnd.ms-fontobject', '.otf': 'font/otf',
+};
+
+// projectId + 상대경로 → 안전한 절대경로 (디렉터리 탈출 방지)
+function getAssetPath(projectId: string, relPath: string): string | null {
+  const safeProject = sanitizeFilePart(projectId);
+  const baseDir = join(ASSETS_DIR, safeProject);
+  // 각 경로 세그먼트를 정규화하고 '..'/절대경로 차단
+  const clean = relPath.replace(/\\/g, '/').split('/')
+    .filter(seg => seg && seg !== '.' && seg !== '..')
+    .join('/');
+  if (!clean) return null;
+  const full = resolve(baseDir, clean);
+  if (full !== baseDir && !full.startsWith(baseDir + sep)) return null;
+  return full;
+}
+
+// 프로젝트 에셋 트리의 모든 상대경로 나열
+function listAssetPaths(projectId: string): string[] {
+  const baseDir = join(ASSETS_DIR, sanitizeFilePart(projectId));
+  if (!existsSync(baseDir)) return [];
+  const out: string[] = [];
+  const walk = (dir: string, prefix: string) => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const rel = prefix ? `${prefix}/${entry.name}` : entry.name;
+      if (entry.isDirectory()) walk(join(dir, entry.name), rel);
+      else out.push(rel);
+    }
+  };
+  walk(baseDir, '');
+  return out;
+}
+
 function sanitizeFilePart(s: string): string {
   return s.replace(/[^a-zA-Z0-9_-]/g, '_');
 }
@@ -158,6 +201,61 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
         console.error('[FigmaProxy] error:', err);
         return json(res, { error: String(err) }, 500);
       }
+    }
+
+    // ---- 프로젝트 에셋 (업로드한 CSS/이미지) ----
+    // POST   /api/assets/<projectId>/<relPath>   raw body 업로드
+    // GET    /api/assets/<projectId>?list=1      상대경로 목록(JSON)
+    // GET    /api/assets/<projectId>/<relPath>   정적 서빙
+    // DELETE /api/assets/<projectId>/<relPath>   파일 삭제
+    // DELETE /api/assets/<projectId>             프로젝트 에셋 전체 삭제
+    if (path.startsWith('/api/assets/')) {
+      const rest = path.slice('/api/assets/'.length);
+      const slash = rest.indexOf('/');
+      const projectId = decodeURIComponent(slash === -1 ? rest : rest.slice(0, slash));
+      const relPath = slash === -1 ? '' : decodeURIComponent(rest.slice(slash + 1));
+      if (!projectId) return badRequest(res, 'projectId required');
+
+      // 목록
+      if (req.method === 'GET' && (!relPath || url.searchParams.has('list'))) {
+        return json(res, { paths: listAssetPaths(projectId) });
+      }
+
+      const full = relPath ? getAssetPath(projectId, relPath) : null;
+
+      if (req.method === 'POST') {
+        if (!full) return badRequest(res, 'invalid asset path');
+        const buf = await parseRawBody(req);
+        mkdirSync(dirname(full), { recursive: true });
+        writeFileSync(full, buf);
+        console.log(`[Asset] saved ${full} (${buf.length} bytes)`);
+        return json(res, { success: true, path: relPath, size: buf.length });
+      }
+
+      if (req.method === 'GET') {
+        if (!full || !existsSync(full)) { res.writeHead(404); res.end('Not found'); return; }
+        const buf = readFileSync(full);
+        res.writeHead(200, {
+          'Content-Type': ASSET_MIME[extname(full).toLowerCase()] || 'application/octet-stream',
+          'Content-Length': String(buf.length),
+          'Cache-Control': 'no-cache',
+          'Access-Control-Allow-Origin': origin,
+        });
+        res.end(buf);
+        return;
+      }
+
+      if (req.method === 'DELETE') {
+        if (relPath) {
+          if (full && existsSync(full)) rmSync(full, { force: true });
+        } else {
+          const baseDir = join(ASSETS_DIR, sanitizeFilePart(projectId));
+          if (existsSync(baseDir)) rmSync(baseDir, { recursive: true, force: true });
+        }
+        return json(res, { success: true });
+      }
+
+      return badRequest(res, 'unsupported method');
     }
 
     // ---- Project API ----
@@ -1978,6 +2076,15 @@ function notFound(res: ServerResponse): void {
 
 function badRequest(res: ServerResponse, message: string): void {
   json(res, { error: message }, 400);
+}
+
+function parseRawBody(req: IncomingMessage): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    const chunks: Buffer[] = [];
+    req.on('data', chunk => chunks.push(chunk as Buffer));
+    req.on('end', () => resolve(Buffer.concat(chunks)));
+    req.on('error', reject);
+  });
 }
 
 async function parseBody(req: IncomingMessage): Promise<any> {

@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
 import type { FigmaNode } from '../types/figma'
 import type { RegistryItem, NodeMapping, FigmaNodeForSignature } from '../utils/api'
-import { fetchRegistry, fetchMapping, fetchMappings, saveMapping, deleteMapping, clearAllMappings, fetchProjectSettings, getPersonalSettings, getRecommendedClasses, checkUniqueCluster, applyMappingBySignature, type RecommendedClass, type UniqueClusterCheck } from '../utils/api'
+import { fetchRegistry, fetchMapping, fetchMappings, saveMapping, deleteMapping, clearAllMappings, fetchProjectSettings, getRecommendedClasses, checkUniqueCluster, applyMappingBySignature, type RecommendedClass, type UniqueClusterCheck } from '../utils/api'
 import { type CssItem, type ComponentClassMapping } from './SettingsModal'
 import { findTextInChildren, collectAllTexts, collectTopLevelTexts } from '../utils/text-utils'
 import { findParentNode } from '../utils/tree-utils'
@@ -120,12 +120,9 @@ export default function MappingEditor({ node, nodes, tree, fileKey, rootNodeId, 
         return
       }
       try {
-        const [personal, settings] = await Promise.all([
-          getPersonalSettings(projectId),
-          fetchProjectSettings(projectId),
-        ])
-        const cssListData = personal['css-list']
-        const classMappingData = personal['css-class-mapping']
+        const settings = await fetchProjectSettings(projectId)
+        const cssListData = settings['css-list']
+        const classMappingData = settings['css-class-mapping']
 
         const list: CssItem[] = cssListData ? JSON.parse(cssListData) : []
         const mapping: ComponentClassMapping = classMappingData ? JSON.parse(classMappingData) : {}

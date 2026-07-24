@@ -63,8 +63,9 @@ function formatXml(xml: string): string {
 
 
 import type { RegistryItem } from '../utils/api'
-import { fetchMappings, updateFigmaFileCompleted, generateClusters, saveFigmaFileData, fetchProjectSettings, fetchNodeSvgs, getFigmaFileXmlFilename, setFigmaFileXmlFilename, fetchProjectFiles, getPersonalSettings } from '../utils/api'
+import { fetchMappings, updateFigmaFileCompleted, generateClusters, saveFigmaFileData, fetchProjectSettings, fetchNodeSvgs, getFigmaFileXmlFilename, setFigmaFileXmlFilename, fetchProjectFiles, assetUrl } from '../utils/api'
 import { extractInlineStyle } from '../utils/figma-style'
+import { isVsCodeEnv, downloadFile } from '../utils/webDownload'
 
 
 interface ConvertedCodeEditorProps {
@@ -180,19 +181,28 @@ export default function ConvertedCodeEditor({
         return
       }
       try {
-        const [personal, settings] = await Promise.all([
-          getPersonalSettings(projectId),
-          fetchProjectSettings(projectId),
-        ])
-        const cssListData = personal['css-list']
+        const settings = await fetchProjectSettings(projectId)
+        const cssListData = settings['css-list']
         if (cssListData) {
-          const cssList = JSON.parse(cssListData) as Array<{ content?: string; filePath?: string; wsFolder?: string }>
-          setCssContents(cssList.filter(item => !item.filePath).map(item => item.content || '').filter(Boolean))
-          // wsFolder가 있으면 {wsFolder}/{filePath}로 조합
-          setCssPaths(cssList
-            .filter(item => item.filePath)
-            .map(item => item.wsFolder ? `${item.wsFolder}/${item.filePath}` : item.filePath!)
-          )
+          const cssList = JSON.parse(cssListData) as Array<{ content?: string; filePath?: string; wsFolder?: string; assetPath?: string }>
+          if (isVsCodeEnv()) {
+            // Extension: filePath 항목은 로컬 파일에서 직접 로드 (항상 최신)
+            setCssContents(cssList.filter(item => !item.filePath && !item.assetPath).map(item => item.content || '').filter(Boolean))
+            // wsFolder가 있으면 {wsFolder}/{filePath}로 조합
+            setCssPaths(cssList
+              .filter(item => item.filePath)
+              .map(item => item.wsFolder ? `${item.wsFolder}/${item.filePath}` : item.filePath!)
+            )
+          } else {
+            // 웹: assetPath 항목은 서버 URL <link>로 로드(url() 이미지 해석 보장),
+            //     그 외(직접 입력)는 인라인 content 주입
+            setCssPaths(cssList
+              .filter(item => item.assetPath)
+              .map(item => assetUrl(projectId, item.assetPath!)))
+            setCssContents(cssList
+              .filter(item => !item.assetPath)
+              .map(item => item.content || '').filter(Boolean))
+          }
         } else {
           setCssContents([])
           setCssPaths([])
@@ -257,9 +267,9 @@ export default function ConvertedCodeEditor({
     setSaving(true)
     setSaveMessage(null)
     try {
-      const personal = await getPersonalSettings(projectId)
-      const exportPath = personal['xml-export-path'] || ''
-      const exportWsFolder = personal['xml-export-ws-folder'] || ''
+      const settings = await fetchProjectSettings(projectId)
+      const exportPath = settings['xml-export-path'] || ''
+      const exportWsFolder = settings['xml-export-ws-folder'] || ''
 
       // 현재 파일 버전 조회 (DB 기준, 자동 증가 안 함)
       let version = '01'
@@ -271,17 +281,25 @@ export default function ConvertedCodeEditor({
 
       const filename = rawFilename.replace(/[<>:"/\\|?*]/g, '_')
 
-      // Extension: 워크스페이스 기준 상대경로로 저장
-      const basePath = exportPath ? `${exportPath}/${filename}` : filename
-      const relativePath = `${basePath}/v${version.padStart(2, '0')}/${filename}.xml`
-      const result = await saveFileViaExtension(convertedCode, relativePath, exportWsFolder)
+      let savedPath: string
+      if (isVsCodeEnv()) {
+        // Extension: 워크스페이스 기준 상대경로로 저장
+        const basePath = exportPath ? `${exportPath}/${filename}` : filename
+        const relativePath = `${basePath}/v${version.padStart(2, '0')}/${filename}.xml`
+        const result = await saveFileViaExtension(convertedCode, relativePath, exportWsFolder)
+        savedPath = result.path
+      } else {
+        // 웹 버전: 브라우저 다운로드가 기본
+        savedPath = `${filename}.xml`
+        downloadFile(convertedCode, savedPath)
+      }
 
       // 최초 저장 시 figma_files.xmlFilename에 기록
       try {
         await setFigmaFileXmlFilename(projectId, fileKey, nodeId, filename)
       } catch { /* ignore */ }
 
-      setSaveMessage({ type: 'success', text: `저장 완료: ${result.path}` })
+      setSaveMessage({ type: 'success', text: isVsCodeEnv() ? `저장 완료: ${savedPath}` : `다운로드 완료: ${savedPath}` })
       setTimeout(() => setSaveMessage(null), 3000)
     } catch (e) {
       console.error('Failed to save XML:', e)

@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import type { FigmaNode, BoundingBox } from './types/figma'
-import { fetchProjectSettings, saveProjectSettings, fetchMappings, fetchRegistry, generateSpec, autoMapSpec, getFigmaFileXmlFilename, setFigmaFileXmlFilename, fetchProjectFiles, refreshFigmaFile, saveFigmaFileImage, bumpFigmaFileVersion, fetchFigmaFileData, getFigmaFileImageUrl, deleteFigmaFileData, deleteFigmaFileImage, getPersonalSettings, type NodeMapping, type RegistryItem, type SpecType } from './utils/api'
+import { fetchProjectSettings, saveProjectSettings, fetchMappings, fetchRegistry, generateSpec, autoMapSpec, getFigmaFileXmlFilename, setFigmaFileXmlFilename, fetchProjectFiles, refreshFigmaFile, saveFigmaFileImage, bumpFigmaFileVersion, fetchFigmaFileData, getFigmaFileImageUrl, deleteFigmaFileData, deleteFigmaFileImage, migratePersonalSettingsToDb, type NodeMapping, type RegistryItem, type SpecType } from './utils/api'
 import { convertToXml } from './utils/convert-xml'
+import { downloadFile } from './utils/webDownload'
 import { useDialog } from './contexts/DialogContext'
 import { fetchFigmaFile, fetchNodeImages } from './utils/figma-api'
 import { findNodeById, calculatePageBounds } from './utils/tree-utils'
@@ -125,9 +126,9 @@ export default function Spec({ projectId, fileKey, nodeId, srcFileKey, srcNodeId
     const loadData = async () => {
       setLoading(true)
       try {
+        await migratePersonalSettingsToDb(projectId)
         const settings = await fetchProjectSettings(projectId)
-        const personal = await getPersonalSettings(projectId)
-        const token = personal['figma-token']
+        const token = settings['figma-token']
         if (!token) { setLoading(false); return }
 
         // 버전: 매핑 파일(srcFile) 기준
@@ -250,8 +251,8 @@ export default function Spec({ projectId, fileKey, nodeId, srcFileKey, srcNodeId
     if (!projectId || !fileKey || refreshing) return
     setRefreshing(true)
     try {
-      const personal = await getPersonalSettings(projectId)
-      const token = personal['figma-token']
+      const settings = await fetchProjectSettings(projectId)
+      const token = settings['figma-token']
       if (!token) {
         showToast('error', 'Figma Access Token이 설정되어 있지 않습니다.')
         return
@@ -673,8 +674,8 @@ export default function Spec({ projectId, fileKey, nodeId, srcFileKey, srcNodeId
               setGenerating(true)
               try {
                 // --- 3. 경로/파일명/버전 준비 ---
-                const personalForPath = await getPersonalSettings(projectId)
-                const exportPath = personalForPath['xml-export-path'] || ''
+                const settingsForPath = await fetchProjectSettings(projectId)
+                const exportPath = settingsForPath['xml-export-path'] || ''
 
                 const folderFileKey = srcFileKey || fileKey
                 const folderNodeId = srcFileKey ? srcNodeId : nodeId
@@ -700,13 +701,19 @@ export default function Spec({ projectId, fileKey, nodeId, srcFileKey, srcNodeId
                   }
                 }
 
-                const exportWsFolder = personalForPath['xml-export-ws-folder'] || ''
+                const exportWsFolder = settingsForPath['xml-export-ws-folder'] || ''
 
                 // --- Extension host 헬퍼 ---
                 const vscApi = (window as unknown as { __vscode?: { postMessage: (msg: unknown) => void } }).__vscode
                 const saveFileViaExtension = (content: string, relativePath: string): Promise<{ path: string }> => {
                   return new Promise((resolve, reject) => {
-                    if (!vscApi) { reject(new Error('Not in extension')); return }
+                    if (!vscApi) {
+                      // 웹 버전: 브라우저 다운로드가 기본 (폴더명_버전_파일명 형태)
+                      const webFilename = relativePath.split('/').slice(-3).join('_')
+                      downloadFile(content, webFilename)
+                      resolve({ path: webFilename })
+                      return
+                    }
                     const rid = `save-${Date.now()}-${Math.random()}`
                     const handler = (ev: MessageEvent) => {
                       if (ev.data?.type === 'fileSaved' && ev.data?.requestId === rid) {
@@ -793,7 +800,7 @@ export default function Spec({ projectId, fileKey, nodeId, srcFileKey, srcNodeId
                 const hasPrior = Object.values(priorSpecsMap).some(specs => specs.length > 0)
                 const mode = hasPrior ? `변경분 (이전 스펙 참조)` : '전체 스펙'
                 const savedPaths = saveResults.map(r => r.path.split(/[/\\]/).pop()).join(', ')
-                showToast('success', `3종 문서 저장 완료 [${mode}]: ${savedPaths}`)
+                showToast('success', `3종 문서 ${vscApi ? '저장' : '다운로드'} 완료 [${mode}]: ${savedPaths}`)
               } catch (err) {
                 console.error('문서 생성/저장 실패:', err)
                 showToast('error', '문서 생성/저장에 실패했습니다. 설정과 API 키를 확인하세요.')

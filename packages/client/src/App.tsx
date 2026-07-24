@@ -1,7 +1,7 @@
 import { useState, useCallback, useEffect, useRef } from 'react'
 import type { FigmaFile, FigmaNode, BoundingBox } from './types/figma'
 import type { RegistryItem, AutoMappingSuggestion, FigmaNodeForSignature } from './utils/api'
-import { saveFigmaFile, touchFigmaFile, fetchMappings, fetchFigmaFileData, saveFigmaFileData, saveMapping, fetchAutoMappingSuggestions, fetchDefaultRuleSuggestions, applyAutoMappingSuggestions, refreshFigmaFile, saveFigmaFileImage, getFigmaFileImageUrl, bumpFigmaFileVersion, fetchProjectFiles, getPersonalSettings, savePersonalSettings } from './utils/api'
+import { saveFigmaFile, touchFigmaFile, fetchMappings, fetchFigmaFileData, saveFigmaFileData, saveMapping, fetchAutoMappingSuggestions, fetchDefaultRuleSuggestions, applyAutoMappingSuggestions, refreshFigmaFile, saveFigmaFileImage, getFigmaFileImageUrl, bumpFigmaFileVersion, fetchProjectFiles, fetchProjectSettings, saveProjectSettings, migratePersonalSettingsToDb } from './utils/api'
 import { parseFigmaUrl, fetchFigmaFile, fetchNodeImages } from './utils/figma-api'
 import { getConfig } from './config'
 import { useDialog } from './contexts/DialogContext'
@@ -165,8 +165,8 @@ export default function App() {
     setState((s) => ({ ...s, loading: true, error: null, token }))
 
     try {
-      // 토큰을 개인 설정에 저장 (VS Code settings.json)
-      await savePersonalSettings(projectId, { 'figma-token': token })
+      // 토큰을 프로젝트 설정에 저장 (서버 DB)
+      await saveProjectSettings(projectId, { 'figma-token': token })
 
       const file = await fetchFigmaFile(fileKey, token, nodeId)
 
@@ -404,9 +404,9 @@ export default function App() {
   // 파일 새로고침
   const handleRefreshFile = useCallback(async (fileKey: string, nodeId: string | null, projectId: string) => {
     try {
-      // 1. 토큰 (개인 설정)
-      const personal = await getPersonalSettings(projectId)
-      const token = personal['figma-token']
+      // 1. 토큰 (프로젝트 설정 - 서버 DB)
+      const settings = await fetchProjectSettings(projectId)
+      const token = settings['figma-token']
       if (!token) {
         throw new Error('Figma Access Token이 설정되어 있지 않습니다.')
       }
@@ -539,8 +539,9 @@ export default function App() {
     // 프로젝트 설정에서 토큰 불러오기
     let token = state.token
     try {
-      const personal = await getPersonalSettings(projectId)
-      const projectToken = personal['figma-token']
+      await migratePersonalSettingsToDb(projectId)
+      const settings = await fetchProjectSettings(projectId)
+      const projectToken = settings['figma-token']
       if (projectToken) {
         token = projectToken
       }
@@ -1029,10 +1030,11 @@ export default function App() {
           key={dashboardKey}
           onSelectFile={handleSelectFileFromDashboard}
           onAddNewFile={async (projectId) => {
-            // 개인 설정에서 토큰 확인
+            // 프로젝트 설정에서 토큰 확인
             try {
-              const personal = await getPersonalSettings(projectId)
-              const token = personal['figma-token']
+              await migratePersonalSettingsToDb(projectId)
+              const settings = await fetchProjectSettings(projectId)
+              const token = settings['figma-token']
               if (!token) {
                 setState((s) => ({ ...s, error: 'Figma Access Token이 설정되어 있지 않습니다. 프로젝트 설정에서 토큰을 먼저 등록해주세요.' }))
                 return

@@ -13,11 +13,13 @@ import {
   fetchProjectSettings,
   saveProjectSettings,
   generateClusters,
-  getPersonalSettings,
-  savePersonalSettings,
+  migratePersonalSettingsToDb,
+  uploadAsset,
+  listAssets,
 } from '../utils/api'
 import type { RegistryItem, MappingRulesJson, DefaultMappingRuleGrouped } from '../utils/api'
 import { useTheme } from '../contexts/ThemeContext'
+import { isVsCodeEnv } from '../utils/webDownload'
 import { useDialog } from '../contexts/DialogContext'
 
 interface SettingsModalProps {
@@ -36,8 +38,9 @@ export interface CssItem {
   id: string
   name: string
   content: string
-  filePath?: string     // CSS 파일 경로 (워크스페이스 폴더 기준 상대경로)
-  wsFolder?: string     // 워크스페이스 폴더 이름 (멀티 루트 대응)
+  filePath?: string     // CSS 파일 경로 (워크스페이스 폴더 기준 상대경로) — 레거시(extension)
+  wsFolder?: string     // 워크스페이스 폴더 이름 (멀티 루트 대응) — 레거시(extension)
+  assetPath?: string    // 서버 에셋 상대경로 (예: css/common.css). 미리보기 url() 해석 기준
   classNames: string[]  // CSS에서 추출한 클래스명
 }
 
@@ -144,18 +147,18 @@ function BasicTab({ onSaveToken, onClose, projectId, onCssChange }: { onSaveToke
       }
       setLoading(true)
       try {
-        // 공용 설정 (서버 DB)
+        // 구 개인 설정(settings.json)이 남아있으면 DB로 1회 이관
+        await migratePersonalSettingsToDb(projectId)
+
+        // 전체 설정 (서버 DB)
         const settings = await fetchProjectSettings(projectId)
         const includeNodeName = settings['cluster-include-node-name'] !== 'false'
         setClusterIncludeNodeName(includeNodeName)
         previousClusterSetting.current = includeNodeName
         setEnableInlineStyle(settings['enable-inline-style'] !== 'false')
-
-        // 개인 설정 (VS Code settings.json)
-        const personal = await getPersonalSettings(projectId)
-        setInputToken(personal['figma-token'] || '')
-        setXmlExportPath(personal['xml-export-path'] || '')
-        setXmlExportWsFolder(personal['xml-export-ws-folder'] || '')
+        setInputToken(settings['figma-token'] || '')
+        setXmlExportPath(settings['xml-export-path'] || '')
+        setXmlExportWsFolder(settings['xml-export-ws-folder'] || '')
       } catch (err) {
         console.error('Failed to load settings:', err)
       } finally {
@@ -183,13 +186,10 @@ function BasicTab({ onSaveToken, onClose, projectId, onCssChange }: { onSaveToke
       // 클러스터 설정 변경 여부 확인
       const clusterSettingChanged = previousClusterSetting.current !== clusterIncludeNodeName
 
-      // 공용 설정 저장 (서버 DB)
+      // 전체 설정 저장 (서버 DB)
       await saveProjectSettings(projectId, {
         'cluster-include-node-name': clusterIncludeNodeName ? 'true' : 'false',
         'enable-inline-style': enableInlineStyle ? 'true' : 'false',
-      })
-      // 개인 설정 저장 (VS Code settings.json)
-      await savePersonalSettings(projectId, {
         'figma-token': inputToken,
         'xml-export-path': xmlExportPath,
         'xml-export-ws-folder': xmlExportWsFolder,
@@ -311,13 +311,14 @@ function BasicTab({ onSaveToken, onClose, projectId, onCssChange }: { onSaveToke
         <div className="flex gap-2">
           <input
             type="text"
-            value={xmlExportWsFolder ? `${xmlExportWsFolder}/${xmlExportPath}` : xmlExportPath}
+            value={isVsCodeEnv() ? (xmlExportWsFolder ? `${xmlExportWsFolder}/${xmlExportPath}` : xmlExportPath) : ''}
             readOnly
-            placeholder="폴더를 선택해주세요"
+            placeholder={isVsCodeEnv() ? '폴더를 선택해주세요' : '웹 다운로드 (기본)'}
             className="flex-1 px-4 py-2 theme-bg-secondary border theme-border rounded-lg theme-text-primary placeholder-gray-400 font-mono text-sm cursor-default"
           />
           <button
             type="button"
+            disabled={!isVsCodeEnv()}
             onClick={() => {
               const vsc = (window as unknown as { __vscode?: { postMessage: (msg: unknown) => void } }).__vscode
               if (!vsc) return
@@ -332,15 +333,17 @@ function BasicTab({ onSaveToken, onClose, projectId, onCssChange }: { onSaveToke
               window.addEventListener('message', handler)
               vsc.postMessage({ type: 'pickFolder', requestId })
             }}
-            className="px-3 py-2 text-sm theme-bg-tertiary border theme-border rounded-lg hover:border-blue-500 theme-text-secondary whitespace-nowrap"
+            className="px-3 py-2 text-sm theme-bg-tertiary border theme-border rounded-lg hover:border-blue-500 theme-text-secondary whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:border-transparent"
           >
             폴더 선택
           </button>
         </div>
         <p className="text-xs theme-text-secondary mt-1">
-          XML, 스펙 문서가 저장될 위치 (프로젝트 기준 상대경로)
+          {isVsCodeEnv()
+            ? 'XML, 스펙 문서가 저장될 위치 (프로젝트 기준 상대경로)'
+            : '웹 버전에서는 XML, 스펙 문서가 브라우저 다운로드로 저장됩니다'}
         </p>
-        {xmlExportPath && (
+        {isVsCodeEnv() && xmlExportPath && (
           <div className="flex items-center justify-between mt-2">
             <div className="flex items-center text-sm text-green-600 dark:text-green-400">
               <svg className="w-4 h-4 mr-1" fill="currentColor" viewBox="0 0 20 20">
@@ -683,13 +686,50 @@ function CssTab({ projectId, onCssChange }: { projectId?: string | null; onCssCh
   const [selectedCssId, setSelectedCssId] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [classSearchQuery, setClassSearchQuery] = useState('')
+  const [uploadedImages, setUploadedImages] = useState<string[]>([])
+  const [imageUploading, setImageUploading] = useState(false)
 
-  // 프로젝트 설정 로드/저장 헬퍼 (개인 설정 - VS Code settings.json)
+  // 업로드된 에셋 목록 로드 (css/ 제외 — 이미지/폰트 등)
+  const refreshUploadedImages = async () => {
+    if (!projectId) { setUploadedImages([]); return }
+    try {
+      const paths = await listAssets(projectId)
+      setUploadedImages(paths.filter(p => !p.startsWith('css/')))
+    } catch { setUploadedImages([]) }
+  }
+  useEffect(() => { refreshUploadedImages() }, [projectId])
+
+  // 에셋 업로드 (개별 파일 또는 폴더 전체)
+  // 폴더: webkitRelativePath(선택 폴더명 포함) 그대로 저장 → images 선택 시 images/base2/…,
+  //       font 선택 시 font/pretendard/… 로 CSS의 ../images, ../font 참조와 일치
+  // 개별: images/<파일명> 로 저장 (평면 참조용)
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>, isFolder: boolean) => {
+    const files = e.target.files
+    if (!files || files.length === 0 || !projectId) return
+    setImageUploading(true)
+    try {
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i]
+        const wkPath = (file as File & { webkitRelativePath?: string }).webkitRelativePath
+        const rel = isFolder && wkPath ? wkPath : `images/${file.name}`
+        if (!rel) continue
+        await uploadAsset(projectId, rel, await file.arrayBuffer())
+      }
+      await refreshUploadedImages()
+    } catch (err) {
+      console.error('업로드 실패:', err)
+    } finally {
+      setImageUploading(false)
+      e.target.value = ''
+    }
+  }
+
+  // 프로젝트 설정 로드/저장 헬퍼 (서버 DB)
   const loadCssListFromSettings = async (): Promise<CssItem[]> => {
     if (!projectId) return []
     try {
-      const personal = await getPersonalSettings(projectId)
-      const data = personal['css-list']
+      const settings = await fetchProjectSettings(projectId)
+      const data = settings['css-list']
       if (data) {
         return JSON.parse(data)
       }
@@ -701,13 +741,10 @@ function CssTab({ projectId, onCssChange }: { projectId?: string | null; onCssCh
 
   const saveCssListToSettings = async (items: CssItem[]) => {
     if (!projectId) return
-    // filePath가 있는 항목은 content 제외 (파일에서 읽으면 됨)
-    const stripped = items.map(item =>
-      item.filePath ? { ...item, content: '' } : item
-    )
-    const value = JSON.stringify(stripped)
+    // content 포함 저장 (웹 환경에서도 CSS 내용을 쓸 수 있도록 DB에 보관)
+    const value = JSON.stringify(items)
     try {
-      await savePersonalSettings(projectId, { 'css-list': value })
+      await saveProjectSettings(projectId, { 'css-list': value })
     } catch (err) {
       console.error('Failed to save CSS list:', err)
     }
@@ -716,8 +753,8 @@ function CssTab({ projectId, onCssChange }: { projectId?: string | null; onCssCh
   const loadMappingFromSettings = async (): Promise<ComponentClassMapping> => {
     if (!projectId) return {}
     try {
-      const personal = await getPersonalSettings(projectId)
-      const data = personal['css-class-mapping']
+      const settings = await fetchProjectSettings(projectId)
+      const data = settings['css-class-mapping']
       if (data) {
         return JSON.parse(data)
       }
@@ -731,7 +768,7 @@ function CssTab({ projectId, onCssChange }: { projectId?: string | null; onCssCh
     if (!projectId) return
     const value = JSON.stringify(mapping)
     try {
-      await savePersonalSettings(projectId, { 'css-class-mapping': value })
+      await saveProjectSettings(projectId, { 'css-class-mapping': value })
     } catch (err) {
       console.error('Failed to save CSS mapping:', err)
     }
@@ -770,7 +807,7 @@ function CssTab({ projectId, onCssChange }: { projectId?: string | null; onCssCh
     }
   }, [subView, cssList, selectedCssId])
 
-  // 브라우저: input file로 content 읽기
+  // 브라우저: input file로 content 읽기 + 서버 에셋으로 업로드
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files
     if (!files || files.length === 0) return
@@ -781,7 +818,16 @@ function CssTab({ projectId, onCssChange }: { projectId?: string | null; onCssCh
       if (!file.name.endsWith('.css')) continue
       const content = await file.text()
       const classNames = extractClassNames(content)
-      newItems.push({ id: `css-${Date.now()}-${i}`, name: file.name, content, classNames })
+      // 서버 에셋으로 업로드 (css/<파일명>) → 미리보기에서 <link>로 로드하여 url() 해석
+      const assetPath = `css/${file.name}`
+      if (projectId) {
+        try {
+          await uploadAsset(projectId, assetPath, content)
+        } catch (err) {
+          console.error('CSS 업로드 실패:', err)
+        }
+      }
+      newItems.push({ id: `css-${Date.now()}-${i}`, name: file.name, content, classNames, assetPath })
     }
 
     if (newItems.length > 0) {
@@ -1278,6 +1324,34 @@ function CssTab({ projectId, onCssChange }: { projectId?: string | null; onCssCh
           </label>
         )}
       </div>
+
+      {/* 이미지 에셋 업로드 (웹 전용) — CSS url() 참조 이미지를 서버에 올림 */}
+      {!isVsCodeEnv() && (
+        <div className="border theme-border rounded-lg p-3 space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="text-sm theme-text-secondary">
+              업로드된 에셋 ({uploadedImages.length}){imageUploading && ' · 업로드 중…'}
+            </span>
+            <div className="flex gap-2">
+              <label className="px-2 py-1 text-xs bg-blue-600 hover:bg-blue-700 text-white rounded cursor-pointer">
+                + 이미지
+                <input type="file" accept="image/*" multiple className="hidden"
+                  onChange={(e) => handleImageUpload(e, false)} />
+              </label>
+              <label className="px-2 py-1 text-xs theme-bg-tertiary theme-text-secondary border theme-border rounded cursor-pointer hover:border-blue-500">
+                + 폴더 업로드
+                <input type="file" multiple className="hidden"
+                  {...{ webkitdirectory: '', directory: '' }}
+                  onChange={(e) => handleImageUpload(e, true)} />
+              </label>
+            </div>
+          </div>
+          <p className="text-xs theme-text-secondary">
+            CSS가 <code>url(../images/…)</code>, <code>url(../font/…)</code>로 참조하는 파일을 올립니다.
+            <b> 폴더 업로드</b>는 선택한 폴더명이 그대로 경로가 됩니다 — <code>images</code> 폴더 선택 → <code>images/base2/…</code>, <code>font</code> 폴더 선택 → <code>font/…</code>.
+          </p>
+        </div>
+      )}
 
       {/* CSS 목록 */}
       <div className="border theme-border rounded-lg overflow-hidden">

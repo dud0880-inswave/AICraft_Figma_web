@@ -21,9 +21,15 @@ AICraft_Figma/
 │   │   ├── data/         # SQLite DB (자동 생성)
 │   │   └── package.json
 │   │
-│   └── client/           # 프론트엔드 (독립 배포 가능)
-│       ├── src/          # React 소스
-│       ├── public/       # 정적 파일
+│   ├── client/           # 프론트엔드 (독립 배포 가능)
+│   │   ├── src/          # React 소스
+│   │   ├── public/       # 정적 파일
+│   │   └── package.json
+│   │
+│   └── extension/        # VS Code Extension
+│       ├── src/          # Extension 소스 (webview, preview-server)
+│       ├── scripts/      # build-client.js (클라이언트 빌드 → media 복사)
+│       ├── media/        # 클라이언트 빌드 산출물 (자동 생성)
 │       └── package.json
 │
 ├── package.json          # 워크스페이스 루트
@@ -58,6 +64,10 @@ npm run build
 # 개별 빌드
 npm run build:server
 npm run build:client
+
+# VS Code Extension
+npm run build:ext     # 클라이언트 빌드 → media 복사 → Extension 컴파일
+npm run package:ext   # 위 빌드 + .vsix 패키징 (루트에 생성)
 ```
 
 ### 테스트
@@ -112,6 +122,53 @@ npm install
 npm run build
 # dist/ 폴더를 웹서버에 배포
 ```
+
+## VS Code Extension (.vsix)
+
+클라이언트를 VS Code Extension 형태로 패키징하여 배포/설치할 수 있습니다.
+
+### 패키징
+
+```bash
+# 빌드만 (media 갱신 + 컴파일)
+npm run build:ext
+
+# .vsix 패키징 (build:ext 포함, 루트에 .vsix 생성)
+npm run package:ext
+```
+
+- 산출물: 루트에 `aicraft-figma-extension-<version>.vsix` 생성
+- `build:ext` 과정: `packages/client` 빌드 → `packages/extension/media/`로 복사 → `preview.html` 후처리 → TS 컴파일
+- 버전은 `packages/extension/package.json`의 `version` 필드로 관리
+
+### 설치
+
+**VS Code 명령 팔레트**
+1. `Ctrl+Shift+P` → `Extensions: Install from VSIX...`
+2. 생성된 `.vsix` 파일 선택
+
+**터미널**
+```bash
+code --install-extension aicraft-figma-extension-<version>.vsix
+```
+
+### ⚠️ 재설치 시 주의 (버전 캐싱)
+
+같은 버전 번호로 덮어쓰기 설치하면 VS Code가 이전 코드를 캐싱하여 변경이 반영되지 않을 수 있습니다. 다음 중 하나를 권장합니다:
+
+- **(권장) 버전 올리기**: `packages/extension/package.json`의 `version`을 올린 뒤 재패키징
+- **삭제 후 재설치**: 확장 제거(Uninstall) → 새 `.vsix` 설치
+
+설치 후에는 반드시 `Ctrl+Shift+P` → **`Developer: Reload Window`** (또는 VS Code 재시작)로 갱신하세요.
+
+### 웹 vs Extension 차이
+
+| 항목 | 웹 | Extension |
+|------|-----|-----------|
+| 프로젝트 관리 | 대시보드 UI | 사이드바 TreeView |
+| 미리보기 | Vite 서빙 | 내장 Preview Server |
+| CSS 파일 선택 | 파일 업로드(내용 복사) | VS Code 다이얼로그(상대경로 + link) |
+| confirm/alert | 브라우저 네이티브 | 커스텀 다이얼로그 |
 
 ## Figma Access Token
 

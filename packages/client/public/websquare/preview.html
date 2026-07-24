@@ -150,8 +150,9 @@
                                 var link = document.createElement('link');
                                 link.rel = 'stylesheet';
                                 link.setAttribute('data-css-path', 'css-' + i);
-                                // 절대 URL로 설정 (MutationObserver가 /websquare/ 기준으로 재작성하는 것 방지)
-                                link.href = window.location.origin + '/' + p.replace(/^\//, '');
+                                // 절대 URL(http…)이면 그대로, 아니면 현재 origin 기준으로 해석
+                                // (서버 에셋 URL은 그대로 두어야 url() 상대경로가 서버 기준으로 해석됨)
+                                link.href = /^https?:\/\//.test(p) ? p : window.location.origin + '/' + p.replace(/^\//, '');
                                 document.head.appendChild(link);
                             });
                         }
