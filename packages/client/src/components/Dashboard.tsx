@@ -86,6 +86,13 @@ export default function Dashboard({ onSelectFile, onAddNewFile, onOpenSettings, 
     }
   }
 
+  const handleBackToProjects = () => {
+    setViewMode('projects')
+    setSelectedProject(null)
+    setFiles([])
+    loadProjects()
+  }
+
   const handleDeleteProject = async (project: Project, e: React.MouseEvent) => {
     e.stopPropagation()
     if (!await showConfirm(`프로젝트 "${project.name}"을(를) 삭제하시겠습니까?\n하위 파일도 모두 삭제됩니다.`)) return
@@ -287,6 +294,17 @@ export default function Dashboard({ onSelectFile, onAddNewFile, onOpenSettings, 
             {/* 파일 타이틀 + 네비게이션 */}
             <div className="flex items-center justify-between mb-6">
               <div className="flex items-center gap-2">
+                <button
+                  onClick={handleBackToProjects}
+                  className="flex items-center gap-1 px-2 py-1 -ml-2 theme-text-secondary hover:text-blue-500 theme-bg-hover rounded transition-colors"
+                  title="프로젝트 목록으로"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                  </svg>
+                  <span className="text-sm">프로젝트 목록</span>
+                </button>
+                <span className="theme-text-secondary">/</span>
                 <h2 className="text-lg font-semibold theme-text-primary">{selectedProject?.name}</h2>
               </div>
               <div className="flex items-center gap-2">
