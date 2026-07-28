@@ -241,7 +241,7 @@ function TreeItem({
         {/* 매핑된 컴포넌트 태그 배지 (표시 전용) */}
         {mapLabel && (
           <span
-            className="mr-1.5 px-1.5 py-[1px] rounded text-[10px] leading-tight font-mono font-medium flex-shrink-0 bg-blue-500/15 text-blue-600 dark:text-blue-400 border border-blue-500/25"
+            className="mr-1.5 px-1.5 py-0.5 rounded text-[11px] leading-tight font-mono font-medium flex-shrink-0 bg-green-500/15 text-green-600 dark:text-green-400 border border-green-500/25"
             title={mapInfo?.registryName ? `${mapInfo.registryName}${mapInfo.tagName ? ` (${mapInfo.tagName})` : ''}` : mapLabel}
           >
             {mapLabel}

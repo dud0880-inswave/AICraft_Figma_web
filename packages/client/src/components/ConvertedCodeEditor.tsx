@@ -74,8 +74,6 @@ interface ConvertedCodeEditorProps {
   projectId: string | null  // 프로젝트 ID (클러스터 생성용)
   rootNode: FigmaNode | null
   registry: RegistryItem[]
-  visible: boolean
-  onToggle: () => void
   document: object | null  // 전체 document 구조 (클러스터 생성용)
   convertTrigger: number  // 이 값이 변경되면 자동 변환
   cssRefreshKey?: number  // CSS 새로고침 트리거
@@ -145,8 +143,6 @@ export default function ConvertedCodeEditor({
   rootNode,
   document: _document,
   registry,
-  visible,
-  onToggle,
   convertTrigger,
   cssRefreshKey,
   onComplete,
@@ -156,7 +152,7 @@ export default function ConvertedCodeEditor({
   const [currentInitScript, setCurrentInitScript] = useState('')
   const [currentWidgetStyle, setCurrentWidgetStyle] = useState('')
   const [converting, setConverting] = useState(false)
-  const [activeTab, setActiveTab] = useState<'code' | 'preview'>('code')
+  const [activeTab, setActiveTab] = useState<'code' | 'preview'>('preview')
   const [previewError, setPreviewError] = useState<string | null>(null)
   const [previewLoading, setPreviewLoading] = useState(false)
   const [iframeReady, setIframeReady] = useState(false)
@@ -1005,19 +1001,6 @@ ${innerCode}
     }
   }
 
-  // 토글 버튼만 표시 (닫힌 상태)
-  if (!visible) {
-    return (
-      <button
-        onClick={onToggle}
-        className="absolute right-0 top-1/2 -translate-y-1/2 theme-bg-tertiary hover:opacity-80 theme-text-primary px-1 py-4 rounded-l text-xs"
-        title="변환 결과 열기"
-      >
-        &lt;
-      </button>
-    )
-  }
-
   return (
     <div className="h-full theme-bg-secondary flex flex-col relative">
       {/* 토스트 메시지 */}
@@ -1044,18 +1027,8 @@ ${innerCode}
           {convertedCode && (
             <div className="flex theme-bg-tertiary rounded">
               <button
-                onClick={() => setActiveTab('code')}
-                className={`px-3 py-1 text-xs rounded-l transition ${
-                  activeTab === 'code'
-                    ? 'bg-blue-600 text-white'
-                    : 'theme-text-secondary theme-text-hover'
-                }`}
-              >
-                코드
-              </button>
-              <button
                 onClick={() => setActiveTab('preview')}
-                className={`px-3 py-1 text-xs rounded-r transition ${
+                className={`px-3 py-1 text-xs rounded-l transition ${
                   activeTab === 'preview'
                     ? 'bg-green-600 text-white'
                     : 'theme-text-secondary theme-text-hover'
@@ -1064,16 +1037,19 @@ ${innerCode}
                 미리보기
                 {!iframeReady && <span className="ml-1 text-yellow-400">*</span>}
               </button>
+              <button
+                onClick={() => setActiveTab('code')}
+                className={`px-3 py-1 text-xs rounded-r transition ${
+                  activeTab === 'code'
+                    ? 'bg-blue-600 text-white'
+                    : 'theme-text-secondary theme-text-hover'
+                }`}
+              >
+                코드
+              </button>
             </div>
           )}
         </div>
-        <button
-          onClick={onToggle}
-          className="p-1 theme-text-secondary theme-text-hover text-xs"
-          title="닫기"
-        >
-          &gt;
-        </button>
       </div>
 
       {/* 콘텐츠 영역 */}
@@ -1128,7 +1104,7 @@ ${innerCode}
                           className={`text-xs px-1.5 py-0.5 rounded ${
                             previewDevice === key
                               ? 'bg-blue-600 text-white'
-                              : 'text-gray-400 hover:text-gray-200'
+                              : 'theme-text-secondary theme-text-hover theme-bg-hover'
                           }`}
                         >
                           {DEVICE_PRESETS[key].label}
@@ -1138,16 +1114,16 @@ ${innerCode}
                     <span className="text-gray-600">|</span>
                     <button
                       onClick={() => setPreviewZoom(z => Math.max(0.25, +(z - 0.25).toFixed(2)))}
-                      className="text-xs text-gray-400 hover:text-gray-200 w-5 h-5 flex items-center justify-center"
+                      className="text-xs px-1.5 py-0.5 rounded theme-text-secondary theme-text-hover theme-bg-hover"
                     >−</button>
-                    <span className="text-xs text-gray-400 w-10 text-center">{Math.round(previewZoom * 100)}%</span>
+                    <span className="text-xs theme-text-secondary w-10 text-center">{Math.round(previewZoom * 100)}%</span>
                     <button
                       onClick={() => setPreviewZoom(z => Math.min(3, +(z + 0.25).toFixed(2)))}
-                      className="text-xs text-gray-400 hover:text-gray-200 w-5 h-5 flex items-center justify-center"
+                      className="text-xs px-1.5 py-0.5 rounded theme-text-secondary theme-text-hover theme-bg-hover"
                     >+</button>
                     <button
                       onClick={() => setPreviewZoom(1)}
-                      className="text-xs text-gray-400 hover:text-gray-200"
+                      className="text-xs px-1.5 py-0.5 rounded theme-text-secondary theme-text-hover theme-bg-hover"
                     >100%</button>
                     <button
                       onClick={renderPreview}

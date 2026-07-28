@@ -14,7 +14,7 @@ import NodeTree, { type MappedNodeInfo } from './components/NodeTree'
 import FigmaViewer from './components/FigmaViewer'
 import MappingEditor from './components/MappingEditor'
 import ConvertedCodeEditor from './components/ConvertedCodeEditor'
-import Splitter from './components/Splitter'
+import Splitter, { PanelToggleIcon } from './components/Splitter'
 import SettingsModal from './components/SettingsModal'
 import AutoMappingSuggestionModal from './components/AutoMappingSuggestionModal'
 
@@ -70,7 +70,9 @@ export default function App() {
 
   // 패널 너비 상태
   const [leftPanelWidth, setLeftPanelWidth] = useState(288)  // 기본 w-72 (18rem = 288px)
+  const [leftCollapsed, setLeftCollapsed] = useState(false)  // 노드 트리 패널 접힘 여부
   const [rightPanelWidth, setRightPanelWidth] = useState(600)  // 기본 maxWidth
+  const [rightCollapsed, setRightCollapsed] = useState(false)  // 매핑 편집기 패널 접힘 여부
   const [codeEditorWidth, setCodeEditorWidth] = useState(800)  // 기본 maxWidth
   const [codeEditorVisible, setCodeEditorVisible] = useState(true)  // 기본 표시
   const [registry, setRegistry] = useState<RegistryItem[]>([])  // 레지스트리 데이터
@@ -1136,6 +1138,30 @@ export default function App() {
           )}
         </div>
         <div className="flex items-center gap-2">
+          {/* 패널 접기/펼치기 토글 (노드트리 / 매핑 / 코드) */}
+          <div className="flex items-center gap-0.5 mr-1">
+            <button
+              onClick={() => setLeftCollapsed(v => !v)}
+              className="p-1.5 theme-text-secondary hover:text-blue-500 theme-bg-hover rounded"
+              title={leftCollapsed ? '노드 트리 펼치기' : '노드 트리 접기'}
+            >
+              <PanelToggleIcon section="left" open={!leftCollapsed} className="w-5 h-5" />
+            </button>
+            <button
+              onClick={() => setRightCollapsed(v => !v)}
+              className="p-1.5 theme-text-secondary hover:text-blue-500 theme-bg-hover rounded"
+              title={rightCollapsed ? '매핑 편집기 펼치기' : '매핑 편집기 접기'}
+            >
+              <PanelToggleIcon section="middle" open={!rightCollapsed} className="w-5 h-5" />
+            </button>
+            <button
+              onClick={() => setCodeEditorVisible(v => !v)}
+              className="p-1.5 theme-text-secondary hover:text-blue-500 theme-bg-hover rounded"
+              title={codeEditorVisible ? '변환 결과 접기' : '변환 결과 펼치기'}
+            >
+              <PanelToggleIcon section="right" open={codeEditorVisible} className="w-5 h-5" />
+            </button>
+          </div>
           <button
             onClick={async () => {
               if (!state.fileKey || !state.projectId || refreshing) return
@@ -1202,29 +1228,31 @@ export default function App() {
 
       {/* 메인 콘텐츠 */}
       <div ref={containerRef} className="flex-1 flex overflow-hidden">
-        {/* 좌측: 노드 트리 */}
-        <div
-          className="flex-shrink-0 border-r theme-border overflow-hidden theme-bg-secondary"
-          style={{ width: leftPanelWidth }}
-        >
-          {displayRootNode && (
-            <NodeTree
-              nodes={state.targetNodeId ? [displayRootNode] : (displayRootNode.children || [])}
-              selectedNodeIds={state.selectedNodeIds}
-              mappedNodeIds={mappedNodeIds}
-              mappedInfo={mappedInfo}
-              onSelectNode={handleSelectNode}
-              onSelectNodeIds={handleSelectNodeIds}
-              onHoverNode={handleHoverNode}
-              onGroupNodes={handleGroupNodes}
-              onUngroupNodes={handleUngroupNodes}
-              onReorderNodes={handleReorderNodes}
-            />
-          )}
-        </div>
+        {/* 좌측: 노드 트리 (접힘 시 미렌더) */}
+        {!leftCollapsed && (
+          <div
+            className="flex-shrink-0 border-r theme-border overflow-hidden theme-bg-secondary"
+            style={{ width: leftPanelWidth }}
+          >
+            {displayRootNode && (
+              <NodeTree
+                nodes={state.targetNodeId ? [displayRootNode] : (displayRootNode.children || [])}
+                selectedNodeIds={state.selectedNodeIds}
+                mappedNodeIds={mappedNodeIds}
+                mappedInfo={mappedInfo}
+                onSelectNode={handleSelectNode}
+                onSelectNodeIds={handleSelectNodeIds}
+                onHoverNode={handleHoverNode}
+                onGroupNodes={handleGroupNodes}
+                onUngroupNodes={handleUngroupNodes}
+                onReorderNodes={handleReorderNodes}
+              />
+            )}
+          </div>
+        )}
 
-        {/* 왼쪽 스플리터 */}
-        <Splitter direction="horizontal" onResize={handleLeftResize} />
+        {/* 왼쪽 스플리터 (펼침 시에만) */}
+        {!leftCollapsed && <Splitter direction="horizontal" onResize={handleLeftResize} />}
 
         {/* 중앙: Figma 뷰어 */}
         <div className="flex-1 min-w-0">
@@ -1245,12 +1273,13 @@ export default function App() {
           />
         </div>
 
-        {/* 오른쪽 스플리터 */}
-        <Splitter direction="horizontal" onResize={handleRightResize} />
+        {/* 오른쪽 스플리터 (매핑 펼침 시에만) */}
+        {!rightCollapsed && <Splitter direction="horizontal" onResize={handleRightResize} />}
 
         {/* 우측: 매핑 편집기 + 코드 에디터 */}
         <div className="flex-shrink-0 flex border-l theme-border overflow-hidden relative">
-          {/* 매핑 편집기 */}
+          {/* 매핑 편집기 (접힘 시 미렌더) */}
+          {!rightCollapsed && (
           <div
             className="flex-shrink-0 overflow-hidden"
             style={{ width: rightPanelWidth }}
@@ -1275,15 +1304,14 @@ export default function App() {
               }}
             />
           </div>
-
-          {/* 코드 에디터 스플리터 */}
-          {codeEditorVisible && (
-            <Splitter direction="horizontal" onResize={handleCodeEditorResize} />
           )}
 
-          {/* 코드 에디터 */}
-          {(() => {
-            const editor = (
+          {/* 코드 에디터 스플리터 (펼침 시에만) */}
+          {codeEditorVisible && <Splitter direction="horizontal" onResize={handleCodeEditorResize} />}
+
+          {/* 코드 에디터 (펼침 시에만) */}
+          {codeEditorVisible && (
+            <div className="flex-shrink-0 overflow-hidden border-l theme-border" style={{ width: codeEditorWidth }}>
               <ConvertedCodeEditor
                 fileKey={state.fileKey}
                 nodeId={state.targetNodeId}
@@ -1291,8 +1319,6 @@ export default function App() {
                 rootNode={displayRootNode}
                 document={state.file?.document || null}
                 registry={registry}
-                visible={codeEditorVisible}
-                onToggle={() => setCodeEditorVisible(v => !v)}
                 convertTrigger={convertTrigger}
                 cssRefreshKey={cssRefreshKey}
                 token={state.token}
@@ -1301,13 +1327,8 @@ export default function App() {
                   handleBackToProject()
                 }}
               />
-            )
-            return codeEditorVisible ? (
-              <div className="flex-shrink-0 overflow-hidden border-l theme-border" style={{ width: codeEditorWidth }}>
-                {editor}
-              </div>
-            ) : editor
-          })()}
+            </div>
+          )}
         </div>
       </div>
 
