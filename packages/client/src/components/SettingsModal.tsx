@@ -132,6 +132,7 @@ function BasicTab({ onSaveToken, onClose, projectId, onCssChange }: { onSaveToke
   const [xmlExportWsFolder, setXmlExportWsFolder] = useState('')
   const [clusterIncludeNodeName, setClusterIncludeNodeName] = useState(true)
   const [enableInlineStyle, setEnableInlineStyle] = useState(true)
+  const [showMappingBadge, setShowMappingBadge] = useState(true)
   const [loading, setLoading] = useState(true)
   const [regenerating, setRegenerating] = useState(false)
   const [toastMessage, setToastMessage] = useState<string | null>(null)
@@ -156,6 +157,7 @@ function BasicTab({ onSaveToken, onClose, projectId, onCssChange }: { onSaveToke
         setClusterIncludeNodeName(includeNodeName)
         previousClusterSetting.current = includeNodeName
         setEnableInlineStyle(settings['enable-inline-style'] !== 'false')
+        setShowMappingBadge(settings['show-mapping-badge'] !== 'false')
         setInputToken(settings['figma-token'] || '')
         setXmlExportPath(settings['xml-export-path'] || '')
         setXmlExportWsFolder(settings['xml-export-ws-folder'] || '')
@@ -190,6 +192,7 @@ function BasicTab({ onSaveToken, onClose, projectId, onCssChange }: { onSaveToke
       await saveProjectSettings(projectId, {
         'cluster-include-node-name': clusterIncludeNodeName ? 'true' : 'false',
         'enable-inline-style': enableInlineStyle ? 'true' : 'false',
+        'show-mapping-badge': showMappingBadge ? 'true' : 'false',
         'figma-token': inputToken,
         'xml-export-path': xmlExportPath,
         'xml-export-ws-folder': xmlExportWsFolder,
@@ -410,6 +413,27 @@ function BasicTab({ onSaveToken, onClose, projectId, onCssChange }: { onSaveToke
             }
           </div>
         </div>
+      </div>
+
+      {/* 노드 트리 표시 설정 */}
+      <div>
+        <label className="block text-sm font-medium theme-text-primary mb-2">
+          노드 트리 표시 설정
+        </label>
+        <label className="flex items-start gap-3 p-3 rounded-lg theme-bg-tertiary border theme-border cursor-pointer hover:border-blue-500 transition-colors">
+          <input
+            type="checkbox"
+            checked={showMappingBadge}
+            onChange={(e) => setShowMappingBadge(e.target.checked)}
+            className="mt-0.5 w-4 h-4 text-blue-600 rounded focus:ring-blue-500 focus:ring-2"
+          />
+          <div className="flex-1">
+            <div className="text-sm theme-text-primary font-medium">매핑 컴포넌트 뱃지 표시</div>
+            <div className="text-xs theme-text-secondary mt-1">
+              노드 트리에서 매핑된 노드 앞에 컴포넌트 태그 뱃지(예: xf:group)를 표시합니다. 해제하면 점 표시만 나타납니다.
+            </div>
+          </div>
+        </label>
       </div>
 
       {/* 저장 버튼 */}

@@ -79,6 +79,7 @@ export default function App() {
   const [convertTrigger, setConvertTrigger] = useState(0)  // 변환 트리거
   const [mappedNodeIds, setMappedNodeIds] = useState<Set<string>>(new Set())  // 매핑된 노드 ID
   const [mappedInfo, setMappedInfo] = useState<Map<string, MappedNodeInfo>>(new Map())  // 노드ID → 매핑 컴포넌트 정보 (트리 표시용)
+  const [showMappingBadge, setShowMappingBadge] = useState(true)  // 노드 트리 매핑 뱃지 표시 여부 (프로젝트 설정)
   const [cssRefreshKey, setCssRefreshKey] = useState(0)  // CSS 새로고침 트리거
   const [registryRefreshKey, setRegistryRefreshKey] = useState(0)  // Registry 새로고침 트리거
   const containerRef = useRef<HTMLDivElement>(null)
@@ -342,6 +343,17 @@ export default function App() {
 
     loadMappings()
   }, [state.fileKey, state.projectId, convertTrigger])
+
+  // 매핑 뱃지 표시 설정 로드 (프로젝트 변경 시 + 설정 저장 후 재적용)
+  const reloadBadgeSetting = useCallback(async () => {
+    if (!state.projectId) return
+    try {
+      const settings = await fetchProjectSettings(state.projectId)
+      setShowMappingBadge(settings['show-mapping-badge'] !== 'false')
+    } catch { /* ignore */ }
+  }, [state.projectId])
+
+  useEffect(() => { reloadBadgeSetting() }, [reloadBadgeSetting])
 
   // 페이지 선택
   const handleSelectPage = useCallback((pageId: string) => {
@@ -1239,7 +1251,7 @@ export default function App() {
                 nodes={state.targetNodeId ? [displayRootNode] : (displayRootNode.children || [])}
                 selectedNodeIds={state.selectedNodeIds}
                 mappedNodeIds={mappedNodeIds}
-                mappedInfo={mappedInfo}
+                mappedInfo={showMappingBadge ? mappedInfo : undefined}
                 onSelectNode={handleSelectNode}
                 onSelectNodeIds={handleSelectNodeIds}
                 onHoverNode={handleHoverNode}
@@ -1339,6 +1351,7 @@ export default function App() {
           setShowSettings(false)
           setSettingsProjectId(null)
           setSettingsProjectName(null)
+          reloadBadgeSetting()  // 설정 창에서 뱃지 표시 변경 시 즉시 반영
         }}
         onSaveToken={handleSaveToken}
         onCssChange={() => setCssRefreshKey(k => k + 1)}
