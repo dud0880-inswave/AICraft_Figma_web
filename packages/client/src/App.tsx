@@ -10,7 +10,7 @@ import Dashboard from './components/Dashboard'
 import AddFileModal from './components/AddFileModal'
 import Spec from './Spec'
 import PageTabs from './components/PageTabs'
-import NodeTree from './components/NodeTree'
+import NodeTree, { type MappedNodeInfo } from './components/NodeTree'
 import FigmaViewer from './components/FigmaViewer'
 import MappingEditor from './components/MappingEditor'
 import ConvertedCodeEditor from './components/ConvertedCodeEditor'
@@ -76,6 +76,7 @@ export default function App() {
   const [registry, setRegistry] = useState<RegistryItem[]>([])  // 레지스트리 데이터
   const [convertTrigger, setConvertTrigger] = useState(0)  // 변환 트리거
   const [mappedNodeIds, setMappedNodeIds] = useState<Set<string>>(new Set())  // 매핑된 노드 ID
+  const [mappedInfo, setMappedInfo] = useState<Map<string, MappedNodeInfo>>(new Map())  // 노드ID → 매핑 컴포넌트 정보 (트리 표시용)
   const [cssRefreshKey, setCssRefreshKey] = useState(0)  // CSS 새로고침 트리거
   const [registryRefreshKey, setRegistryRefreshKey] = useState(0)  // Registry 새로고침 트리거
   const containerRef = useRef<HTMLDivElement>(null)
@@ -315,6 +316,7 @@ export default function App() {
   useEffect(() => {
     if (!state.fileKey || !state.projectId) {
       setMappedNodeIds(new Set())
+      setMappedInfo(new Map())
       return
     }
 
@@ -323,6 +325,14 @@ export default function App() {
         const mappings = await fetchMappings(state.projectId!, state.fileKey!, state.targetNodeId)
         const ids = new Set(mappings.map(m => m.figmaNodeId))
         setMappedNodeIds(ids)
+        // 트리 표시용: 노드ID → 매핑 컴포넌트 정보
+        const infoMap = new Map<string, MappedNodeInfo>()
+        for (const m of mappings) {
+          if (m.status === 'mapped' && (m.registryTag || m.registryName)) {
+            infoMap.set(m.figmaNodeId, { tagName: m.registryTag, registryName: m.registryName })
+          }
+        }
+        setMappedInfo(infoMap)
       } catch (err) {
         console.error('매핑 정보 로드 실패:', err)
       }
@@ -1202,6 +1212,7 @@ export default function App() {
               nodes={state.targetNodeId ? [displayRootNode] : (displayRootNode.children || [])}
               selectedNodeIds={state.selectedNodeIds}
               mappedNodeIds={mappedNodeIds}
+              mappedInfo={mappedInfo}
               onSelectNode={handleSelectNode}
               onSelectNodeIds={handleSelectNodeIds}
               onHoverNode={handleHoverNode}

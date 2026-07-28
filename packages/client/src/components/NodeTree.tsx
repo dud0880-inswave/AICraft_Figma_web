@@ -2,10 +2,17 @@ import { useState, useCallback, useMemo, useEffect, useRef } from 'react'
 import type { FigmaNode } from '../types/figma'
 import { getNodeIcon } from '../utils/tree-utils'
 
+// 노드에 매핑된 컴포넌트 정보 (표시 전용 — DB 저장 X)
+export interface MappedNodeInfo {
+  tagName?: string
+  registryName?: string
+}
+
 interface NodeTreeProps {
   nodes: FigmaNode[]
   selectedNodeIds: string[]
   mappedNodeIds: Set<string>
+  mappedInfo?: Map<string, MappedNodeInfo>  // 노드ID → 매핑 컴포넌트 정보 (표시용)
   onSelectNode: (node: FigmaNode, ctrlKey: boolean, shiftKey?: boolean) => void
   onSelectNodeIds?: (nodeIds: string[]) => void
   onHoverNode: (node: FigmaNode | null) => void
@@ -60,6 +67,7 @@ interface TreeItemProps {
   parentId: string | null
   selectedNodeIds: string[]
   mappedNodeIds: Set<string>
+  mappedInfo?: Map<string, MappedNodeInfo>
   expandedIds: Set<string>
   dragState: DragState | null
   searchQuery: string
@@ -87,6 +95,7 @@ function TreeItem({
   parentId,
   selectedNodeIds,
   mappedNodeIds,
+  mappedInfo,
   expandedIds,
   dragState,
   searchQuery,
@@ -105,6 +114,8 @@ function TreeItem({
   const isSelected = selectedNodeIds.includes(node.id)
   const isVisible = node.visible !== false
   const isMapped = mappedNodeIds.has(node.id)
+  const mapInfo = mappedInfo?.get(node.id)
+  const mapLabel = mapInfo?.tagName || mapInfo?.registryName
   const isDragging = dragState?.nodeId === node.id
 
   // 검색 중일 때 매칭되지 않으면 숨김
@@ -222,13 +233,23 @@ function TreeItem({
         {/* 노드 아이콘 */}
         <span className="mr-2 text-sm">{getNodeIcon(node.type)}</span>
 
-        {/* 매핑 표시 */}
-        {isMapped && (
+        {/* 매핑 표시 (배지가 없을 때만 점으로 표시) */}
+        {isMapped && !mapLabel && (
           <span className="w-2 h-2 rounded-full bg-blue-600 dark:bg-green-500 mr-1.5 flex-shrink-0" title="매핑됨" />
         )}
 
+        {/* 매핑된 컴포넌트 태그 배지 (표시 전용) */}
+        {mapLabel && (
+          <span
+            className="mr-1.5 px-1.5 py-[1px] rounded text-[10px] leading-tight font-mono font-medium flex-shrink-0 bg-blue-500/15 text-blue-600 dark:text-blue-400 border border-blue-500/25"
+            title={mapInfo?.registryName ? `${mapInfo.registryName}${mapInfo.tagName ? ` (${mapInfo.tagName})` : ''}` : mapLabel}
+          >
+            {mapLabel}
+          </span>
+        )}
+
         {/* 노드 이름 */}
-        <span className={`truncate text-sm ${isMapped ? 'text-blue-600 dark:text-green-400' : ''} ${isDirectMatch ? 'bg-yellow-500/30 rounded px-0.5' : ''}`} title={node.name}>
+        <span className={`truncate text-sm ${isMapped && !mapLabel ? 'text-blue-600 dark:text-green-400' : ''} ${isDirectMatch ? 'bg-yellow-500/30 rounded px-0.5' : ''}`} title={node.name}>
           {node.name}
         </span>
 
@@ -250,6 +271,7 @@ function TreeItem({
               parentId={node.id}
               selectedNodeIds={selectedNodeIds}
               mappedNodeIds={mappedNodeIds}
+              mappedInfo={mappedInfo}
               expandedIds={expandedIds}
               dragState={dragState}
               searchQuery={searchQuery}
@@ -285,6 +307,7 @@ export default function NodeTree({
   nodes,
   selectedNodeIds,
   mappedNodeIds,
+  mappedInfo,
   onSelectNode,
   onSelectNodeIds,
   onHoverNode,
@@ -611,6 +634,7 @@ export default function NodeTree({
                 parentId={null}
                 selectedNodeIds={selectedNodeIds}
                 mappedNodeIds={mappedNodeIds}
+                mappedInfo={mappedInfo}
                 expandedIds={expandedIds}
                 dragState={dragState}
                 searchQuery=""
@@ -634,6 +658,7 @@ export default function NodeTree({
               parentId={null}
               selectedNodeIds={selectedNodeIds}
               mappedNodeIds={mappedNodeIds}
+              mappedInfo={mappedInfo}
               expandedIds={expandedIds}
               dragState={dragState}
               searchQuery={searchQuery}
