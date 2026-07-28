@@ -21,6 +21,7 @@ packages/client/public/config.json
 # Logs
 *.log
 npm-debug.log*
+logs/
 
 # Editor
 .vscode/
