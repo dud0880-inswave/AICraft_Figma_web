@@ -1240,10 +1240,7 @@ ${bodyCols}
                   return (
                     <button
                       key={css.id}
-                      onClick={() => {
-                        setSelectedCssId(css.id)
-                        setClassSearchQuery('')
-                      }}
+                      onClick={() => setSelectedCssId(css.id)}
                       className={`px-2 py-1 text-xs whitespace-nowrap border-b-2 transition-colors ${
                         isActive
                           ? 'border-blue-500 text-blue-400'

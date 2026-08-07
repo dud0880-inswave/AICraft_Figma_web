@@ -857,7 +857,7 @@ function CssTab({ projectId, onCssChange }: { projectId?: string | null; onCssCh
     if (newItems.length > 0) {
       const updated = [...cssList, ...newItems]
       setCssList(updated)
-      saveCssListToSettings(updated)
+      await saveCssListToSettings(updated)
       if (registry.length > 0) {
         let currentMapping = { ...componentClassMapping }
         for (const item of newItems) {
@@ -866,7 +866,7 @@ function CssTab({ projectId, onCssChange }: { projectId?: string | null; onCssCh
           }
         }
         setComponentClassMapping(currentMapping)
-        saveMappingToSettings(currentMapping)
+        await saveMappingToSettings(currentMapping)
       }
       onCssChange?.()
     }
@@ -961,7 +961,7 @@ function CssTab({ projectId, onCssChange }: { projectId?: string | null; onCssCh
     setSubView('edit')
   }
 
-  const handleSaveEdit = () => {
+  const handleSaveEdit = async () => {
     if (!editingItem) return
 
     const classNames = extractClassNames(editingItem.content)
@@ -970,12 +970,12 @@ function CssTab({ projectId, onCssChange }: { projectId?: string | null; onCssCh
       item.id === updatedItem.id ? updatedItem : item
     )
     setCssList(updated)
-    saveCssListToSettings(updated)
+    await saveCssListToSettings(updated)
 
     if (classNames.length > 0 && registry.length > 0) {
       const autoMapped = autoMapClassesToComponents(editingItem.id, classNames, registry, componentClassMapping)
       setComponentClassMapping(autoMapped)
-      saveMappingToSettings(autoMapped)
+      await saveMappingToSettings(autoMapped)
     }
 
     setEditingItem(null)
@@ -993,19 +993,19 @@ function CssTab({ projectId, onCssChange }: { projectId?: string | null; onCssCh
     setSubView('edit')
   }
 
-  const handleSaveNew = () => {
+  const handleSaveNew = async () => {
     if (!editingItem || !editingItem.content.trim()) return
 
     const classNames = extractClassNames(editingItem.content)
     const newItem = { ...editingItem, classNames }
     const updated = [...cssList, newItem]
     setCssList(updated)
-    saveCssListToSettings(updated)
+    await saveCssListToSettings(updated)
 
     if (classNames.length > 0 && registry.length > 0) {
       const autoMapped = autoMapClassesToComponents(editingItem.id, classNames, registry, componentClassMapping)
       setComponentClassMapping(autoMapped)
-      saveMappingToSettings(autoMapped)
+      await saveMappingToSettings(autoMapped)
     }
 
     setEditingItem(null)
@@ -1019,7 +1019,7 @@ function CssTab({ projectId, onCssChange }: { projectId?: string | null; onCssCh
   }
 
   // 컴포넌트-클래스 매핑 토글 (CSS 파일별)
-  const toggleClassForComponent = (cssId: string, componentId: string, className: string) => {
+  const toggleClassForComponent = async (cssId: string, componentId: string, className: string) => {
     const newMapping = { ...componentClassMapping }
     if (!newMapping[cssId]) {
       newMapping[cssId] = {}
@@ -1031,7 +1031,7 @@ function CssTab({ projectId, onCssChange }: { projectId?: string | null; onCssCh
 
     newMapping[cssId][componentId] = updated
     setComponentClassMapping(newMapping)
-    saveMappingToSettings(newMapping)
+    await saveMappingToSettings(newMapping)
     onCssChange?.()
   }
 
@@ -1090,11 +1090,11 @@ function CssTab({ projectId, onCssChange }: { projectId?: string | null; onCssCh
   }
 
   // 자동 매핑 재실행 (선택된 CSS 파일에 대해)
-  const handleAutoMap = () => {
+  const handleAutoMap = async () => {
     if (!selectedCssId || !selectedCss || registry.length === 0) return
     const autoMapped = autoMapClassesToComponents(selectedCssId, selectedCss.classNames, registry, componentClassMapping)
     setComponentClassMapping(autoMapped)
-    saveMappingToSettings(autoMapped)
+    await saveMappingToSettings(autoMapped)
     onCssChange?.()
   }
 
@@ -1105,7 +1105,7 @@ function CssTab({ projectId, onCssChange }: { projectId?: string | null; onCssCh
     const newMapping = { ...componentClassMapping }
     delete newMapping[selectedCssId]
     setComponentClassMapping(newMapping)
-    saveMappingToSettings(newMapping)
+    await saveMappingToSettings(newMapping)
     onCssChange?.()
   }
 
