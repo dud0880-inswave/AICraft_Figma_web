@@ -27,6 +27,7 @@ const INITIAL_RULES: { registryName: string; keywords: string[] }[] = [
   { registryName: 'radio',         keywords: ['radio', '라디오'] },
   { registryName: 'searchbox',     keywords: ['searchbox', '서치박스'] },
   { registryName: 'select',        keywords: ['select', '셀렉트박스', '선택'] },
+  { registryName: 'span',          keywords: ['span', '스팬'] },
   { registryName: 'tabcontrol',    keywords: ['tabcontrol', '탭컨트롤', 'tab', '탭'] },
   { registryName: 'table',         keywords: ['table', '테이블'] },
   { registryName: 'td',            keywords: ['td'] },
@@ -34,6 +35,7 @@ const INITIAL_RULES: { registryName: string; keywords: string[] }[] = [
   { registryName: 'textbox',       keywords: ['textbox', '텍스트박스', 'text', '텍스트'] },
   { registryName: 'th',            keywords: ['th'] },
   { registryName: 'tr',            keywords: ['tr'] },
+  { registryName: 'trigger',       keywords: ['trigger', '트리거'] },
   { registryName: 'image',         keywords: ['image', '이미지', 'img', '사진'] },
 ];
 
