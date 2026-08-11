@@ -719,6 +719,14 @@ function CssTab({ projectId, onCssChange }: { projectId?: string | null; onCssCh
   const [classSearchQuery, setClassSearchQuery] = useState('')
   const [uploadedImages, setUploadedImages] = useState<string[]>([])
   const [imageUploading, setImageUploading] = useState(false)
+  // 업로드 진행 모달: null = 미표시, done = 완료(실패 목록 표시용)
+  const [uploadProgress, setUploadProgress] = useState<{
+    current: number
+    total: number
+    currentFile: string
+    failed: string[]
+    done: boolean
+  } | null>(null)
 
   // 업로드된 에셋 목록 로드 (css/ 제외 — 이미지/폰트 등)
   const refreshUploadedImages = async () => {
@@ -737,21 +745,44 @@ function CssTab({ projectId, onCssChange }: { projectId?: string | null; onCssCh
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>, isFolder: boolean) => {
     const files = e.target.files
     if (!files || files.length === 0 || !projectId) return
+    const fileList = Array.from(files)
     setImageUploading(true)
+    const failed: string[] = []
+    setUploadProgress({ current: 0, total: fileList.length, currentFile: '', failed: [], done: false })
     try {
-      for (let i = 0; i < files.length; i++) {
-        const file = files[i]
+      for (let i = 0; i < fileList.length; i++) {
+        const file = fileList[i]
         const wkPath = (file as File & { webkitRelativePath?: string }).webkitRelativePath
         const rel = isFolder && wkPath ? wkPath : `images/${file.name}`
         if (!rel) continue
-        await uploadAsset(projectId, rel, await file.arrayBuffer())
+        setUploadProgress(p => p ? { ...p, current: i, currentFile: rel } : p)
+        // 파일별 독립 처리: 실패해도 나머지 계속, 1회 자동 재시도
+        let ok = false
+        for (let attempt = 0; attempt < 2 && !ok; attempt++) {
+          try {
+            await uploadAsset(projectId, rel, await file.arrayBuffer())
+            ok = true
+          } catch (err) {
+            if (attempt === 0) {
+              await new Promise(r => setTimeout(r, 1000))  // 1초 후 재시도
+            } else {
+              console.error('업로드 실패:', rel, err)
+            }
+          }
+        }
+        if (!ok) failed.push(rel)
+        setUploadProgress(p => p ? { ...p, current: i + 1, failed: [...failed] } : p)
       }
       await refreshUploadedImages()
-    } catch (err) {
-      console.error('업로드 실패:', err)
     } finally {
       setImageUploading(false)
       e.target.value = ''
+      if (failed.length > 0) {
+        // 실패 있음 → 모달을 완료 상태로 전환해 실패 목록 표시
+        setUploadProgress(p => p ? { ...p, done: true } : p)
+      } else {
+        setUploadProgress(null)
+      }
     }
   }
 
@@ -1393,6 +1424,58 @@ function CssTab({ projectId, onCssChange }: { projectId?: string | null; onCssCh
             CSS가 <code>url(../images/…)</code>, <code>url(../font/…)</code>로 참조하는 파일을 올립니다.
             <b> 폴더 업로드</b>는 선택한 폴더명이 그대로 경로가 됩니다 — <code>images</code> 폴더 선택 → <code>images/base2/…</code>, <code>font</code> 폴더 선택 → <code>font/…</code>.
           </p>
+        </div>
+      )}
+
+      {/* 업로드 진행/결과 모달 */}
+      {uploadProgress && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/60" />
+          <div className="relative w-full max-w-md mx-4 theme-bg-secondary rounded-lg shadow-xl p-6">
+            {!uploadProgress.done ? (
+              <>
+                <h3 className="text-sm font-semibold theme-text-primary mb-3">
+                  에셋 업로드 중… ({uploadProgress.current} / {uploadProgress.total})
+                </h3>
+                {/* 프로그레스 바 */}
+                <div className="w-full h-2 theme-bg-tertiary rounded-full overflow-hidden mb-2">
+                  <div
+                    className="h-full bg-blue-600 transition-all duration-200"
+                    style={{ width: `${uploadProgress.total > 0 ? Math.round((uploadProgress.current / uploadProgress.total) * 100) : 0}%` }}
+                  />
+                </div>
+                <p className="text-xs theme-text-secondary truncate" title={uploadProgress.currentFile}>
+                  {uploadProgress.currentFile || '준비 중…'}
+                </p>
+                {uploadProgress.failed.length > 0 && (
+                  <p className="text-xs text-red-500 mt-1">실패 {uploadProgress.failed.length}개 (완료 후 목록 표시)</p>
+                )}
+                <p className="text-xs theme-text-secondary mt-3">업로드가 끝날 때까지 창을 닫지 마세요.</p>
+              </>
+            ) : (
+              <>
+                <h3 className="text-sm font-semibold theme-text-primary mb-2">
+                  업로드 완료 — 성공 {uploadProgress.total - uploadProgress.failed.length}개 · <span className="text-red-500">실패 {uploadProgress.failed.length}개</span>
+                </h3>
+                <p className="text-xs theme-text-secondary mb-2">
+                  실패한 파일 (같은 폴더를 다시 업로드하면 성공한 파일은 덮어쓰고 실패분만 다시 올라갑니다):
+                </p>
+                <div className="max-h-48 overflow-auto border theme-border rounded p-2 mb-4">
+                  {uploadProgress.failed.map(f => (
+                    <div key={f} className="text-xs font-mono text-red-500 truncate" title={f}>{f}</div>
+                  ))}
+                </div>
+                <div className="flex justify-end">
+                  <button
+                    onClick={() => setUploadProgress(null)}
+                    className="px-4 py-2 text-sm bg-blue-600 hover:bg-blue-700 text-white rounded"
+                  >
+                    닫기
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
         </div>
       )}
 
