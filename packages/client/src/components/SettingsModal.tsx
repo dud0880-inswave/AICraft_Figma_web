@@ -16,6 +16,7 @@ import {
   migratePersonalSettingsToDb,
   uploadAsset,
   listAssets,
+  deleteAsset,
 } from '../utils/api'
 import type { RegistryItem, MappingRulesJson, DefaultMappingRuleGrouped } from '../utils/api'
 import { useTheme } from '../contexts/ThemeContext'
@@ -930,6 +931,7 @@ function CssTab({ projectId, onCssChange }: { projectId?: string | null; onCssCh
   }
 
   const handleDelete = async (id: string) => {
+    const target = cssList.find(item => item.id === id)
     const updated = cssList.filter(item => item.id !== id)
     setCssList(updated)
     await saveCssListToSettings(updated)
@@ -938,6 +940,17 @@ function CssTab({ projectId, onCssChange }: { projectId?: string | null; onCssCh
     delete newMapping[id]
     setComponentClassMapping(newMapping)
     await saveMappingToSettings(newMapping)
+    // 서버 에셋 파일도 삭제 (같은 파일을 참조하는 다른 항목이 없을 때만)
+    if (target?.assetPath && projectId) {
+      const stillReferenced = updated.some(item => item.assetPath === target.assetPath)
+      if (!stillReferenced) {
+        try {
+          await deleteAsset(projectId, target.assetPath)
+        } catch (err) {
+          console.warn('CSS 에셋 파일 삭제 실패:', err)
+        }
+      }
+    }
     onCssChange?.()
   }
 
