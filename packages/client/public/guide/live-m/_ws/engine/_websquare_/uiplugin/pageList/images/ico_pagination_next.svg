@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 12 12">
+  <g id="ico_calendar_next" transform="translate(12) rotate(90)">
+    <rect id="boundary" width="12" height="12" fill="#c4cdd5" opacity="0"/>
+    <path id="chevron-down-outline" d="M4,0a.574.574,0,0,0-.4.165L.167,3.54a.556.556,0,0,0,0,.8.578.578,0,0,0,.808,0L4,1.358,7.025,4.335a.578.578,0,0,0,.808,0,.556.556,0,0,0,0-.8L4.4.165A.574.574,0,0,0,4,0Z" transform="translate(2 3.5)" fill="#a7b1bb"/>
+  </g>
+</svg>

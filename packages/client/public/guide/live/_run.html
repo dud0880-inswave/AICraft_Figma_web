@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<!-- 테마는 바깥(가이드)이 정한다. 첫 페인트 **전에** 걸어야 흰 화면이 한 번 번쩍이지 않는다.
+     :root.dark 는 base.css 가 color-scheme:dark 로 바꾸는 스위치이고,
+     그러면 variable.css 의 light-dark() 토큰이 전부 다크 값으로 뒤집힌다. -->
+<script>if (location.hash === '#dark') document.documentElement.classList.add('dark');</script>
+<title>변환 결과 — 직접 조작</title>
+<link rel="stylesheet" href="_ws/engine/_websquare_/skin/stylesheet.css">
+<link rel="stylesheet" href="_ws/engine/_websquare_/skin/stylesheet_ext.css">
+<link rel="stylesheet" href="_ws/engine/_websquare_/externalJS/fullcalendar3.6.2/fullcalendar.css">
+<link rel="stylesheet" href="_ws/variable.css">
+<link rel="stylesheet" href="_ws/base.css">
+<style>
+  /* 테마는 오로지 바깥(가이드)이 정한다 — 정본의 :root{color-scheme:light dark}는 **OS 설정**을 따르므로
+     그대로 두면 가이드를 라이트로 돌려도 OS가 다크인 사람에게는 다크로 남는다. 라이트를 못박아 둔다.
+     (다크는 head 스크립트가 거는 :root.dark 가 color-scheme:dark 로 덮는다 — 이 규칙은 그때 아예 안 걸린다) */
+  :root:not(.dark){color-scheme:light}
+  html,body{margin:0;padding:0;
+    font-family:'Pretendard','Malgun Gothic','Apple SD Gothic Neo',sans-serif}
+  .sub_contents{margin:0 !important;min-height:0 !important;background:transparent !important}   /* padding 은 base.css 의 20px 를 그대로 쓴다 — 「완성 모습」 안쪽 여백 */
+  @font-face{font-family:'Pretendard';font-weight:45 920;font-style:normal;font-display:swap;
+    src:local('Pretendard Variable'), local('Pretendard'),
+        url(../assets/fonts/PretendardVariable.woff2) format('woff2-variations')}
+  #boot{padding:14px;color:#5b636d;font-size:13px}
+</style>
+<script>window.WebSquareExternal = { baseServletURI: "./", baseURI: "./_ws/engine/" };</script>
+<script src="_ws/engine/config-global.js"></script>
+</head>
+<body>
+<div id="boot">엔진을 띄우는 중…</div>
+<div id="mf"></div>
+<script src="_ws/engine/_websquare_/wbd_B1548_babel_main.js"></script>
+<script>
+(async () => {
+  const id = new URLSearchParams(location.search).get('id') || '';
+  if (!/^[a-z0-9-]+$/.test(id)) { document.getElementById('boot').textContent = '항목을 찾을 수 없습니다.'; return; }
+  try {
+    WebSquare.configPath = './_ws/engine/config-global.js';
+    WebSquare._innerWidthDiff = window.outerWidth - window.innerWidth;
+    addEventListener('resize', () => { WebSquare._innerWidthDiff = window.outerWidth - window.innerWidth; });
+    await WebSquare.startApplication();
+    await new Promise((ok, no) => {
+      const s = document.createElement('script');
+      s.src = '_xml/' + id + '.js'; s.onload = ok; s.onerror = no;
+      document.head.appendChild(s);
+    });
+    const js = await WebSquare.xmljs.xml2json(window.__XML);
+    await WebSquare.jsLoader.start(js, { spa: undefined });
+    document.getElementById('boot').remove();
+    window.__ready = true;
+  } catch (e) {
+    document.getElementById('boot').textContent = '띄우지 못했습니다: ' + (e && e.message || e);
+    window.__ready = 'error';
+  }
+})();
+</script>
+
+<script>
+/* 이 조각의 실제 높이를 바깥(가이드)에 알린다.
+   file:// 에서는 부모가 iframe 안쪽을 잴 수 없다(교차 출처) — 그래서 안쪽이 스스로 재서 보낸다.
+   data/live.js 의 값은 이 신호가 닿기 전까지 쓰는 초기 추정치일 뿐이다.
+   덕분에 보는 이의 창 폭이 달라져 내용이 다시 접혀도 프레임이 따라 커진다(잘리지 않는다). */
+(function () {
+  var q = location.search.match(/[?&]id=([a-z0-9-]+)/);
+  var id = q ? q[1] : location.pathname.split('/').pop().replace(/\.html$/, '');
+  var last = 0, ro = null, t0 = Date.now(), timer;
+  function send() {
+    var el = document.querySelector('.sub_contents') || document.body;
+    if (!el) return;
+    var h = Math.ceil(el.getBoundingClientRect().height);
+    if (!h || h === last) return;
+    last = h;
+    try { parent.postMessage({ fxLiveHeight: h, id: id }, '*'); } catch (e) {}
+    if (window.ResizeObserver && !ro) { ro = new ResizeObserver(send); ro.observe(el); }
+  }
+
+  /* 가이드가 테마를 바꾸면 알려온다 — 다시 읽지 않고 클래스만 갈아 끼운다 */
+  addEventListener('message', function (e) {
+    var d = e.data;
+    if (!d || (d.fxTheme !== 'dark' && d.fxTheme !== 'light')) return;
+    document.documentElement.classList.toggle('dark', d.fxTheme === 'dark');
+  });
+  addEventListener('load', send);
+  addEventListener('resize', send);
+  if (document.fonts) document.fonts.ready.then(send);
+  /* 엔진판(_run.html)은 늦게 그려지고 그리드·표는 더 늦다 — 처음 8초만 훑고 그 뒤는 ResizeObserver 에 맡긴다 */
+  timer = setInterval(function () { send(); if (Date.now() - t0 > 8000) clearInterval(timer); }, 400);
+  send();
+})();
+</script>
+</body>
+</html>

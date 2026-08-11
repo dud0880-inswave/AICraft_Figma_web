@@ -1,0 +1,945 @@
+/* ============================================================
+   guide/assets/style.css
+
+   C:\workspace\admin\websquare-guide.html 의 디자인 시스템을 그대로 옮겨왔다.
+   (design-system.css + shell.css + 가이드 문서 스타일 · 다크 모드)
+
+   원칙은 그쪽과 같다 — **새 색을 만들지 않는다.** 모든 색·크기·여백은
+   :root 의 --c-* / --fs-* / --h-* / --sp-* / --r-* 토큰에서만 가져온다.
+   토큰만 갈아끼우면 표·칩·콜아웃·버튼이 전부 따라오므로 다크 모드도
+   [data-theme="dark"] 한 줄로 끝난다.
+
+   ✔ = 원본에서 실측한 값 (websquare-guide.html 의 주석을 그대로 옮겼다)
+   ============================================================ */
+
+/* Pretendard — 번들에 동봉해 file://·오프라인에서도 뜬다.
+   local()을 먼저 두어 설치된 폰트가 있으면 2MB 파일을 내려받지 않는다.
+   본문 서체는 Inter 지만 한글 글리프가 없다 → Inter 뒤에 Pretendard 를 둬서
+   라틴·숫자는 Inter, 한글은 Pretendard 로 떨어지게 한다. */
+@font-face{
+  font-family:'Pretendard';
+  font-weight:45 920;
+  font-style:normal;
+  font-display:swap;
+  src:local('Pretendard Variable'), local('Pretendard'),
+      url(fonts/PretendardVariable.woff2) format('woff2-variations');
+}
+
+/* ===================== 토큰 ===================== */
+:root{
+  /* ---------- 색 · 텍스트 ---------------------------------- */
+  --c-text:#000000;       /* 본문 · 제목 · 활성 nav 라벨 */
+  --c-text-2:#333333;     /* ✔ 회색 버튼 글자 */
+  --c-label:#666666;      /* ✔ 비활성 nav 라벨 · 문단 */
+  --c-muted:#999999;      /* ✔ 아이콘 · 보조 텍스트 */
+  --c-muted-2:#a3a3a3;    /* 더 옅은 보조 텍스트 */
+  --c-th:rgba(0,0,0,.9);  /* ✔ 표 헤더 텍스트 — 순검정보다 살짝 물러난다 */
+
+  /* ---------- 색 · 선 · 면 -------------------------------- */
+  --c-line:#eeeeee;       /* ✔ 탑바 하단 · 사이드바 우측 보더 */
+  --c-line-2:#ededed;     /* ✔ 표 안쪽 구분선 */
+  --c-line-3:#e2e2e2;     /* 조금 진한 보더 */
+  --c-field:#f3f3f3;      /* ✔ input · 활성 nav pill · 검색창 */
+  --c-field-hover:#eeeeee;
+  --c-hover:#f2f2f2;      /* nav hover */
+  --c-hover-2:#e4e4e4;
+  --c-btn:#f3f3f3;        /* ✔ 회색 버튼 배경 */
+  --c-btn-hover:#eeeeee;
+  --c-surface:#fafafa;    /* 아주 옅은 배경 — 콜아웃 · 코드블록 · 표 헤더 */
+  --c-icon:#a8a8a8;       /* 보조 아이콘 · 캐럿 · 불릿 */
+
+  /* ---------- 색 · 강조 ----------------------------------- */
+  --c-ink:#0a0a0a;        /* primary 버튼 */
+  --c-ink-hover:#2a2a2a;
+  --c-blue:#0099ff;       /* ✔ 포커스 보더 · 링크 · 정보 아이콘 */
+  --c-blue-hover:#0b8ae6;
+  --c-link:#1f6feb;
+  --c-link-hover:#000000;
+  --c-underline:#c9c9c9;  /* 링크 기본 밑줄 */
+  --c-blue-tint:rgba(0,153,255,.1);
+  --c-blue-tint-1:rgba(0,153,255,.04);
+  --c-blue-tint-2:rgba(0,153,255,.15);
+  --c-purple:#8956ff;
+  --c-purple-tint:#f3edff;
+  --c-green:#05a06a;
+  --c-green-tint:#dcf5e9;
+  --c-red:#ee2255;
+  --c-red-tint:rgba(255,51,102,.1);
+
+  /* ---------- 타이포 -------------------------------------- */
+  --font:'Inter','Pretendard','Malgun Gothic','Apple SD Gothic Neo',
+         -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+  --mono:'Cascadia Code','JetBrains Mono',Consolas,'D2Coding',ui-monospace,monospace;
+  --fs-2xs:10px;          /* ✔ 뱃지 */
+  --fs-xs:11.5px;         /* 캡션 */
+  --fs-sm:12px;           /* ✔ nav 라벨 · 그룹 제목 */
+  --fs-md:13px;           /* ✔ 본문 · 버튼 */
+  --fs-lg:16px;           /* ✔ h1 · h2 */
+  --fs-dense:11px;        /* 표 · 코드 · 번호 배지 */
+  /* 글자 크기 배수 — 탑바의 조절기가 이 값 하나만 바꾼다.
+     .main 과 .side 가 이 배수로 --fs-* 를 다시 선언한다(=본문과 사이드바가 같이 움직인다).
+     탑바·우측 목차는 셸이라 그대로 둔다.
+     ⚠ 본문 쪽 줄간(line-height)은 전부 **배수**로 쓴다 — px 로 쓰면 글자만 커지고 줄이 붙는다. */
+  --fs-scale:1;
+  --fw-regular:400;
+  --fw-medium:500;        /* ✔ 비활성 nav 라벨 */
+  --fw-semibold:600;      /* ✔ 활성 nav 라벨 · 제목 */
+
+  /* ---------- 크기 ---------------------------------------- */
+  --h-control:30px;       /* ✔ input · 버튼 · nav pill — 전부 30 */
+  --h-control-sm:24px;    /* 밀집형 컨트롤 */
+  --h-group:48px;         /* ✔ 사이드바 그룹 제목 상자 */
+  --h-topbar:50px;        /* ✔ 탑바 (하단 보더 y=49) */
+  --h-row:32px;           /* 표 행 */
+  --w-icon:15px;          /* ✔ nav 아이콘 */
+  --w-sidebar:260px;      /* ✔ pill 239 + 좌우 padding 10 + 보더 1 */
+  --w-toc:260px;          /* 우측 목차 — 사이드바와 같은 폭으로 맞춘다 */
+
+  /* ---------- 여백 ---------------------------------------- */
+  --sp-1:4px;  --sp-2:6px;  --sp-3:8px;  --sp-4:10px;
+  --sp-5:11px; --sp-6:12px; --sp-7:16px; --sp-8:24px;
+
+  /* ---------- 라운드 -------------------------------------- */
+  --r-xs:4px; --r-sm:6px; --r-md:8px; --r-lg:10px; --r-pill:999px;
+
+  /* ---------- 그림자 -------------------------------------- */
+  --sh-1:0 1px 2px rgba(0,0,0,.04);
+  --sh-2:0 12px 32px rgba(0,0,0,.13),0 2px 6px rgba(0,0,0,.06);
+}
+
+/* ===================== 리셋 · 기본 ===================== */
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{
+  font-family:var(--font);
+  font-size:var(--fs-md);color:var(--c-text);background:#fff;
+  -webkit-font-smoothing:antialiased;
+}
+button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
+a{color:inherit;text-decoration:none}
+.material-icons{font-size:16px;line-height:1}
+
+/* ===================== 스크롤바 — 스크롤 중에만 보인다 =====================
+   자리(폭)는 늘 잡아 두고 **손잡이만** 투명하게 뒀다가, 스크롤이 나는 동안
+   app.js 가 <html> 에 .scrolling 을 달면 드러난다(멎으면 0.7초 뒤 다시 사라진다).
+   폭까지 0 으로 만들면 스크롤이 시작될 때 본문이 한 번 밀린다 → 폭은 건드리지 않는다.
+   맨 앞 선택자는 뷰포트(html)의 스크롤바, 뒤는 그 안의 모든 스크롤 영역이다. */
+::-webkit-scrollbar{width:10px;height:10px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-corner{background:transparent}
+::-webkit-scrollbar-thumb{
+  background-color:transparent;border:3px solid transparent;background-clip:padding-box;
+  border-radius:var(--r-pill);transition:background-color .25s ease;
+}
+html.scrolling::-webkit-scrollbar-thumb,
+html.scrolling ::-webkit-scrollbar-thumb{background-color:var(--c-line-3)}
+html.scrolling::-webkit-scrollbar-thumb:hover,
+html.scrolling ::-webkit-scrollbar-thumb:hover{background-color:var(--c-icon)}
+/* Firefox — 색만 바꿀 수 있다. 폭(thin)은 유지해 자리가 흔들리지 않게 한다 */
+html{scrollbar-width:thin;scrollbar-color:transparent transparent}
+html.scrolling,html.scrolling *{scrollbar-color:var(--c-line-3) transparent}
+
+/* ===================== 공통 버튼 ===================== */
+.btn{
+  height:var(--h-control);padding:0 var(--sp-4);border-radius:var(--r-md);
+  font-size:var(--fs-sm);font-weight:var(--fw-semibold);
+  display:inline-flex;align-items:center;gap:var(--sp-2);transition:background .12s;
+}
+.btn-gray{background:var(--c-btn);color:var(--c-text-2)}
+.btn-gray:hover{background:var(--c-btn-hover)}
+.btn.primary{background:var(--c-ink);color:#fff}
+.btn.primary:hover{background:var(--c-ink-hover)}
+
+.icon-btn{
+  width:var(--h-control);height:var(--h-control);border-radius:var(--r-md);
+  display:grid;place-items:center;color:var(--c-label);transition:background .12s,color .12s;
+}
+.icon-btn:hover{background:var(--c-hover);color:var(--c-text)}
+.icon-btn .material-icons{font-size:19px}
+
+/* 칩 — 정보 조각(파일명 · 태그 · 값의 출처). 뱃지(.badge)와 다르다 */
+.chip{
+  display:inline-flex;align-items:center;gap:4px;
+  height:20px;padding:0 7px;border-radius:var(--r-sm);
+  background:var(--c-field);color:var(--c-label);
+  font-size:var(--fs-dense);font-weight:var(--fw-medium);line-height:1;white-space:nowrap;
+}
+.chip .material-icons{font-size:13px;line-height:1;color:var(--c-icon)}
+
+/* ===================== TOP BAR ===================== */
+.topbar{
+  position:fixed;top:0;left:0;right:0;height:var(--h-topbar);z-index:80;
+  background:#fff;border-bottom:1px solid var(--c-line);
+  display:flex;align-items:center;padding:0 8px;
+}
+.tb-left,.tb-right{display:flex;align-items:center;gap:8px;flex:1}
+/* ★ [2026-08-11] 오른쪽 버튼들의 간격을 **8 하나로** 통일한다 (사용자 지시).
+   [증상] 「PC ↔ 글자크기」는 2px, 「글자크기 ↔ 다크모드」는 8px 이었다(실측).
+   [원인] 여기서 gap 을 2 로 줄여 놓고 `.fs-ctl` 에 `margin-right:6px` 을 따로 붙여
+     한쪽만 2+6=8 이 됐다. gap 과 margin 을 섞어 쓰면 이렇게 어긋난다.
+   [조치] gap override 와 그 margin 을 **둘 다 없앤다** → 175행의 8 을 그대로 물려받아
+     tb-left·tb-center(둘 다 gap 8)와도 같은 리듬이 된다. */
+.tb-right{justify-content:flex-end}
+.tb-center{display:flex;align-items:center;gap:8px;justify-content:center;white-space:nowrap;min-width:0}
+
+/* 좌측 햄버거 — 사이드바 서랍을 여닫는다.
+   넓은 화면에서는 사이드바가 붙박이라 이 버튼이 할 일이 없다 → ≤900 에서만 꺼낸다. */
+.nav-toggle{display:none;flex:none}
+
+/* 본문 글자 크기 조절 — 원본의 필드 위에 얹은 작은 버튼 어휘를 따랐다.
+   가운데 값은 눌러서 100% 로 되돌리는 버튼이다. */
+.fs-ctl{
+  display:flex;align-items:center;gap:2px;
+  height:var(--h-control);padding:0 var(--sp-2) 0 var(--sp-3);
+  border-radius:var(--r-md);background:var(--c-field);   /* margin-right 제거 — 간격은 .tb-right 의 gap 이 담당(위 주석) */
+}
+.fs-ctl .cap{font-size:var(--w-icon);color:var(--c-muted);margin-right:var(--sp-1)}
+.fs-ctl .icon-btn{width:22px;height:22px;border-radius:var(--r-xs)}
+.fs-ctl .icon-btn .material-icons{font-size:15px}
+.fs-ctl .icon-btn:hover{background:var(--c-hover-2);color:var(--c-text)}
+.fs-ctl .icon-btn:disabled{color:var(--c-muted-2);cursor:default;background:none}
+.fs-val{
+  min-width:36px;padding:0 var(--sp-1);border-radius:var(--r-xs);
+  font-size:var(--fs-dense);font-weight:var(--fw-semibold);color:var(--c-text-2);
+  font-variant-numeric:tabular-nums;text-align:center;transition:background .12s;
+}
+.fs-val:hover{background:var(--c-hover-2);color:var(--c-text)}
+
+/* ---- 가이드 전환 메뉴 ----
+   ★ [2026-08-11] 예전의 `.guide-swap`(PC ↔ 모바일 링크 한 개)을 **목록**으로 바꿨다.
+     [이유] 가이드가 셋(PC · 모바일 · 사용자 가이드)이 되어 링크 하나로는 갈 곳을 고를 수 없다.
+     [형태] 여는 단추는 예전 링크의 어휘를 그대로 물려받는다(28px · 1px 보더 · radius 6) —
+       탑바에서 자리와 무게가 달라지지 않아야 해서다. 아래로 펼쳐지는 판만 새로 짰다.
+     항목 목록은 assets/guide-switch.js 의 PAGES 한 곳에서만 관리한다.
+
+   ⚠ 판 안의 글자는 --fs-scale 을 타지 않는다 — 여기는 **셸**이다(탑바·우측 목차와 같은 규칙).
+     본문 글자를 키운다고 탑바 메뉴까지 커지면 탑바 높이(50)가 무너진다. */
+.gsw{position:relative;flex:none}
+/* 높이는 --h-control(30) — 탑바 왼쪽에서 햄버거(.icon-btn 30)와 어깨를 맞춰야 한다.
+   라운드는 8(--r-md)로 함께 올린다. 6 이면 30px 상자에서 모서리가 각져 보인다. */
+.gsw-btn{
+  display:inline-flex;align-items:center;gap:4px;
+  height:var(--h-control);padding:0 6px 0 10px;
+  border:1px solid var(--c-line);border-radius:var(--r-md);
+  color:var(--c-label);font-size:var(--fs-dense);font-weight:var(--fw-semibold);
+  white-space:nowrap;transition:background .12s,color .12s,border-color .12s;
+}
+.gsw-btn:hover{color:var(--c-text);border-color:var(--c-text)}
+.gsw-btn .material-icons{font-size:16px}
+.gsw-btn .gsw-caret{color:var(--c-icon);transition:transform .15s}
+/* 열려 있는 동안엔 단추가 눌린 상태로 남는다 — 판이 어디서 나왔는지 보이게 */
+.gsw.open .gsw-btn{background:var(--c-field);color:var(--c-text);border-color:var(--c-text)}
+.gsw.open .gsw-caret{transform:rotate(180deg);color:var(--c-text)}
+
+/* 판은 단추의 **왼쪽 끝**에 맞춰 펼친다 — 단추가 탑바 왼쪽에 있으니 오른쪽 정렬로 두면
+   판이 화면 왼쪽 밖으로 밀려난다(단추 왼쪽 끝이 x≈46 인데 판은 320 이다). */
+.gsw-menu{
+  position:absolute;top:calc(100% + 6px);left:0;z-index:90;
+  min-width:320px;padding:var(--sp-2);
+  background:#fff;border:1px solid var(--c-line);border-radius:var(--r-lg);box-shadow:var(--sh-2);
+}
+.gsw-menu[hidden]{display:none}
+/* 아이콘 · 두 줄 텍스트 · 체크 세 칸. 체크 칸은 늘 자리를 잡아 둔다(보였다 사라져도 안 흔들리게) */
+.gsw-item{
+  display:grid;grid-template-columns:20px minmax(0,1fr) 18px;align-items:center;
+  gap:var(--sp-4);padding:var(--sp-3) var(--sp-4);border-radius:var(--r-sm);
+  transition:background .12s;
+}
+.gsw-item:hover,.gsw-item:focus-visible{background:var(--c-hover);outline:none}
+/* ★ [2026-08-11] 선택/비선택을 아이콘만 봐도 알게 한다 (사용자 지시).
+   예전에는 --c-label(#666) ↔ --c-text(#000) 이라 두 회색이 붙어 있어 눈에 안 들어왔다.
+   ⚠ 벌린 쪽은 **비선택**이다 — 보조 아이콘 색(--c-icon, #a8a8a8)까지 물려 옅게 내린다.
+     선택은 본문색 그대로 둔다(파랑으로 올려 봤으나 되돌림 — 색으로 강조하는 자리는 체크 하나다). */
+.gsw-item .gsw-ic{font-size:18px;color:var(--c-icon)}
+.gsw-item.on .gsw-ic{color:var(--c-text)}
+.gsw-tx{min-width:0}
+.gsw-tx b{
+  display:block;font-size:var(--fs-md);font-weight:var(--fw-semibold);color:var(--c-text);
+  line-height:1.35;word-break:keep-all;
+}
+.gsw-tx i{
+  display:block;margin-top:1px;font-style:normal;
+  font-size:var(--fs-dense);color:var(--c-muted);line-height:1.4;word-break:keep-all;
+}
+.gsw-chk{font-size:18px;color:var(--c-blue);visibility:hidden}
+.gsw-item.on .gsw-chk{visibility:visible}
+
+.doc-title{font-size:var(--fs-md);font-weight:var(--fw-semibold);color:var(--c-text);
+  overflow:hidden;text-overflow:ellipsis}
+.dot-sep{color:var(--c-underline);font-size:var(--fs-md)}
+.branch{
+  display:inline-flex;align-items:center;gap:4px;
+  height:20px;padding:0 7px 0 5px;border-radius:5px;
+  background:var(--c-btn);color:var(--c-label);font-size:var(--fs-xs);font-weight:var(--fw-medium);
+}
+.branch .material-icons{font-size:var(--fs-md)}
+
+/* ===================== 레이아웃 ===================== */
+.layout{
+  display:grid;
+  grid-template-columns:var(--w-sidebar) minmax(0,1fr) var(--w-toc);
+  min-height:100vh;padding-top:var(--h-topbar);
+}
+
+/* 글자 크기 조절이 닿는 범위 — 본문과 사이드바. 여기서 토큰을 다시 선언하면
+   그 안의 제목·문단·표·nav 라벨이 한꺼번에 따라온다. */
+.main,.side{
+  --fs-sm:calc(12px * var(--fs-scale));
+  --fs-md:calc(13px * var(--fs-scale));
+  --fs-lg:calc(16px * var(--fs-scale));
+  --fs-dense:calc(11px * var(--fs-scale));
+}
+
+/* ---- 좌측 사이드바 = 목차 겸 내비게이션 ---- */
+.side{
+  position:sticky;top:var(--h-topbar);align-self:start;
+  height:calc(100vh - var(--h-topbar));overflow-y:auto;
+  border-right:1px solid var(--c-line);background:#fff;
+  /* ★ [2026-08-11] 위 여백을 여기서 잡는다 (사용자 지시로 .brand 삭제).
+     예전에는 사이드바 머리(.brand, 48px 상자)가 그 자리를 대신했다. 0 으로 두면
+     검색창이 탑바 아래 보더에 그대로 붙는다. */
+  padding:var(--sp-6) var(--sp-4) var(--sp-8);
+}
+
+/* 높이는 30px 고정이 아니라 **최소값**이다 — 글자 크기 조절로 라벨이 커지면 상자도 따라 커진다.
+   (기본 배수 100% 에서는 4+19.2+4+보더2 < 30 이라 예전과 똑같은 30px 이 나온다) */
+.side input{
+  width:100%;min-height:var(--h-control);
+  background:var(--c-field);border:1px solid transparent;border-radius:var(--r-md);
+  padding:4px 7px;
+  font-family:inherit;font-size:var(--fs-sm);font-weight:var(--fw-regular);
+  color:var(--c-text);line-height:1.6;transition:.15s;outline:none;
+}
+.side input::placeholder{color:var(--c-muted)}
+.side input:hover{background:var(--c-field-hover)}
+/* ✔ 포커스 = 1px #0099FF 보더만. 배경 그대로, 바깥 글로우 없음 */
+.side input:focus{background:var(--c-field);border-color:var(--c-blue);box-shadow:none}
+
+/* 파트 제목 — 원본 .group-title 과 같은 위계(12px/600/본문색) */
+.side .part{
+  min-height:var(--h-group);display:flex;align-items:flex-end;padding:0 5px var(--sp-2);
+  font-size:var(--fs-sm);font-weight:var(--fw-semibold);color:var(--c-text);
+}
+/* 챕터 행 — 원본 .nav-item. 행 pitch 30px, 라운드 8 */
+.side a{
+  display:flex;align-items:center;gap:var(--sp-2);
+  min-height:var(--h-control);padding:var(--sp-2) var(--sp-6);border-radius:var(--r-md);
+  font-size:var(--fs-sm);font-weight:var(--fw-medium);color:var(--c-label);
+  line-height:1.45;word-break:keep-all;transition:background .12s,color .12s;
+}
+.side a:hover{background:var(--c-hover)}
+/* 활성/비활성은 색이 아니라 **굵기**로 가른다 — 원본과 같은 규칙 */
+.side a.on{background:var(--c-field);font-weight:var(--fw-semibold);color:var(--c-text)}
+.side a.todo{color:var(--c-muted-2)}
+/* 챕터 번호 — 원본의 nav 아이콘 자리를 숫자가 대신한다(모노 · tabular) */
+.side a .no{
+  flex:none;min-width:17px;color:var(--c-muted);
+  font-family:var(--mono);font-size:var(--fs-dense);font-weight:var(--fw-semibold);
+  font-variant-numeric:tabular-nums;letter-spacing:-.1px;
+}
+.side a.on .no{color:var(--c-text)}
+.side .hits{margin-top:var(--sp-3)}
+/* 검색 결과는 두 줄(제목 + 어디에 있는지)이라 flex 를 풀고 블록으로 되돌린다 */
+.side .hits a{display:block;line-height:1.5}
+.side .hits a .sub{display:inline-block;margin-top:1px;font-size:var(--fs-dense);color:var(--c-muted)}
+.side .hits a:hover .sub{color:var(--c-label)}
+.side .hits .none{padding:var(--sp-3);color:var(--c-muted);font-size:var(--fs-dense)}
+
+/* ---- 본문 ----
+   폭은 제한하지 않는다. 템플릿 캡처가 1540px짜리고 「완성 모습」 iframe 이
+   폭을 그대로 쓰므로, 넓을수록 읽기 좋다(원본의 798px 고정과 다른 점). */
+.main{
+  max-width:none;padding:38px 40px 140px;min-width:0;scroll-margin-top:var(--h-topbar);
+  font-size:var(--fs-md);
+}
+
+/* ---- 우측 목차 ---- */
+.toc{
+  position:sticky;top:var(--h-topbar);align-self:start;
+  height:calc(100vh - var(--h-topbar));overflow-y:auto;
+  padding:38px var(--sp-7) var(--sp-8);
+}
+/* 대문에는 목차가 없으므로 열 자체를 접는다 */
+body.home .layout{grid-template-columns:var(--w-sidebar) minmax(0,1fr)}
+body.home .toc{display:none}
+.toc .cap{
+  height:26px;display:flex;align-items:center;padding:0 var(--sp-3);
+  font-size:var(--fs-sm);font-weight:var(--fw-semibold);color:var(--c-text);margin-bottom:var(--sp-2);
+}
+.toc a{
+  display:block;padding:var(--sp-2) var(--sp-3);border-radius:var(--r-sm);
+  font-size:var(--fs-dense);font-weight:var(--fw-medium);color:var(--c-label);
+  line-height:1.5;word-break:keep-all;transition:background .12s,color .12s;
+}
+.toc a:hover{background:var(--c-hover);color:var(--c-text)}
+.toc a.on{background:var(--c-field);color:var(--c-text);font-weight:var(--fw-semibold)}
+.toc a.lv3{padding-left:var(--sp-7);color:var(--c-muted)}
+.toc a.lv3.on{color:var(--c-text)}
+
+/* ===================== 문서 위계 =====================
+   원본과 같은 규칙이다 — 제목은 16px/600 하나, 본문은 13px.
+   크기로 층을 쌓는 대신 **번호 배지 · 구분선 · 여백**으로 가른다. */
+/* 아래 여백은 토큰 최대값(24) 이다 — 10 이던 것을 벌렸다(사용자 지시, 2026-08-11).
+   브레드크럼은 제목의 윗줄이 아니라 **그 위에 따로 놓인 길잡이**로 읽혀야 한다. */
+.crumb{font-size:var(--fs-dense);color:var(--c-muted);margin-bottom:var(--sp-8);line-height:1.6}
+.crumb b{color:var(--c-label);font-weight:var(--fw-medium)}
+/* 앞의 두 마디는 링크다 — 본문 링크와 같은 어휘(옅은 밑줄 → hover 에서 진해진다).
+   마지막 마디(<b> = 현재 챕터)는 제자리라 링크가 아니다. */
+.crumb a{
+  color:var(--c-label);font-weight:var(--fw-medium);
+  text-decoration:underline;text-decoration-thickness:1px;text-underline-offset:2px;
+  text-decoration-color:var(--c-underline);
+  transition:color .12s,text-decoration-color .12s;
+}
+.crumb a:hover{color:var(--c-text);text-decoration-color:var(--c-text)}
+
+h1{
+  display:flex;align-items:center;gap:var(--sp-4);
+  font-size:var(--fs-lg);font-weight:var(--fw-semibold);letter-spacing:-.01em;
+  color:var(--c-text);line-height:1.4;word-break:keep-all;
+}
+/* 챕터 번호 배지 — h2 의 것과 같은 규칙(아래 h2 .sec-num 참고) */
+h1 .sec-num{
+  flex:none;padding:3px 7px;border-radius:var(--r-sm);
+  background:var(--c-field);color:var(--c-label);
+  font-family:var(--mono);font-size:var(--fs-dense);font-weight:var(--fw-semibold);
+  font-variant-numeric:tabular-nums;letter-spacing:-.1px;white-space:nowrap;
+}
+.meta{
+  margin:var(--sp-4) 0 var(--sp-8);padding-bottom:var(--sp-7);
+  border-bottom:1px solid var(--c-line);
+  font-size:var(--fs-dense);color:var(--c-muted);
+}
+
+/* 섹션 — 원본 .sec 의 구분선(위쪽 1px)과 같은 간격 */
+h2{
+  display:flex;align-items:center;gap:var(--sp-4);
+  margin:36px 0 var(--sp-7);padding-top:30px;border-top:1px solid var(--c-line);
+  font-size:var(--fs-lg);font-weight:var(--fw-semibold);letter-spacing:-.01em;
+  color:var(--c-text);line-height:1.4;word-break:keep-all;
+}
+h2:first-of-type{margin-top:0;padding-top:0;border-top:0}
+/* 「11.2」 같은 앞머리 번호 — 원본 .sec-num 배지. app.js 가 감싼다 */
+h2 .sec-num{
+  flex:none;padding:3px 7px;border-radius:var(--r-sm);
+  background:var(--c-field);color:var(--c-label);
+  font-family:var(--mono);font-size:var(--fs-dense);font-weight:var(--fw-semibold);
+  font-variant-numeric:tabular-nums;letter-spacing:-.1px;white-space:nowrap;
+}
+h3{
+  margin:26px 0 var(--sp-3);
+  font-size:var(--fs-md);font-weight:var(--fw-semibold);color:var(--c-text);
+  line-height:1.5;word-break:keep-all;
+}
+
+p{margin:var(--sp-4) 0;font-size:var(--fs-md);color:var(--c-label);line-height:1.62;word-break:keep-all}
+p strong,li strong,p b,li b{color:var(--c-text);font-weight:var(--fw-semibold)}
+p.lead{font-size:var(--fs-md);color:var(--c-label);line-height:1.62}
+.main>p.lead:first-child{margin-bottom:var(--sp-7)}
+.quiet{color:var(--c-muted)}
+
+/* 본문 링크 — 밑줄은 옅게, hover 에서 본문색으로 진해진다.
+   대문(파트 카드의 챕터 목록)은 제외한다 — 그쪽은 목록이지 본문 속 링크가 아니다. */
+body:not(.home) .main p a:not(.ref),
+body:not(.home) .main li a:not(.ref){
+  color:var(--c-text);font-weight:var(--fw-semibold);
+  text-decoration:underline;text-decoration-thickness:1px;text-underline-offset:2px;
+  text-decoration-color:var(--c-underline);transition:text-decoration-color .12s;
+}
+body:not(.home) .main p a:not(.ref):hover,
+body:not(.home) .main li a:not(.ref):hover{text-decoration-color:var(--c-text)}
+
+/* 섹션 앵커 — 제목 앞 0크기 표식(다른 챕터에서 sec-11-2로 걸어 온다) */
+.anch{display:block;height:0}
+/* details 도 넣는다 — 사용자 가이드의 FAQ 는 절(h3)이 없어 접힘 블록이 목차 자리를 대신한다 */
+h1,h2,h3,details,.anch{scroll-margin-top:calc(var(--h-topbar) + var(--sp-7))}
+
+/* 참조 번호 링크 */
+td.refcell{white-space:nowrap;width:1%}
+a.ref{
+  color:var(--c-blue);font-weight:var(--fw-semibold);
+  border-bottom:1px solid transparent;transition:border-color .12s;
+}
+a.ref:hover,a.ref:focus-visible{border-bottom-color:currentColor}
+
+/* ===================== 코드 =====================
+   인라인 코드는 원본 그대로. 블록(pre)은 원본에 없어 같은 토큰으로 새로 짰다. */
+code{
+  font-family:var(--mono);
+  font-size:.86em;font-weight:var(--fw-semibold);
+  background:var(--c-field);color:var(--c-text);border:1px solid var(--c-line);
+  padding:1px 6px;border-radius:var(--r-sm);letter-spacing:-.1px;white-space:nowrap;
+}
+pre{
+  margin:var(--sp-4) 0 var(--sp-7);padding:var(--sp-6) var(--sp-7);
+  background:var(--c-surface);border:1px solid var(--c-line);border-radius:var(--r-md);
+  overflow-x:auto;
+  font-family:var(--mono);font-size:var(--fs-dense);line-height:1.72;color:var(--c-text-2);
+  letter-spacing:-.1px;
+}
+/* 블록 안에서는 인라인 코드 장식을 걷어낸다.
+   ★ [2026-08-11] `white-space:pre` 를 되돌리는 것을 빠뜨렸었다.
+     [증상] <pre><code>…</code></pre> 로 감싼 아스키 도해가 **한 줄로 뭉개졌다**.
+     [원인] 위 `code{white-space:nowrap}` 은 인라인 코드가 문장 중간에서 끊기지 않게 하는 장식인데,
+       블록 안 <code> 도 그것을 물려받아 <pre> 가 지켜 주던 줄바꿈을 죽였다.
+     [조치] 다른 장식과 함께 white-space 도 여기서 되돌린다(= <pre> 의 기본값).
+   ⚠ letter-spacing 도 걷어낸다 — 글자마다 -.1px 이 쌓여 60~70자짜리 도해에서 6px 넘게 밀리면
+     ┌──┐ 테두리 줄과 내용 줄의 세로선이 어긋난다. */
+pre code{
+  background:none;border:0;padding:0;font-size:inherit;font-weight:var(--fw-regular);
+  white-space:pre;letter-spacing:normal;
+}
+
+/* 키캡 */
+kbd{
+  font-family:var(--mono);font-size:var(--fs-dense);font-weight:var(--fw-semibold);color:var(--c-text);
+  background:#fff;border:1px solid var(--c-line-3);border-bottom-width:2px;
+  border-radius:var(--r-xs);padding:1px 6px;white-space:nowrap;
+}
+
+/* ===================== 표 =====================
+   원본 .grid / .grid.wrap 을 그대로 가져왔다 — 바깥은 1px 보더 + radius 8,
+   글자는 밀집형 11px 하나, 헤더는 sticky. 가이드 표는 설명이 길어
+   기본을 .grid.wrap(줄바꿈 허용 · 행 높이 가변)으로 둔다. */
+.tblwrap{
+  margin:var(--sp-7) 0;
+  border:1px solid var(--c-line);border-radius:var(--r-md);overflow:auto;
+  max-height:none;
+}
+table{width:100%;border-collapse:collapse}
+th,td{
+  text-align:left;vertical-align:top;
+  font-size:var(--fs-dense);line-height:1.65;
+  padding:var(--sp-4) var(--sp-6);
+  border-bottom:1px solid var(--c-line-2);border-right:1px solid var(--c-line-2);
+  word-break:keep-all;
+}
+th{
+  position:sticky;top:0;z-index:2;background:#fff;
+  font-weight:var(--fw-medium);color:var(--c-th);white-space:nowrap;
+}
+th:last-child,td:last-child{border-right:0}
+tr:last-child td,tr:last-child th{border-bottom:0}
+tbody tr:hover,table tr:hover{background:var(--c-surface)}
+/* 첫 행이 thead 없이 th 로만 이뤄진 표(app.js 가 만드는 형태)도 헤더로 취급한다 */
+table tr:hover th{background:#fff}
+
+/* 부록 클래스 표 — 「층」 칸은 한 줄로, 값 칸의 코드는 접히지 않게 */
+.clstbl th[scope="row"]{
+  width:1%;white-space:nowrap;position:static;
+  font-weight:var(--fw-semibold);color:var(--c-text);background:var(--c-surface);
+}
+.clstbl td:last-child{white-space:normal}
+.clstbl td code{white-space:nowrap}
+.clstbl td{white-space:normal}
+
+/* ===================== 목록 =====================
+   원본 ul.bul — 왼쪽에 작은 사각 점 하나. 행 사이 구분선은 쓰지 않는다. */
+ul.pts{list-style:none;margin:var(--sp-4) 0 var(--sp-7);padding:0}
+ul.pts>li{
+  position:relative;padding-left:16px;margin:var(--sp-2) 0;
+  font-size:var(--fs-md);color:var(--c-label);line-height:1.62;word-break:keep-all;
+}
+ul.pts>li::before{
+  content:"";position:absolute;left:2px;top:8px;
+  width:5px;height:5px;border-radius:1.5px;background:var(--c-icon);
+}
+ul.pts b{color:var(--c-text);font-weight:var(--fw-semibold)}
+/* 제목 + 설명 두 줄짜리 항목 — 제목만 한 급 위로 */
+ul.pts>li>b:first-child{display:block;margin-bottom:2px}
+
+/* 그 밖의 일반 목록.
+   대문(body.home)은 제외한다 — 그쪽의 이력 목록·챕터 목록은 저마다 규칙이 따로 있고,
+   여기서 걸면 선택자가 더 세서 그 규칙들을 눌러 버린다. */
+body:not(.home) .main ul:not(.pts){margin:var(--sp-4) 0 var(--sp-7);padding-left:18px}
+body:not(.home) .main ol{margin:var(--sp-4) 0 var(--sp-7);padding-left:20px}
+body:not(.home) .main ul:not(.pts)>li,
+body:not(.home) .main ol>li{
+  margin:var(--sp-2) 0;font-size:var(--fs-md);color:var(--c-label);line-height:1.62;word-break:keep-all;
+}
+
+/* ===================== 콜아웃 =====================
+   ⚠ 왼쪽 굵은 보더(accent bar)는 쓰지 않는다 — 원본 규칙.
+      전체 1px 보더 + 옅은 면으로 구분하고, 정보/주의는 **아이콘 색**으로만 가른다.
+      마크업에 아이콘 요소가 없으므로 ::before 에 리가처를 넣는다. */
+.note,.warn{
+  position:relative;margin:var(--sp-7) 0;padding:12px 14px 12px 41px;
+  background:var(--c-surface);border:1px solid var(--c-line);border-radius:var(--r-md);
+  font-size:var(--fs-md);color:var(--c-label);line-height:1.55;word-break:keep-all;
+}
+/* 아이콘은 **절대 배치**다. flex 로 두면 안에 <p>·<ul>·표가 든 콜아웃에서
+   블록 자식마다 flex 항목이 되어 가로로 늘어선다(실제로 6개가 그렇다). */
+.note::before,.warn::before{
+  position:absolute;left:14px;top:13px;
+  font-family:'Material Icons';font-weight:normal;font-style:normal;
+  font-size:17px;line-height:1;
+  -webkit-font-feature-settings:'liga';-webkit-font-smoothing:antialiased;
+}
+.note::before{content:"info";color:var(--c-blue)}
+.warn::before{content:"warning";color:var(--c-red)}
+.note b,.warn b,.note strong,.warn strong{color:var(--c-text);font-weight:var(--fw-semibold)}
+/* 안쪽 첫·마지막 블록의 바깥 여백은 걷어낸다 — 상자 padding 이 이미 잡아 준다 */
+.note>:first-child,.warn>:first-child{margin-top:0}
+.note>:last-child,.warn>:last-child{margin-bottom:0}
+.note>ul,.warn>ul,.note>ol,.warn>ol{padding-left:16px}
+
+/* ===================== 접힘 블록 (원본 .faq) ===================== */
+/* 여백을 자식의 margin 이 아니라 **상자의 padding** 으로 잡는다.
+   자식마다 margin 을 주면 .tblwrap 처럼 클래스로 margin 을 쥔 요소를 이기지 못한다.
+   summary 만 음수 여백으로 상자 끝까지 뽑아 머리줄로 쓴다. */
+details{
+  border:1px solid var(--c-line);border-radius:var(--r-md);background:#fff;
+  overflow:hidden;margin:var(--sp-3) 0 var(--sp-7);padding:0 14px 14px;
+}
+details:not([open]){padding-bottom:0}
+details summary{
+  cursor:pointer;list-style:none;display:flex;align-items:center;gap:var(--sp-4);
+  margin:0 -14px;padding:12px 14px;
+  font-size:var(--fs-md);font-weight:var(--fw-semibold);color:var(--c-text);
+  transition:background .12s;
+}
+details summary::-webkit-details-marker{display:none}
+details summary::after{
+  content:"expand_more";font-family:'Material Icons';font-weight:normal;
+  margin-left:auto;flex:none;font-size:18px;color:var(--c-icon);
+  transition:transform .15s;-webkit-font-feature-settings:'liga';
+}
+details summary:hover{background:var(--c-surface)}
+details[open] summary{background:var(--c-surface);border-bottom:1px solid var(--c-line);margin-bottom:14px}
+details[open] summary::after{transform:rotate(180deg)}
+details>:first-of-type:not(summary){margin-top:0}
+details>:last-child:not(summary){margin-bottom:0}
+
+/* ===================== 카드 · 빈 자리 ===================== */
+.card{
+  border:1px solid var(--c-line);border-radius:var(--r-md);
+  padding:var(--sp-7) var(--sp-8);margin:var(--sp-4) 0 var(--sp-7);
+}
+.card h3{margin-top:0}
+.todo-box{
+  border:1px dashed var(--c-line-3);border-radius:var(--r-md);
+  padding:48px;text-align:center;color:var(--c-muted);
+  font-size:var(--fs-md);line-height:1.62;
+}
+
+/* ===================== 캡처 · 살아 있는 변환 결과 ===================== */
+figure{margin:var(--sp-4) 0 var(--sp-2)}
+figure .shot{
+  overflow-x:auto;border:1px solid var(--c-line);border-radius:var(--r-md);background:var(--c-surface);
+}
+figure img{display:block;max-width:100%;cursor:zoom-in}
+figcaption{color:var(--c-muted);font-size:var(--fs-dense);margin-top:var(--sp-2)}
+
+/* 높이는 본문보다 좁은 폭에서 재어 두었다 — 넓어지면 줄어들 뿐이라 잘리지 않는다. */
+.liveframe{
+  overflow:hidden;border:1px solid var(--c-line);border-radius:var(--r-md);
+  background:#fff;margin:var(--sp-4) 0 var(--sp-3);
+}
+.liveframe iframe{display:block;width:100%;height:100%;border:0}
+/* 모바일판: 조각은 375px 에서 추출됐다(높이도 그 폭에서 잰 값이다).
+   프레임을 넓히면 안쪽이 다시 흘러 어댑티브 판정과 높이가 어긋난다. */
+[data-guide="mobile"] .liveframe iframe{width:375px;margin:0 auto}
+/* 조각이 프레임 위아래에 딱 붙어 답답해 보인다 — 사방에 여백을 준다.
+   ★ box-sizing 을 content-box 로 되돌리는 것이 핵심이다. 전역이 border-box 라 그대로 두면
+     인라인 height(=조각 실측값)에서 패딩을 빼 가 조각이 오히려 잘린다.
+     content-box 면 콘텐츠 박스 = 실측 높이라, app.js 가 높이를 다시 넣는 자리
+     (정적↔「직접 조작해 보기」 전환 포함)를 하나도 고치지 않아도 된다. */
+[data-guide="mobile"] .liveframe{box-sizing:content-box;padding:var(--sp-7)}
+.livecap{
+  display:flex;flex-wrap:wrap;align-items:center;gap:var(--sp-3);
+  margin:0 0 var(--sp-7);font-size:var(--fs-dense);color:var(--c-muted);
+}
+.livecap .hint{color:var(--c-blue);font-weight:var(--fw-semibold)}
+.livecap a{
+  color:var(--c-label);font-weight:var(--fw-semibold);
+  text-decoration:underline;text-decoration-color:var(--c-underline);text-underline-offset:2px;
+}
+.livecap a:hover{color:var(--c-text);text-decoration-color:var(--c-text)}
+/* 「직접 조작해 보기」 — 밀집형 회색 버튼, 켜면 잉크색 */
+.livego{
+  height:var(--h-control-sm);padding:0 var(--sp-4);border-radius:var(--r-sm);
+  background:var(--c-btn);color:var(--c-text-2);
+  font:inherit;font-size:var(--fs-dense);font-weight:var(--fw-semibold);
+  display:inline-flex;align-items:center;transition:background .12s,color .12s;
+}
+.livego:hover{background:var(--c-btn-hover)}
+.livego.on{background:var(--c-ink);color:#fff}
+.livego.on:hover{background:var(--c-ink-hover)}
+
+/* ===================== 맨 위로 (FAB) ===================== */
+.fab{
+  position:fixed;right:var(--sp-8);bottom:var(--sp-8);z-index:40;
+  width:38px;height:38px;border-radius:var(--r-md);
+  display:grid;place-items:center;
+  border:1px solid var(--c-line);background:#fff;color:var(--c-label);
+  box-shadow:var(--sh-1);transition:background .12s,color .12s,border-color .12s;
+}
+.fab:hover{background:var(--c-surface);color:var(--c-text);border-color:var(--c-line-3)}
+.fab[hidden]{display:none}
+.fab .material-icons{font-size:18px}
+
+/* ===================== 캡처 팝업(라이트박스) ===================== */
+.lb{
+  position:fixed;inset:0;z-index:100;display:flex;align-items:center;justify-content:center;
+  background:rgba(0,0,0,.62);backdrop-filter:blur(2px);padding:60px var(--sp-8) var(--sp-8);
+}
+.lb[hidden]{display:none}
+.lb .lb-scroll{
+  max-width:100%;max-height:100%;overflow:auto;background:#fff;
+  border-radius:var(--r-md);box-shadow:0 24px 64px rgba(0,0,0,.45);
+}
+.lb img{display:block}
+/* 닫기·캡션은 어떤 배경 위에서도 읽히도록 칩을 씌운다 */
+.lb .lb-x,.lb .lb-cap{
+  position:absolute;top:var(--sp-7);border-radius:var(--r-md);
+  background:rgba(255,255,255,.16);color:#fff;font:inherit;line-height:1.4;
+}
+.lb .lb-x{
+  right:20px;padding:0 var(--sp-6);height:var(--h-control);
+  display:inline-flex;align-items:center;gap:var(--sp-2);
+  font-size:var(--fs-sm);font-weight:var(--fw-semibold);transition:background .12s;
+}
+.lb .lb-x:hover{background:rgba(255,255,255,.3)}
+.lb .lb-x .material-icons{font-size:var(--fs-lg)}
+.lb .lb-cap{
+  left:var(--sp-8);padding:var(--sp-3) var(--sp-6);
+  font-size:var(--fs-sm);font-weight:var(--fw-medium);max-width:52vw;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+}
+
+/* ===================== 대문 =====================
+   원본에는 대문이 없다 → 같은 토큰으로 원본의 .page-head + 흰 카드 어휘를 따라 짰다.
+   (예전의 검정 배너 · 104px 숫자는 이 시스템의 어휘가 아니라 걷어냈다) */
+/* 대문은 넓은 캡처가 없으므로 원본처럼 폭을 잡고 가운데에 둔다.
+   챕터 페이지만 폭을 열어 둔다(캡처·「완성 모습」 iframe 이 넓을수록 좋다). */
+body.home .main{padding-top:38px;max-width:1120px;margin:0 auto}
+
+/* 문서 머리 — 원본 .page-head 를 그대로 가져왔다(제목 · 한 줄 소개 · 칩).
+   아래 파트 카드와 붙지 않게 챕터 페이지의 .meta 와 같은 구분선·간격을 둔다. */
+.page-head{margin-bottom:32px;padding-bottom:26px;border-bottom:1px solid var(--c-line)}
+.page-head h1{margin-bottom:0}
+.page-head .lede{
+  margin-top:var(--sp-4);font-size:var(--fs-md);font-weight:var(--fw-regular);
+  color:var(--c-label);line-height:1.62;word-break:keep-all;
+}
+.page-head .chips{display:flex;flex-wrap:wrap;gap:var(--sp-2);margin-top:var(--sp-7)}
+/* 칩 높이는 20px 고정이지만 여기 글자는 --fs-scale 을 타므로 내용에 맡긴다 */
+.page-head .chip{height:auto;min-height:20px;padding:3px 7px;line-height:1.25}
+
+/* 대문 우측 하단 브랜드 마크 — **배경 요소**다.
+   흐름에서 빼서(absolute) 페이지 우측 아래 구석에 깔고, 마지막 파트 카드들과 겹치게 둔다.
+   기준은 .main 이 아니라 .layout 이다 — .main 은 내용 폭(869px)만큼만 차지하고 가운데 오므로,
+   그걸 기준으로 잡으면 창 오른쪽 끝까지 닿지 않는다.
+   화면에 **고정**이다(position:fixed) — 스크롤해도 제자리에 있고 카드만 그 위를 지나간다.
+   카드보다 뒤에 깔리며(z-index:0), 카드는 80% 불투명이라 지나갈 때 로고가 비쳐 보인다.
+   오른쪽은 창 밖으로 40px 물려 잘리게 뒀다(fixed 라 가로 스크롤은 생기지 않는다).
+   투명도는 SVG 안의 opacity .1 위에 한 번 더 곱해진다(.1 × .55 ≒ .055).
+   클릭·드래그는 통과시킨다(pointer-events:none). */
+.layout{position:relative;overflow-x:clip}
+.home-logo{
+  position:fixed;right:-40px;bottom:0;z-index:0;
+  /* 아래로 제 키의 10%만큼 내려 화면 밖으로 흘린다 = 높이의 90%만 보인다.
+     bottom 의 % 는 **화면 높이** 기준이라 못 쓴다 — translate 의 % 라야 **제 높이** 기준이 된다. */
+  transform:translateY(10%);
+  line-height:0;opacity:.55;pointer-events:none;user-select:none;
+}
+.home-logo img{display:block;width:min(760px,68vw);height:auto}
+
+/* 파트 카드 — 번호 배지 · 제목 · 챕터 목록 세 칸 */
+.hcards{display:flex;flex-direction:column;gap:var(--sp-6)}
+/* 고정된 배경 로고 위를 지나간다 — position:relative + z-index 로 로고(z-index:0)보다 앞에 세우고,
+   배경은 80% 불투명이라 지나가는 동안 로고가 카드 너머로 옅게 비친다. */
+.pcard{
+  /* 브레드크럼의 파트가 #/home#part-N 으로 걸어 온다 → 탑바에 가리지 않게 여백을 둔다 */
+  scroll-margin-top:calc(var(--h-topbar) + var(--sp-7));
+  position:relative;z-index:1;
+  display:grid;grid-template-columns:auto minmax(140px,200px) minmax(0,1fr);
+  gap:0 var(--sp-8);align-items:start;
+  background:rgba(255,255,255,.8);border:1px solid var(--c-line);border-radius:var(--r-lg);
+  padding:var(--sp-8);
+}
+/* 원본 .sec-num 과 같은 배지 */
+.pnum{
+  flex:none;padding:3px 8px;border-radius:var(--r-sm);
+  background:var(--c-field);color:var(--c-label);
+  font-family:var(--mono);font-size:var(--fs-dense);font-weight:var(--fw-semibold);
+  font-variant-numeric:tabular-nums;letter-spacing:-.1px;
+  line-height:1.65;user-select:none;
+}
+.pttl{
+  color:var(--c-text);font-size:var(--fs-md);font-weight:var(--fw-semibold);
+  line-height:1.5;letter-spacing:-.01em;word-break:keep-all;
+}
+/* 한 열에 7개까지 쌓고 넘치면 다음 열로 — 챕터 13개인 파트 III만 두 열이 된다.
+   열 폭은 고정이다. 1fr 로 두면 카드가 넓을 때 두 열이 양 끝으로 벌어져 한 묶음으로 안 읽힌다. */
+.pchaps{
+  list-style:none;margin:0;padding:0;display:grid;
+  grid-auto-flow:column;grid-template-rows:repeat(7,min-content);
+  grid-auto-columns:190px;column-gap:var(--sp-8);justify-content:start;
+}
+.pchaps a{
+  display:flex;gap:var(--sp-3);align-items:baseline;
+  padding:3px var(--sp-2);margin-left:calc(var(--sp-2) * -1);border-radius:var(--r-xs);
+  color:var(--c-label);font-size:var(--fs-dense);line-height:1.72;
+  word-break:keep-all;transition:background .12s,color .12s;
+}
+.pchaps a:hover{background:var(--c-hover);color:var(--c-text)}
+.pchaps a.todo{color:var(--c-muted-2)}
+.pchaps .n{
+  flex:none;min-width:16px;color:var(--c-muted);
+  font-family:var(--mono);font-variant-numeric:tabular-nums;letter-spacing:-.1px;
+}
+.pchaps a:hover .n{color:var(--c-text)}
+
+/* ===================== 반응형 ===================== */
+@media (max-width:1320px){
+  .pcard{grid-template-columns:auto minmax(120px,170px) minmax(0,1fr);gap:0 var(--sp-7);padding:var(--sp-7)}
+}
+@media (max-width:1180px){
+  .layout{grid-template-columns:var(--w-sidebar) minmax(0,1fr)}
+  .toc{display:none}
+  .main{padding:32px var(--sp-8) 120px}
+}
+/* ---- 사이드바 서랍 (≤900) ----
+   좁은 화면에서 사이드바를 본문 위로 **접었다 편다**. 예전처럼 본문 위에 일렬로 쌓으면
+   챕터 목록 40여 줄을 지나야 본문이 시작돼 쓸모가 없었다.
+   접힘/펼침은 <body class="nav-open"> 하나로만 가른다(app.js 의 햄버거가 붙였다 뗀다). */
+.nav-scrim{
+  display:none;position:fixed;inset:var(--h-topbar) 0 0;z-index:85;
+  background:rgba(0,0,0,.38);
+  opacity:0;pointer-events:none;transition:opacity .22s ease;
+}
+
+@media (max-width:900px){
+  .nav-toggle{display:grid}
+
+  /* body.home 쪽 규칙이 더 세므로 여기서 같이 눌러 준다 — 안 그러면 대문만 2열로 남는다 */
+  .layout,
+  body.home .layout{grid-template-columns:minmax(0,1fr)}
+
+  .side{
+    position:fixed;top:var(--h-topbar);left:0;z-index:90;
+    width:min(var(--w-sidebar),86vw);
+    height:calc(100vh - var(--h-topbar));
+    padding:0 var(--sp-4) var(--sp-8);
+    border-right:1px solid var(--c-line);
+    transform:translateX(-100%);transition:transform .22s ease;
+  }
+  body.nav-open .side{transform:none;box-shadow:var(--sh-2)}
+  /* 서랍이 열려 있는 동안엔 뒤쪽 본문이 따라 스크롤되지 않게 잠근다 */
+  body.nav-open{overflow:hidden}
+
+  .nav-scrim{display:block}
+  body.nav-open .nav-scrim{opacity:1;pointer-events:auto}
+
+  .tb-center{display:none}
+  .main{padding:var(--sp-8) var(--sp-7) 96px}
+  .pchaps{grid-auto-flow:row;grid-template-rows:none}
+  .pcard{grid-template-columns:auto minmax(0,1fr);gap:var(--sp-3) var(--sp-6)}
+  .pchaps{grid-column:1 / -1}
+}
+
+/* 휴대폰 폭 — 탑바에 햄버거 · 전환 메뉴 · 글자 크기 · 다크 넷이 다 들어가야 한다.
+   전환 메뉴의 라벨만 접어 아이콘+캐럿으로 줄인다.
+   ⚠ 판은 **뷰포트**에 붙인다(fixed + 좌우 8). 단추 기준(absolute · right:0)으로 두면
+     단추가 화면 가운데쯤에 있어 320px 짜리 판이 왼쪽 화면 밖으로 잘려 나간다.
+     좌우 8 은 탑바의 padding(8)과 같은 값이라 아이콘 열과 오른쪽 끝이 맞는다. */
+@media (max-width:560px){
+  .gsw-btn{padding:0 4px 0 6px}
+  .gsw-btn .gsw-lbl{display:none}
+  .gsw-menu{
+    position:fixed;top:calc(var(--h-topbar) + 6px);right:8px;left:8px;
+    min-width:0;width:auto;
+  }
+}
+
+@media print{
+  .topbar,.side,.toc,.fab,.lb,.nav-scrim,.home-logo{display:none !important}
+  body{overflow:visible !important}      /* 서랍이 열린 채로 인쇄해도 뒷장이 잘리지 않게 */
+  .layout{display:block;padding-top:0}
+  .main{padding:0}
+  h2,details{break-inside:avoid}
+}
+@media (prefers-reduced-motion:reduce){*{transition:none !important}html{scroll-behavior:auto}}
+
+/* ===================== 다크 모드 =====================
+   VS Code **Dark+ ("Dark (Visual Studio)")** 팔레트 — 원본에서 그대로 가져왔다.
+     사이드바 #252526 · 편집기 #1E1E1E · 목록 hover #2A2D2E · 선택 #37373D
+     글자 #CCCCCC · 입력 #3C3C3C · 강조 #007FD4
+
+   색을 화면 요소에 직접 쓰지 않고 --c-* **토큰만 갈아끼운다.**
+   그래서 표·칩·버튼·콜아웃이 따로 손대지 않아도 전부 따라온다.
+   아래 몇 줄은 #fff 를 값으로 박아둔 자리만 덮는 것이다.
+
+   ⚠ 전체를 @media screen 으로 감쌌다 → **인쇄할 때는 다크가 통째로 무시되고**
+      :root 의 라이트 토큰이 살아난다. */
+@media screen{
+  [data-theme="dark"]{
+    --c-bg:#1e1e1e;         /* 본문 — editor.background */
+    --c-bg-2:#252526;       /* 탑바 · 사이드바 — 본문보다 **밝다** */
+
+    --c-text:#cccccc;
+    --c-text-2:#bbbbbb;
+    --c-label:#9d9d9d;
+    --c-muted:#7f7f7f;
+    --c-muted-2:#6e6e6e;
+    --c-th:rgba(255,255,255,.85);
+
+    --c-line:#3c3c3c;
+    --c-line-2:#333333;
+    --c-line-3:#454545;
+    --c-field:#3c3c3c;
+    --c-field-hover:#4a4a4a;
+    --c-hover:#2a2d2e;
+    --c-hover-2:#4a4a4a;
+    --c-btn:#3c3c3c;
+    --c-btn-hover:#4a4a4a;
+    --c-surface:#252526;    /* 라이트에선 배경보다 어두웠지만, 다크에선 한 단계 밝다 */
+    --c-icon:#858585;
+
+    --c-ink:#0e639c;        /* 다크 배경에 검정 버튼은 보이지 않는다 → button.background */
+    --c-ink-hover:#1177bb;
+    --c-blue:#007fd4;
+    --c-blue-hover:#1177bb;
+    --c-link:#3794ff;
+    --c-link-hover:#ffffff;
+    --c-underline:#4a4a4a;
+    --c-blue-tint:rgba(0,127,212,.18);
+    --c-blue-tint-1:rgba(0,127,212,.08);
+    --c-blue-tint-2:rgba(0,127,212,.28);
+    --c-purple:#c586c0;
+    --c-purple-tint:rgba(197,134,192,.16);
+    --c-green:#89d185;
+    --c-green-tint:rgba(137,209,133,.14);
+    --c-red:#f14c4c;
+    --c-red-tint:rgba(241,76,76,.14);
+  }
+
+  /* #fff 를 값으로 박아둔 자리들 — 토큰이 아니라서 따라오지 않는다 */
+  [data-theme="dark"] body{background:var(--c-bg)}
+  [data-theme="dark"] .topbar,
+  [data-theme="dark"] .side{background:var(--c-bg-2)}
+  /* 대문 워터마크 — 원본 잉크(#323537)는 다크 배경에 묻힌다 → 뒤집어 옅은 회색으로 띄운다 */
+  [data-theme="dark"] .home-logo img{filter:invert(1)}
+  [data-theme="dark"] th{background:var(--c-bg)}         /* sticky 헤더 — 뒤가 비치면 안 된다 */
+  [data-theme="dark"] table tr:hover th{background:var(--c-bg)}
+  [data-theme="dark"] .clstbl th[scope="row"]{background:var(--c-surface)}
+  [data-theme="dark"] kbd{background:var(--c-field)}
+  [data-theme="dark"] details,
+  [data-theme="dark"] .fab{background:var(--c-surface)}
+  /* 전환 메뉴 판 — 탑바(#252526) 위에 뜨므로 한 단계 밝은 면이 아니라 탑바와 같은 면으로 둔다.
+     그림자와 1px 보더가 층을 만든다 */
+  [data-theme="dark"] .gsw-menu{background:var(--c-bg-2)}
+  /* 파트 카드는 라이트와 같은 규칙 — --c-surface(#252526)의 80% 불투명 판 */
+  [data-theme="dark"] .pcard{background:rgba(37,37,38,.8)}
+  /* 활성 목차 — VS Code 의 list.inactiveSelectionBackground. 평면 채움 하나가 전부다 */
+  [data-theme="dark"] .side a.on,
+  [data-theme="dark"] .toc a.on{background:#37373d}
+  /* 「완성 모습」 iframe 안도 다크로 그린다 — 프레임 배경을 정본의 다크 바탕
+     (--ws-color-background-base-0 의 다크값 #131416)으로 맞춰 뜨는 동안 흰 판이 비치지 않게 한다.
+     반면 캡처(figure .shot)는 라이트로 찍힌 PNG라 뒤집을 수 없다 — 흰 판 위에 그대로 둔다. */
+  [data-theme="dark"] .liveframe{background:#131416;border-color:var(--c-line)}
+  [data-theme="dark"] figure .shot{background:#fff}
+
+  body,.topbar,.side,.toc,.main{transition:background .2s,color .2s,border-color .2s}
+}

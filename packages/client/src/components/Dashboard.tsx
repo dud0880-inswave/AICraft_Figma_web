@@ -203,7 +203,7 @@ export default function Dashboard({ onSelectFile, onAddNewFile, onOpenSettings, 
             <h1 className="text-xl font-bold theme-text-primary">WebSquare AI</h1>
           </div>
           <button
-            onClick={() => window.open('/user-guide.html', '_blank', 'noopener')}
+            onClick={() => window.open('/guide/user-guide.html', '_blank', 'noopener')}
             className="flex items-center gap-1.5 px-3 py-1.5 text-sm theme-text-secondary theme-text-hover theme-bg-hover rounded"
             title="사용자 가이드 열기 (새 창)"
           >

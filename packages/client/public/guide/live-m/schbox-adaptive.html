@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<!-- 뷰어가 다크 테마여도 라이트로 푼다(정본 CSS의 light-dark() 대응) -->
+<meta name="color-scheme" content="light">
+<title>schbox-adaptive — 변환 결과</title>
+<link rel="stylesheet" href="_ws/stylesheet.css">
+<link rel="stylesheet" href="_ws/stylesheet_ext.css">
+<link rel="stylesheet" href="_ws/fullcalendar.css">
+<link rel="stylesheet" href="_ws/variable.css">
+<link rel="stylesheet" href="_ws/base.css">
+<link rel="stylesheet" href="_ws/base_mobile.css">
+<style>
+  :root{color-scheme:light !important}
+  /* 가이드가 이 문서를 iframe으로 싣는다. 바깥 테두리는 가이드가 그리므로
+     문서 자체는 여백 없이 조각만 담는다.
+     단, 모바일은 base_mobile.css가 .sub_contents의 사방 20 패딩을 전제로 음수 마진
+     full-bleed를 쓰므로 패딩을 죽이지 않는다(죽이면 카드가 415px로 삐져나가 잘린다). */
+  html,body{margin:0;padding:0;background:#fff}
+  .sub_contents{margin:0 !important;min-height:0 !important;background:#ffffff !important}
+  /* base.css는 Pretendard를 굵기별 파일로 부르지만 번들에는 가변 폰트 한 벌만 둔다.
+     같은 패밀리로 뒤에 선언해 1.8MB를 더 싣지 않고도 글꼴이 맞는다. */
+  @font-face{
+    font-family:'Pretendard'; font-weight:45 920; font-style:normal; font-display:swap;
+    src:local('Pretendard Variable'), local('Pretendard'),
+        url(../assets/fonts/PretendardVariable.woff2) format('woff2-variations');
+  }
+</style>
+</head>
+<body>
+<!-- templatebox는 감싸지 않는다 — 디자인 템플릿 파일 자체의 섹션 래퍼라
+     회색 면과 빈 여백만 만든다(가이드에서도 제외한 클래스다). -->
+<div class="w2group sub_contents">
+<div id="wq_uuid_137" class="w2group schbox"><div id="wq_uuid_138" class="w2group schbox_inner"><table id="wq_uuid_139" class="w2group w2tb tbl w2tb_adaptive_layout"><colgroup id="wq_uuid_140" class="w2group "><col id="wq_uuid_141" style="width:80px;" class="w2group "><col id="wq_uuid_142" class="w2group "><col id="wq_uuid_143" style="width:80px;" class="w2group "><col id="wq_uuid_144" class="w2group "></colgroup><tbody><tr id="wq_uuid_145" class="w2group  w2tb_tr"><th id="wq_uuid_146" class="w2group w2tb_th"><div id="wq_uuid_147" class="w2textbox req">조회조건</div></th><td id="wq_uuid_148" class="w2group w2tb_td" data-title="조회조건"><div id="wq_uuid_149" role="combobox" aria-expanded="false" aria-autocomplete="none" style="width:100px;" class="w2selectbox " tabindex="0"><table class="w2selectbox_table_main"><tbody id="wq_uuid_149_main_tbody"><tr class="w2selectbox_row w2selectbox_row_main"><td class="w2selectbox_col_label"><div id="wq_uuid_149_label" role="document" aria-live="assertive" class="w2selectbox_label">-all-</div></td><td class="w2selectbox_col_button" id="wq_uuid_149_button"></td></tr></tbody></table></div><div id="wq_uuid_150" role="combobox" aria-expanded="false" aria-autocomplete="none" style="width:100px;" class="w2selectbox " tabindex="0"><table class="w2selectbox_table_main"><tbody id="wq_uuid_150_main_tbody"><tr class="w2selectbox_row w2selectbox_row_main"><td class="w2selectbox_col_label"><div id="wq_uuid_150_label" role="document" aria-live="assertive" class="w2selectbox_label">-all-</div></td><td class="w2selectbox_col_button" id="wq_uuid_150_button"></td></tr></tbody></table></div><button type="button" tabindex="0" id="wq_uuid_151" class="w2button btn_cm fill search"><span id="wq_uuid_152" class="w2textbox ">조회</span></button></td><th id="wq_uuid_153" class="w2group w2tb_th"><div id="wq_uuid_154" class="w2textbox ">조회조건</div></th><td id="wq_uuid_155" class="w2group w2tb_td" data-title="조회조건"><div id="wq_uuid_156" class="w2radio "><div class="w2radio_item w2radio_item_0"><input type="radio" class="w2radio_input" name="wq_uuid_156_input" index="0" id="wq_uuid_156_input_0" title="항목1"><label class="w2radio_label " index="0" for="wq_uuid_156_input_0">항목1</label></div><div class="w2radio_item w2radio_item_1"><input type="radio" class="w2radio_input" name="wq_uuid_156_input" index="1" id="wq_uuid_156_input_1" title="항목2"><label class="w2radio_label " index="1" for="wq_uuid_156_input_1">항목2</label></div><div class="w2radio_item w2radio_item_2"><input type="radio" class="w2radio_input" name="wq_uuid_156_input" index="2" id="wq_uuid_156_input_2" title="항목3"><label class="w2radio_label " index="2" for="wq_uuid_156_input_2">항목3</label></div></div></td></tr><tr id="wq_uuid_157" class="w2group  w2tb_tr"><th id="wq_uuid_158" class="w2group w2tb_th" scope="row"><div id="wq_uuid_159" class="w2textbox ">조회조건</div></th><td id="wq_uuid_160" class="w2group w2tb_td" data-title="조회조건"><div id="wq_uuid_161" style="width: 120px;" class="w2inputCalendar_div w2inputCalendar_type_yearMonthDate"><div id="wq_uuid_161_div_input" class="w2inputCalendar_div_input" style="width: 127px; height: 48px;"><input id="wq_uuid_161_input" name="wq_uuid_161_input" class="w2inputCalendar_divInput " tabindex="0" style="width: 83px; height: 46px;"></div><div id="wq_uuid_161_div_img" class="w2inputCalendar_div_img"><button type="button" id="wq_uuid_161_img" class="w2inputCalendar_button" tabindex="0">Calendar</button></div></div><span id="wq_uuid_162" class="w2span ">~</span><div id="wq_uuid_163" style="width: 120px;" class="w2inputCalendar_div w2inputCalendar_type_yearMonthDate"><div id="wq_uuid_163_div_input" class="w2inputCalendar_div_input" style="width: 127px; height: 48px;"><input id="wq_uuid_163_input" name="wq_uuid_163_input" class="w2inputCalendar_divInput " tabindex="0" style="width: 83px; height: 46px;"></div><div id="wq_uuid_163_div_img" class="w2inputCalendar_div_img"><button type="button" id="wq_uuid_163_img" class="w2inputCalendar_button" tabindex="0">Calendar</button></div></div></td><th id="wq_uuid_164" class="w2group w2tb_th" scope="row"><div id="wq_uuid_165" class="w2textbox ">조회조건</div></th><td id="wq_uuid_166" class="w2group w2tb_td" data-title="조회조건"><input id="wq_uuid_167" style="width:120px;" class="w2input " type="text"><span id="wq_uuid_168" class="w2span ">@</span><div id="wq_uuid_169" role="combobox" aria-expanded="false" aria-autocomplete="none" style="width:120px;" class="w2selectbox " tabindex="0"><table class="w2selectbox_table_main"><tbody id="wq_uuid_169_main_tbody"><tr class="w2selectbox_row w2selectbox_row_main"><td class="w2selectbox_col_label"><div id="wq_uuid_169_label" role="document" aria-live="assertive" class="w2selectbox_label">gmail.com</div></td><td class="w2selectbox_col_button" id="wq_uuid_169_button"></td></tr></tbody></table></div></td></tr></tbody></table></div><div id="wq_uuid_170" class="w2group btn_schbox"><button type="button" tabindex="0" id="wq_uuid_171" class="w2button btn_cm fill search"><span id="wq_uuid_172" class="w2textbox ">조회</span></button></div></div>
+</div>
+</body>
+</html>

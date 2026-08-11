@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<html xmlns="http://www.w3.org/1999/xhtml"
+    xmlns:ev="http://www.w3.org/2001/xml-events"
+    xmlns:w2="http://www.inswave.com/websquare" xmlns:xf="http://www.w3.org/2002/xforms">
+    <head>
+    	<w2:type>COMPONENT</w2:type>
+    	<w2:buildDate />
+    	<w2:MSA />
+    	<xf:model>
+    		<w2:dataCollection baseNode="map">
+    			<w2:dataList baseNode="list" repeatNode="map" id="dataList1" saveRemovedData="true">
+    				<w2:columnInfo>
+    					<w2:column id="col1" name="name1" dataType="text"></w2:column>
+    					<w2:column id="col2" name="name2" dataType="text"></w2:column>
+    					<w2:column id="col3" name="name3" dataType="text"></w2:column>
+    					<w2:column id="col4" name="name4" dataType="text"></w2:column>
+    					<w2:column id="col5" name="name5" dataType="text"></w2:column>
+    					<w2:column id="col6" name="name6" dataType="text"></w2:column>
+    					<w2:column id="col7" name="name7" dataType="text"></w2:column>
+    					<w2:column id="col8" name="name8" dataType="text"></w2:column>
+    					<w2:column id="col9" name="name9" dataType="text"></w2:column>
+    					<w2:column id="col10" name="name10" dataType="text"></w2:column>
+    				</w2:columnInfo>
+    				<w2:data use="true"></w2:data>
+    			</w2:dataList>
+    		</w2:dataCollection>
+    		<w2:workflowCollection />
+    	</xf:model>
+    	<w2:layoutInfo />
+    	<w2:publicInfo method="" />
+    	<script lazy="false" type="text/javascript"><![CDATA[
+scwin.onpageload = function() {
+	
+};
+]]></script>
+    	<style type="text/css"><![CDATA[ 
+    		p{margin:5px 0 0;padding:0;color:#20252A;}
+    		.w2grid_noresult_default{display:flex;align-items:center;justify-content:center;}
+    		.w2grid_noresult_default .noresult_message{text-align:center;}
+    		.w2grid_noresult_default .icon_message{display:inline-block;vertical-align:middle;border:0;width:12%;height:12%;}
+    		.w2grid_noresult_default .text_message{display:inline-block;vertical-align:middle;margin-top:0;margin-left:10px;font-size:0.9rem;}
+    	]]></style>
+    </head>
+    <body ev:onpageload="scwin.onpageload">
+    	<xf:group style="" id="" class="w2grid_noresult_default">
+    		<xf:group id="" class="noresult_message" style="">
+				<xf:image src="./ico_noresult01.png" style="" id="img2" class="icon_message"></xf:image>
+				<w2:textbox tagname="p" style="" id="" label="No data." class="text_message"></w2:textbox>
+			</xf:group>
+		</xf:group>
+    </body>
+</html>

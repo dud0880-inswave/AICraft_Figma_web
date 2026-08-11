@@ -1,0 +1,759 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AICraft-Figma 사용자 가이드</title>
+<!-- 본문 서체 Inter 만 CDN 이며, 못 받아오면 Pretendard(동봉)로 대체된다. 한글은 언제나 Pretendard. -->
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<!-- Material Icons — 폰트 본체를 base64 로 내장했다(오프라인·file:// 대응) -->
+<link rel="stylesheet" href="assets/icons.css">
+<link rel="stylesheet" href="assets/style.css">
+<style>
+/* ============================================================
+   이 페이지에만 있는 어휘. 나머지 모양(셸 · 대문 · 제목 · 표 · 목록 · 콜아웃 · 접힘 블록 · 다크)은
+   전부 assets/style.css 가 쥔다 — 세 가이드가 한 디자인 시스템을 쓰는 것이 요점이다.
+   여기서도 규칙은 같다: **새 색을 만들지 않는다.** --c-* / --sp-* / --r-* 토큰만 쓴다.
+   ============================================================ */
+
+/* 검색 중에는 챕터 목록을 감춘다 (app.js 를 쓰는 두 index 는 같은 일을 JS 로 한다) */
+body.searching #nav{display:none}
+
+/* 대문 ↔ 챕터 — 한 파일 안에 둘 다 들어 있고 보이는 쪽만 남긴다.
+   두 index 는 app.js 가 innerHTML 을 갈아 끼우지만, 이 문서는 본문이 HTML 에 직접 있어
+   지웠다 다시 그릴 수가 없다. 그래서 **감추고 드러내는** 방식이다. */
+#home[hidden],.chap[hidden]{display:none}
+
+/* 우측 목차 머리 — 공유 CSS 는 26px 고정이다(그쪽 캡션은 「이 페이지」 한 마디라 넉넉하다).
+   여기 캡션은 장 제목이라 길어서 두 줄이 될 수 있다 → 고정 높이를 최소 높이로 푼다. */
+.toc .cap{height:auto;min-height:26px;line-height:1.4;word-break:keep-all}
+
+/* ⚠ 공유 CSS 의 `ul.pts>li>b:first-child{display:block}` 을 되돌린다.
+   그 규칙은 「제목 줄 + 설명 줄」 두 줄짜리 항목용인데, 이 문서의 항목은
+   「<b>파일 업로드</b>: 설명」처럼 한 줄로 이어지는 형태다. 그대로 두면 굵은 머리말과
+   뒤따르는 콜론이 두 줄로 갈라진다. (`:first-child` 는 앞의 텍스트 노드를 세지 않는다.) */
+.main ul.pts>li>b:first-child{display:inline;margin-bottom:0}
+/* 항목 안에 다시 접히는 목록 — 바깥 목록의 큰 위아래 여백을 물려받으면 뜬다 */
+.main li>ul,.main li>ol{margin:var(--sp-2) 0 0}
+
+/* 상태 뱃지 — 트리·파일 카드에서 쓰이는 초록/파랑 알약 */
+.badge{
+  display:inline-flex;align-items:center;height:20px;padding:0 9px;border-radius:var(--r-pill);
+  font-size:var(--fs-dense);font-weight:var(--fw-semibold);line-height:1;white-space:nowrap;
+  vertical-align:middle;
+}
+.badge.green{background:var(--c-green-tint);color:var(--c-green)}
+.badge.blue{background:var(--c-blue-tint);color:var(--c-blue)}
+/* 매핑된 컴포넌트 태그 뱃지 — 뱃지지만 내용이 태그명이라 모노다 */
+.tag-badge{
+  display:inline-block;padding:1px 6px;border-radius:var(--r-sm);
+  background:var(--c-green-tint);color:var(--c-green);
+  font-family:var(--mono);font-size:var(--fs-dense);font-weight:var(--fw-semibold);
+  letter-spacing:-.1px;white-space:nowrap;vertical-align:middle;
+}
+
+/* 전체 흐름 한 줄 — **그냥 글이다.**
+   ⚠ 칩(테두리 있는 상자)으로 두면 누를 수 있는 버튼처럼 보인다(사용자 지시, 2026-08-11).
+     단계 이름만 본문색으로 세우고, 사이의 화살표는 옅게 물린다.
+   ★ 대문 안에서는 파트 카드 위를 지나는 배경 로고와 겹친다 → 카드와 같은 규칙으로
+     흐름 줄도 앞에 세우고 배경을 80% 로 둔다. */
+.flow{
+  position:relative;z-index:1;
+  margin:var(--sp-7) 0;padding:var(--sp-6) var(--sp-7);
+  background:rgba(250,250,250,.8);border:1px solid var(--c-line);border-radius:var(--r-md);
+  font-size:var(--fs-md);font-weight:var(--fw-semibold);color:var(--c-text);
+  line-height:1.7;word-break:keep-all;
+}
+.flow i{font-style:normal;font-weight:var(--fw-regular);color:var(--c-muted);margin:0 var(--sp-2)}
+@media screen{
+  [data-theme="dark"] .flow{background:rgba(37,37,38,.8)}
+}
+</style>
+<script id="theme-init">
+/* 첫 페인트 **전에** 테마를 정한다. body 스크립트에서 하면 흰 화면이 한 번 번쩍인다.
+   저장값이 없으면 OS 설정(prefers-color-scheme)을 따른다.
+   ⚠ 키(fx-guide-*)는 index.html · index-mobile.html 과 **같은 것을 쓴다** —
+     그래야 가이드를 옮겨 다녀도 테마·글자 크기가 그대로 따라온다.
+   ※ body.home 도 여기서 미리 걸 수 없다(body 가 아직 없다) → 라우터가 첫 실행에 건다. */
+(function () {
+  try {
+    var saved = localStorage.getItem('fx-guide-theme');
+    var dark = saved ? saved === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches;
+    if (dark) document.documentElement.setAttribute('data-theme', 'dark');
+    var fs = parseFloat(localStorage.getItem('fx-guide-fontscale'));
+    if (fs > 0) document.documentElement.style.setProperty('--fs-scale', fs);
+  } catch (e) {}
+})();
+</script>
+</head>
+<body>
+
+<!-- ============ TOP BAR ============ -->
+<header class="topbar">
+  <div class="tb-left">
+    <!-- 햄버거 — 좁은 화면(≤900)에서만 나온다. 그 위에서는 사이드바가 늘 보이므로 숨긴다 -->
+    <button class="icon-btn nav-toggle" id="navBtn" type="button"
+            title="메뉴" aria-label="메뉴 열기" aria-expanded="false" aria-controls="side">
+      <span class="material-icons">menu</span>
+    </button>
+    <!-- 가이드 전환 — 항목·해시 인계는 assets/guide-switch.js 가 채운다.
+         테마·글자 크기는 세 페이지가 localStorage 를 공유하므로 따로 넘길 것이 없다. -->
+    <div class="gsw" id="guideSwitch"></div>
+  </div>
+
+  <div class="tb-center">
+    <span class="doc-title">AICraft-Figma 사용자 가이드</span>
+  </div>
+
+  <div class="tb-right">
+    <!-- 본문 글자 크기 — 가운데 값을 누르면 100% 로 되돌아간다 -->
+    <div class="fs-ctl" role="group" aria-label="본문 글자 크기">
+      <span class="material-icons cap" aria-hidden="true">format_size</span>
+      <button class="icon-btn" id="fsDown" type="button" title="글자 작게" aria-label="글자 작게">
+        <span class="material-icons">remove</span>
+      </button>
+      <button class="fs-val" id="fsVal" type="button" title="기본 크기(100%)로">100%</button>
+      <button class="icon-btn" id="fsUp" type="button" title="글자 크게" aria-label="글자 크게">
+        <span class="material-icons">add</span>
+      </button>
+    </div>
+    <button class="icon-btn" id="themeBtn" type="button" aria-pressed="false">
+      <span class="material-icons">dark_mode</span>
+    </button>
+  </div>
+</header>
+
+<!-- 서랍이 열렸을 때 본문 위에 깔리는 어두운 바탕 — 눌러서 닫는다(≤900에서만 보인다) -->
+<div class="nav-scrim" id="navScrim"></div>
+
+<div class="layout">
+
+  <aside class="side" id="side">
+    <input id="q" type="search" placeholder="검색 (예: 매핑, CSS, 토큰)" aria-label="검색">
+    <div class="hits" id="hits"></div>
+    <!-- 목차는 손으로 적는다 — 이 문서는 data/nav.js 같은 목록 파일이 없다.
+         ★ 이 목록이 **대문 파트 카드와 브레드크럼의 원본**이다(스크립트가 여기서 읽어 간다).
+           본문 <section class="chap"> 의 순서·id 와 맞춰 둘 것. -->
+    <div id="nav">
+      <div class="part">시작하기</div>
+      <a href="#/start"><span class="no">1.</span>시작하기</a>
+      <a href="#/project"><span class="no">2.</span>프로젝트 관리</a>
+      <a href="#/addfile"><span class="no">3.</span>Figma 파일 추가</a>
+      <div class="part">에디터</div>
+      <a href="#/editor"><span class="no">4.</span>에디터 화면 구성</a>
+      <a href="#/tree"><span class="no">5.</span>노드 트리</a>
+      <a href="#/mapping"><span class="no">6.</span>매핑 작업</a>
+      <a href="#/result"><span class="no">7.</span>변환 결과</a>
+      <div class="part">자동화 · 설정</div>
+      <a href="#/automap"><span class="no">8.</span>자동 매핑</a>
+      <a href="#/settings"><span class="no">9.</span>설정</a>
+      <a href="#/faq"><span class="no">10.</span>FAQ / 문제 해결</a>
+    </div>
+  </aside>
+
+  <main class="main" id="main">
+
+    <!-- ============ 대문 ============
+         파트 카드(.hcards)는 스크립트가 사이드바 목록에서 만들어 넣는다 — 목차를 두 번 적지 않는다.
+         배경 로고는 두 index 와 같은 마크업이다(.home-logo → position:fixed · opacity .55). -->
+    <div id="home">
+      <div class="page-head">
+        <h1>AICraft-Figma 사용자 가이드</h1>
+        <p class="lede">Figma 디자인을 WebSquare 컴포넌트로 매핑하고 XML 코드를 자동 생성하는 도구</p>
+        <div class="chips">
+          <span class="chip"><span class="material-icons">design_services</span>Figma → WebSquare 매핑</span>
+          <span class="chip"><span class="material-icons">code</span>WebSquare XML 생성</span>
+          <span class="chip"><span class="material-icons">menu_book</span>장 10개</span>
+        </div>
+      </div>
+
+      <p class="flow">Figma 디자인<i>→</i>노드 매핑<i>→</i>WebSquare XML 생성<i>→</i>미리보기 확인<i>→</i>XML 다운로드</p>
+
+      <div class="hcards" id="hcards"></div>
+
+      <!-- 문서를 닫는 브랜드 마크 — 장식이라 스크린리더에서는 감춘다 -->
+      <div class="home-logo" aria-hidden="true"><img src="assets/logo-group.svg" alt=""></div>
+    </div>
+
+    <!-- ============ 챕터 ============
+         한 번에 한 장만 보인다. 각 <section> 의 맨 앞에는 스크립트가 브레드크럼을 넣는다. -->
+
+    <section class="chap" id="start" hidden>
+      <h2><span class="sec-num">1</span>시작하기</h2>
+
+      <h3>1-1. 접속</h3>
+      <p>브라우저에서 서비스 주소로 접속합니다. (예: <code>http://&lt;서버주소&gt;:5180</code>)</p>
+
+      <h3>1-2. Figma Access Token 준비 (최초 1회)</h3>
+      <p>Figma 파일을 불러오려면 개인 액세스 토큰이 필요합니다.</p>
+      <ol>
+        <li><a href="https://www.figma.com" target="_blank" rel="noopener">Figma</a> 로그인 → 좌측 상단 프로필 → <b>Settings</b></li>
+        <li><b>Account</b> 탭 → <b>Personal access tokens</b> 섹션에서 토큰 생성</li>
+        <li>생성된 토큰(<code>figd_...</code>)을 복사해 둡니다</li>
+      </ol>
+      <div class="note">토큰은 프로젝트 설정(⚙ → 기본 탭)에 저장하며, 파일을 처음 추가할 때 입력할 수도 있습니다.</div>
+    </section>
+
+    <section class="chap" id="project" hidden>
+      <h2><span class="sec-num">2</span>프로젝트 관리 (대시보드)</h2>
+      <p>접속하면 <b>프로젝트 목록</b>이 표시됩니다.</p>
+      <div class="tblwrap">
+        <table>
+          <tr><th style="width:180px">작업</th><th>방법</th></tr>
+          <tr><td>프로젝트 생성</td><td>우측 상단 <b>새 프로젝트</b> → 이름 입력</td></tr>
+          <tr><td>프로젝트 이름 수정</td><td>프로젝트 카드에 마우스 오버 → ✏ 아이콘</td></tr>
+          <tr><td>프로젝트 삭제</td><td>카드에 마우스 오버 → 🗑 아이콘 (하위 파일도 모두 삭제됨)</td></tr>
+          <tr><td>파일 목록 이동</td><td>프로젝트 카드 클릭</td></tr>
+          <tr><td>프로젝트 목록으로 복귀</td><td>파일 목록 좌측 상단 <b>← 프로젝트 목록</b></td></tr>
+        </table>
+      </div>
+      <p>매핑에 사용할 컴포넌트 목록·CSS·매핑룰은 <b>프로젝트 단위</b>로 관리됩니다.</p>
+    </section>
+
+    <section class="chap" id="addfile" hidden>
+      <h2><span class="sec-num">3</span>Figma 파일 추가</h2>
+      <p>파일 목록 화면에서 <b>새 파일 추가</b> 버튼을 클릭합니다.</p>
+      <ol>
+        <li><b>Figma Access Token</b> — 프로젝트에 토큰이 없으면 입력란이 표시됩니다</li>
+        <li><b>Figma File URL</b> — Figma에서 복사한 URL 입력
+          <ul>
+            <li>파일 전체: <code>https://www.figma.com/design/xxxxx/...</code></li>
+            <li>특정 노드(프레임)만: Figma에서 프레임 선택 후 우클릭 → <b>Copy link to selection</b>으로 얻은 URL (<code>?node-id=</code> 포함)</li>
+          </ul>
+        </li>
+      </ol>
+
+      <h3>파일 카드 기능 (마우스 오버 시 아이콘 표시)</h3>
+      <div class="tblwrap">
+        <table>
+          <tr><th style="width:140px">아이콘</th><th>기능</th></tr>
+          <tr><td>🔄 새로고침</td><td>Figma 최신 내용 다시 불러오기. 노드가 바뀌면 사라진 노드의 매핑은 자동 삭제되고, 변경 시 버전 올리기 확인</td></tr>
+          <tr><td>🗑 삭제</td><td>파일과 관련 매핑·이미지 삭제</td></tr>
+        </table>
+      </div>
+      <ul class="pts">
+        <li><span class="badge green">완료</span> 뱃지: 매핑 작업을 완료 처리한 파일 (자동 매핑 클러스터 생성 대상)</li>
+        <li><span class="badge blue">노드</span> 뱃지: 특정 노드만 등록한 파일</li>
+      </ul>
+    </section>
+
+    <section class="chap" id="editor" hidden>
+      <h2><span class="sec-num">4</span>에디터 화면 구성</h2>
+      <p>파일 카드를 클릭하면 매핑 에디터가 열립니다.</p>
+      <!-- ⚠ 아스키 도해다. 마크업으로 바꾸지 말 것 (사용자 지시, 2026-08-11).
+           상자가 닫히려면 <pre> 안 <code> 가 white-space:pre 라야 한다 —
+           공유 CSS 의 `code{white-space:nowrap}` 을 물려받으면 여덟 줄이 한 줄로 뭉개진다.
+           그 되돌림은 assets/style.css 의 `pre code` 규칙에 있다. -->
+<pre><code>┌────────────────────────────────────────────────────────────────┐
+│ 헤더: 프로젝트명 · 파일명(버전)    [▉|·|·][·|▉|·][·|·|▉] ↻ 자동매핑 프로젝트이동 ⚙ │
+├──────────┬───────────────────┬──────────────┬─────────────────┤
+│          │                   │              │                 │
+│ 노드 트리 │    Figma 뷰어      │  매핑 편집기  │   변환 결과      │
+│          │  (디자인 이미지)    │              │ (미리보기/코드)  │
+│          │                   │              │                 │
+└──────────┴───────────────────┴──────────────┴─────────────────┘</code></pre>
+
+      <h3>헤더 버튼</h3>
+      <div class="tblwrap">
+        <table>
+          <tr><th style="width:160px">버튼</th><th>기능</th></tr>
+          <tr><td>패널 토글 3개</td><td>노드 트리 / 매핑 편집기 / 변환 결과 패널을 각각 접기·펼치기 (칸이 채워진 아이콘 = 열림)</td></tr>
+          <tr><td>↻ 새로고침</td><td>현재 파일을 Figma에서 다시 불러오기</td></tr>
+          <tr><td>자동 매핑</td><td>클러스터·매핑룰 기반 자동 매핑 제안 실행 (→ <a href="#/automap">8장</a>)</td></tr>
+          <tr><td>프로젝트 이동</td><td>파일 목록으로 돌아가기</td></tr>
+          <tr><td>⚙ 설정</td><td>프로젝트 설정 열기 (→ <a href="#/settings">9장</a>)</td></tr>
+        </table>
+      </div>
+      <ul class="pts">
+        <li>각 패널 사이 경계선을 드래그하면 <b>패널 폭 조절</b>이 가능합니다.</li>
+        <li>파일 전체를 등록한 경우 상단에 <b>페이지 탭</b>이 표시되어 페이지를 전환할 수 있습니다.</li>
+      </ul>
+    </section>
+
+    <section class="chap" id="tree" hidden>
+      <h2><span class="sec-num">5</span>노드 트리</h2>
+      <p>Figma 디자인의 레이어 구조가 트리로 표시됩니다.</p>
+
+      <h3>기본 조작</h3>
+      <div class="tblwrap">
+        <table>
+          <tr><th style="width:140px">조작</th><th>방법</th></tr>
+          <tr><td>노드 선택</td><td>클릭 (뷰어에 파란 박스로 강조)</td></tr>
+          <tr><td>다중 선택</td><td><kbd>Ctrl(⌘)+클릭</kbd> 추가 선택 / <kbd>Shift+클릭</kbd> 범위 선택</td></tr>
+          <tr><td>키보드 이동</td><td><kbd>↑</kbd> <kbd>↓</kbd> 이동, <kbd>→</kbd> 펼치기, <kbd>←</kbd> 접기 (<kbd>Shift+↑↓</kbd> 범위 선택)</td></tr>
+          <tr><td>펼치기/접기</td><td>노드 앞 ▸ 클릭, 헤더의 ⊞(모두 펼치기) ⊟(모두 접기)</td></tr>
+          <tr><td>검색</td><td>검색창에 노드 이름 입력. <b>상위항목</b> 체크로 부모 표시 여부 선택, <b>전체 선택</b>으로 검색 결과 일괄 선택</td></tr>
+          <tr><td>순서 변경</td><td>드래그 핸들(≡)로 같은 부모 안에서 드래그 앤 드롭</td></tr>
+        </table>
+      </div>
+
+      <h3>매핑 상태 표시</h3>
+      <ul class="pts">
+        <li><b>뱃지</b> <span class="tag-badge">xf:group</span> — 매핑된 노드는 이름 앞에 매핑된 컴포넌트 태그가 초록 뱃지로 표시됩니다. 마우스 오버 시 컴포넌트 이름 툴팁</li>
+        <li>뱃지를 끄면(⚙ 설정 → 매핑 컴포넌트 뱃지 표시 해제) 초록 <b>점</b>으로만 표시됩니다</li>
+      </ul>
+
+      <h3>그룹화</h3>
+      <ul class="pts">
+        <li>노드 1개 이상 선택 → <b>그룹화</b> 버튼: 선택 노드를 새 그룹으로 묶음 (레이아웃 구성용 가상 그룹)</li>
+        <li>GROUP/FRAME 노드 선택 → <b>그룹해제</b> 버튼: 그룹을 풀고 자식을 상위로 이동</li>
+      </ul>
+    </section>
+
+    <section class="chap" id="mapping" hidden>
+      <h2><span class="sec-num">6</span>매핑 작업</h2>
+      <p>노드를 선택하면 <b>매핑 편집기</b>에서 WebSquare 컴포넌트를 지정할 수 있습니다.</p>
+
+      <h3>6-1. 컴포넌트 매핑</h3>
+      <ol>
+        <li>노드 선택 (여러 개 선택하면 <b>일괄 적용 모드</b>)</li>
+        <li>컴포넌트 검색창에서 컴포넌트 선택 (예: group, button, input, gridView …)</li>
+        <li>선택 즉시 저장되며 변환 결과가 자동 갱신됩니다</li>
+      </ol>
+      <ul class="pts">
+        <li><b>매핑 해제</b>: 매핑된 노드에서 해제 버튼 클릭 (다중 선택 지원)</li>
+        <li><b>매핑 초기화</b>: 현재 파일의 모든 매핑 삭제 (되돌릴 수 없음)</li>
+      </ul>
+
+      <h3>6-2. CSS 클래스 지정</h3>
+      <p>매핑된 노드 하단에 프로젝트에 등록된 CSS 파일별 클래스 목록이 표시됩니다.</p>
+      <ul class="pts">
+        <li>CSS 파일 탭으로 파일 전환 (검색어는 탭을 옮겨도 유지)</li>
+        <li>클래스 버튼 클릭으로 적용/해제 (파란색 = 적용됨)</li>
+        <li>표시 구분:
+          <ul>
+            <li><b>바인딩 클래스</b>: 해당 컴포넌트에 연결 설정된 클래스</li>
+            <li>⭐ <b>추천 클래스</b>: 다른 파일에서 같은 구조의 노드에 자주 쓰인 클래스 (빈도 표시)</li>
+          </ul>
+        </li>
+        <li><b>클래스 검색</b>: <code>.클래스명</code> 또는 일부 문자열로 필터</li>
+      </ul>
+
+      <h3>6-3. 커스텀 속성</h3>
+      <p><code>key=value</code> 형태의 속성을 추가하면 생성되는 XML 태그에 그대로 반영됩니다. (예: <code>id</code>, <code>label</code> 등)</p>
+    </section>
+
+    <section class="chap" id="result" hidden>
+      <h2><span class="sec-num">7</span>변환 결과 (미리보기 / 코드)</h2>
+      <p>우측 패널에서 매핑 결과로 생성된 WebSquare XML을 확인합니다.</p>
+
+      <h3>미리보기 탭 (기본)</h3>
+      <p>실제 WebSquare 엔진으로 렌더링된 화면을 보여줍니다.</p>
+      <div class="tblwrap">
+        <table>
+          <tr><th style="width:180px">컨트롤</th><th>기능</th></tr>
+          <tr><td>디바이스 프리셋</td><td>데스크탑 / 태블릿 / 모바일 등 뷰포트 크기 전환</td></tr>
+          <tr><td>− / + / 100%</td><td>미리보기 배율 조절</td></tr>
+          <tr><td>새로고침</td><td>미리보기 다시 렌더링</td></tr>
+        </table>
+      </div>
+      <ul class="pts">
+        <li>프로젝트에 등록한 CSS가 함께 적용됩니다</li>
+        <li>탭 옆 <code>*</code> 표시는 엔진 로딩 중이라는 뜻입니다</li>
+      </ul>
+
+      <h3>코드 탭</h3>
+      <p>생성된 XML 소스를 하이라이팅과 함께 표시합니다.</p>
+
+      <h3>다운로드 / 완료</h3>
+      <ul class="pts">
+        <li><b>다운로드</b>: 파일명을 확인·변경 후 XML 파일로 저장 (브라우저 다운로드)</li>
+        <li><b>완료</b>: 현재 파일의 매핑 작업 완료 처리 → <b>자동 매핑 클러스터가 생성</b>되고 대시보드로 이동. 파일 카드에 완료 뱃지가 붙습니다</li>
+      </ul>
+    </section>
+
+    <section class="chap" id="automap" hidden>
+      <h2><span class="sec-num">8</span>자동 매핑</h2>
+      <p>한 파일에서 매핑을 완료하면, 같은 구조의 노드를 다른 파일에서 자동으로 인식해 매핑을 제안합니다.</p>
+
+      <h3>동작 원리</h3>
+      <ol>
+        <li>파일 매핑 후 <b>완료</b> 클릭 → 매핑 패턴이 <b>클러스터</b>로 저장됨</li>
+        <li>이후 새 파일을 추가하거나 헤더의 <b>자동 매핑</b> 버튼을 누르면</li>
+        <li>클러스터·매핑룰과 일치하는 노드들이 <b>자동 매핑 제안 모달</b>에 표시됨</li>
+        <li>제안 항목을 검토하고 적용/건너뛰기 선택</li>
+      </ol>
+
+      <h3>매칭 방식 (2단계)</h3>
+      <ul class="pts">
+        <li><b>Base 모드</b>: 노드의 구조(componentProperties 키 + 부모 정보)로 매칭 — 일반적인 패턴</li>
+        <li><b>Full 모드</b>: variant 값까지 포함해 매칭 — 동일 variant 노드에 더 정확한 클래스 제안</li>
+      </ul>
+
+      <h3>매핑룰 (이름 기반 기본 매핑)</h3>
+      <p>노드 이름 키워드로 기본 컴포넌트를 지정하는 규칙입니다. (예: 이름에 <code>btn</code> 포함 → button)<br>
+      ⚙ 설정 → <b>매핑룰</b> 탭에서 키워드 추가/삭제/기본값 복원이 가능합니다.</p>
+      <div class="note">매핑을 변경하면 “같은 구조의 다른 노드에도 전체 적용할까요?” 팝업이 뜰 수 있습니다. 프로젝트 전체에 일괄 반영하려면 적용을 선택하세요.</div>
+    </section>
+
+    <section class="chap" id="settings" hidden>
+      <h2><span class="sec-num">9</span>설정 (⚙)</h2>
+
+      <h3>기본 탭</h3>
+      <div class="tblwrap">
+        <table>
+          <tr><th style="width:210px">항목</th><th>설명</th></tr>
+          <tr><td>Figma Access Token</td><td>Figma API 호출용 토큰</td></tr>
+          <tr><td>테마</td><td>라이트 / 다크</td></tr>
+          <tr><td>인라인 스타일</td><td>XML 생성 시 Figma 스타일을 인라인 style로 포함할지 여부</td></tr>
+          <tr><td>자동 매핑 클러스터 설정</td><td><b>노드 이름 포함</b> 체크 시 이름까지 일치해야 같은 클러스터로 인식 (정확도↑ 적중률↓). 변경 시 클러스터 재생성</td></tr>
+          <tr><td>노드 트리 표시 설정</td><td><b>매핑 컴포넌트 뱃지 표시</b> 체크 해제 시 트리에 점만 표시</td></tr>
+          <tr><td>XML 내보내기 경로</td><td>다운로드 기본 파일 경로 설정</td></tr>
+        </table>
+      </div>
+
+      <h3>컴포넌트 탭</h3>
+      <p>매핑에 사용할 WebSquare 컴포넌트 목록(레지스트리)을 관리합니다.</p>
+      <ul class="pts">
+        <li>컴포넌트 추가: 이름 + 태그명(예: <code>xf:group</code>) + 기본 속성</li>
+        <li>수정/삭제 가능. 프로젝트 생성 시 기본 컴포넌트가 자동 등록됩니다</li>
+      </ul>
+
+      <h3>CSS 탭</h3>
+      <p>프로젝트에서 사용할 CSS 파일을 관리합니다.</p>
+      <ul class="pts">
+        <li><b>파일 업로드</b>: <code>.css</code> 파일 선택 → 클래스가 자동 추출되고 컴포넌트에 자동 바인딩됨</li>
+        <li><b>직접 작성</b>: 새 CSS 추가로 내용 입력</li>
+        <li><b>클래스 매핑</b>: CSS 클래스를 어떤 컴포넌트의 후보로 보여줄지 연결 관리 (자동 매핑 재실행 / 매핑 초기화 지원)</li>
+        <li>업로드한 CSS는 <b>미리보기 렌더링에도 적용</b>됩니다</li>
+      </ul>
+
+      <h3>매핑룰 탭</h3>
+      <p>노드 이름 키워드 → 컴포넌트 기본 매핑 규칙 관리 (<a href="#/automap">8장</a> 참고)</p>
+    </section>
+
+    <section class="chap" id="faq" hidden>
+      <h2><span class="sec-num">10</span>자주 묻는 질문 / 문제 해결</h2>
+
+      <details>
+        <summary>파일 추가 시 “권한 오류”가 발생해요.</summary>
+        <p>Figma 토큰이 유효한지, 해당 파일에 접근 권한이 있는 계정의 토큰인지 확인하세요.</p>
+      </details>
+
+      <details>
+        <summary>Figma에서 디자인을 수정했는데 반영이 안 돼요.</summary>
+        <p>파일 카드 또는 헤더의 🔄 새로고침을 실행하세요. 삭제된 노드의 매핑은 자동 정리됩니다.</p>
+      </details>
+
+      <details>
+        <summary>미리보기가 “엔진 로딩 중”에서 멈춰요.</summary>
+        <p>잠시 기다린 후 미리보기 탭의 새로고침을 누르세요. 계속되면 브라우저 새로고침(<kbd>F5</kbd>) 후 재시도하세요.</p>
+      </details>
+
+      <details>
+        <summary>자동 매핑 제안이 나오지 않아요.</summary>
+        <p>자동 매핑은 <b>완료 처리된 파일</b>의 매핑을 기반으로 합니다. 최소 1개 파일을 완료했는지, 노드 구조가 실제로 같은지 확인하세요. 이름이 달라 매칭이 안 되면 설정에서 “노드 이름 포함”을 해제해 보세요.</p>
+      </details>
+
+      <details>
+        <summary>업로드한 CSS 클래스가 매핑 패널에 안 보여요.</summary>
+        <p>매핑된 노드를 선택해야 CSS 클래스 영역이 표시됩니다. CSS 탭에서 해당 파일의 클래스가 추출되었는지(개수 표시) 확인하세요.</p>
+      </details>
+
+      <details>
+        <summary>작업 내용은 어디에 저장되나요?</summary>
+        <p>모든 매핑·설정은 서버 DB에 프로젝트 단위로 저장됩니다. 브라우저를 닫아도 유지됩니다.</p>
+      </details>
+    </section>
+
+  </main>
+
+  <aside class="toc" id="toc"></aside>
+
+</div>
+
+<button class="fab" id="top" type="button" title="맨 위로" aria-label="맨 위로" hidden>
+  <span class="material-icons">arrow_upward</span>
+</button>
+
+<script src="assets/guide-switch.js"></script>
+<script>
+/* ============================================================
+   이 페이지 전용 셸 · 라우터.
+
+   두 index 는 assets/app.js(21장 SPA)를 쓰지만 이 문서는 **본문이 HTML 안에 직접** 있다.
+   그래서 라우터가 하는 일이 다르다 — 그리는 게 아니라 **보일 것만 남긴다.**
+     #/            → 대문(#home). body.home 이 붙어 우측 목차 열이 접히고 배경 로고가 뜬다.
+     #/<장id>      → 그 <section class="chap"> 하나만
+     #/<장id>#앵커 → 그 장으로 가서 절(h3)까지
+
+   ⚠ 저장 키(fx-guide-*)와 글자 크기 단계(FS_STEPS)는 app.js 와 **똑같이** 맞춘다 —
+     가이드를 옮겨 다닐 때 테마·글자 크기가 그대로 이어져야 해서다.
+   ============================================================ */
+(function () {
+  'use strict';
+
+  var $ = function (s) { return document.querySelector(s); };
+  var side = $('#side'), nav = $('#nav'), tocEl = $('#toc'), hitsEl = $('#hits');
+  var homeEl = $('#home');
+
+  function esc(s) {
+    return s.replace(/[&<>"]/g, function (m) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[m];
+    });
+  }
+
+  /* ---------------- 목차 모형 ----------------
+     사이드바 목록(#nav)이 원본이다 — 파트 카드도 브레드크럼도 여기서 나온다.
+     본문 <section class="chap"> 과 id 로 맞물린다. */
+  var PARTS = [], CHAPTERS = [];
+  (function buildModel() {
+    var part = null;
+    [].forEach.call(nav.children, function (el) {
+      if (el.classList.contains('part')) {
+        part = { title: el.textContent.trim(), no: PARTS.length + 1, chapters: [] };
+        PARTS.push(part);
+        return;
+      }
+      var id = el.getAttribute('href').replace('#/', '');
+      var sec = document.getElementById(id);
+      var no = el.querySelector('.no').textContent.replace('.', '').trim();
+      var c = {
+        id: id, no: no, part: part, link: el, sec: sec,
+        title: el.textContent.replace(/^\s*\d+\.\s*/, '').trim(),
+        subs: []
+      };
+      /* 절(h3)에 id 를 붙인다 — 우측 목차·검색이 여기로 걸어 온다.
+         절이 없는 장은 접힘 블록(FAQ)을 대신 쓴다. 안 그러면 우측 칸이 통째로 빈다. */
+      if (sec) {
+        [].forEach.call(sec.querySelectorAll('h3'), function (h3, i) {
+          if (!h3.id) h3.id = 'sec-' + id + '-' + (i + 1);
+          c.subs.push({ el: h3, label: h3.textContent });
+        });
+        if (!c.subs.length) {
+          [].forEach.call(sec.querySelectorAll('details'), function (d, i) {
+            if (!d.id) d.id = 'sec-' + id + '-q' + (i + 1);
+            c.subs.push({ el: d, label: d.querySelector('summary').textContent });
+          });
+        }
+      }
+      part.chapters.push(c);
+      CHAPTERS.push(c);
+    });
+  })();
+
+  var chapterById = function (id) {
+    return CHAPTERS.filter(function (c) { return c.id === id; })[0];
+  };
+
+  /* ---------------- 대문 파트 카드 ----------------
+     두 index 의 renderHome 과 같은 마크업이다(.pcard = 번호 배지 · 제목 · 챕터 목록).
+     id="part-N" 은 브레드크럼의 파트가 #/#part-N 으로 걸어 오는 자리다. */
+  $('#hcards').innerHTML = PARTS.map(function (p) {
+    return '<div class="pcard" id="part-' + p.no + '">'
+         + '<span class="pnum" aria-hidden="true">' + p.no + '</span>'
+         + '<div class="pttl">' + esc(p.title) + '</div>'
+         + '<ul class="pchaps">' + p.chapters.map(function (c) {
+             return '<li><a href="#/' + c.id + '"><span class="n">' + c.no + '</span>' + esc(c.title) + '</a></li>';
+           }).join('') + '</ul>'
+         + '</div>';
+  }).join('');
+
+  /* ---------------- 브레드크럼 ----------------
+     두 index 와 같은 규칙 — 앞의 두 마디는 링크, 마지막(현재 장)은 제자리라 링크가 아니다.
+     ★ 사이드바 머리(.brand)가 없어진 뒤로 **대문으로 돌아가는 유일한 길**이다. */
+  CHAPTERS.forEach(function (c) {
+    if (!c.sec) return;
+    c.sec.insertAdjacentHTML('afterbegin',
+      '<div class="crumb">'
+      + '<a href="#/">AICraft-Figma 사용자 가이드</a>'
+      + ' &nbsp;›&nbsp; <a href="#/#part-' + c.part.no + '">' + esc(c.part.title) + '</a>'
+      + ' &nbsp;›&nbsp; <b>' + esc(c.no + '. ' + c.title) + '</b>'
+      + '</div>');
+  });
+
+  /* ---------------- 우측 목차 ---------------- */
+  function paintToc(c) {
+    if (!c) { tocEl.innerHTML = ''; return; }
+    tocEl.innerHTML = '<div class="cap">' + esc(c.no + '. ' + c.title) + '</div>'
+      + c.subs.map(function (s) {
+          return '<a href="#/' + c.id + '#' + s.el.id + '">' + esc(s.label) + '</a>';
+        }).join('');
+  }
+
+  /* ---------------- 라우팅 ---------------- */
+  /* 현재 장. 대문이면 null 이다 —— ⚠ 초기값은 undefined 라야 한다.
+     null 로 두면 첫 실행(대문)에서 `cur === c` 가 맞아떨어져 그대로 빠져나가고,
+     body.home 이 안 붙어 우측 목차 열이 대문에도 남는다. */
+  var cur;
+
+  function show(c) {
+    if (cur === c) return;
+    cur = c;
+    homeEl.hidden = !!c;
+    CHAPTERS.forEach(function (x) {
+      if (x.sec) x.sec.hidden = (x !== c);
+      x.link.classList.toggle('on', x === c);
+    });
+    document.body.classList.toggle('home', !c);
+    paintToc(c);
+    document.title = c
+      ? c.no + '. ' + c.title + ' — AICraft-Figma 사용자 가이드'
+      : 'AICraft-Figma 사용자 가이드';
+  }
+
+  function route() {
+    var raw = location.hash.replace(/^#\//, '');
+    var bits = raw.split('#');
+    var c = chapterById(bits[0]);
+    var anchor = bits[1];
+    show(c || null);
+    /* 앵커는 대문에도 있다(파트 카드) — 그래서 장을 못 찾아도 앵커를 살린다.
+       show() 가 hidden 을 동기로 걷어내므로 바로 아래에서 위치를 잴 수 있다. */
+    var at = anchor ? document.getElementById(anchor) : null;
+    if (at) {
+      /* 목차·검색이 FAQ 의 접힘 블록을 가리켜 온 것이면 펴 준다 —
+         닫힌 채로 데려다 놓으면 질문만 보이고 답이 안 보인다. */
+      if (at.tagName === 'DETAILS') at.open = true;
+      at.scrollIntoView({ block: 'start' });
+    } else window.scrollTo({ top: 0 });
+    onScroll();
+  }
+  addEventListener('hashchange', route);
+
+  /* ---------------- 스크롤 ---------------- */
+  var LINE = 70, topBtn = $('#top');
+
+  function onScroll() {
+    var y = window.scrollY || document.documentElement.scrollTop;
+    if (cur) {
+      var subs = cur.subs, at = -1;
+      for (var j = 0; j < subs.length; j++) {
+        if (subs[j].el.getBoundingClientRect().top <= LINE) at = j; else break;
+      }
+      [].forEach.call(tocEl.querySelectorAll('a'), function (a, j) {
+        a.classList.toggle('on', j === at);
+      });
+    }
+    topBtn.hidden = y < 400;
+  }
+
+  var ticking = false;
+  addEventListener('scroll', function () {
+    if (ticking) return;
+    ticking = true;
+    requestAnimationFrame(function () { ticking = false; onScroll(); });
+  }, { passive: true });
+
+  /* 스크롤바 — 스크롤이 나는 동안에만 손잡이를 드러낸다(app.js 와 같은 규칙).
+     scroll 은 버블링하지 않으므로 **캡처 단계**로 듣는다 — 사이드바·표·코드블록 안쪽까지 잡힌다. */
+  var scrollFade = null;
+  addEventListener('scroll', function () {
+    document.documentElement.classList.add('scrolling');
+    clearTimeout(scrollFade);
+    scrollFade = setTimeout(function () {
+      document.documentElement.classList.remove('scrolling');
+    }, 700);
+  }, { capture: true, passive: true });
+
+  /* ---------------- 검색 ----------------
+     제목(장·절·FAQ 질문)만 훑는다. 장이 하나씩만 보이므로 본문 전문 검색은 브라우저 찾기로 안 된다 —
+     대신 결과를 누르면 그 장을 펴고 절까지 데려간다. */
+  var q = $('#q'), index = [];
+  CHAPTERS.forEach(function (c) {
+    index.push({ href: '#/' + c.id, label: c.no + '. ' + c.title, sub: c.part.title });
+    c.subs.forEach(function (s) {
+      index.push({ href: '#/' + c.id + '#' + s.el.id, label: s.label, sub: c.no + '. ' + c.title });
+    });
+  });
+
+  function runSearch() {
+    var v = q.value.trim().toLowerCase();
+    document.body.classList.toggle('searching', !!v);
+    if (!v) { hitsEl.innerHTML = ''; return; }
+    var hit = index.filter(function (it) {
+      return (it.label + ' ' + it.sub).toLowerCase().indexOf(v) >= 0;
+    });
+    if (!hit.length) { hitsEl.innerHTML = '<div class="none">결과 없음</div>'; return; }
+    hitsEl.innerHTML = hit.map(function (it) {
+      return '<a href="' + it.href + '">' + esc(it.label) +
+             '<span class="sub">' + esc(it.sub) + '</span></a>';
+    }).join('');
+  }
+  q.addEventListener('input', runSearch);
+  q.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape') { q.value = ''; runSearch(); }
+  });
+
+  /* ---------------- 다크 모드 ---------------- */
+  var themeBtn = $('#themeBtn');
+  var themeIcon = themeBtn.querySelector('.material-icons');
+  var isDark = function () { return document.documentElement.getAttribute('data-theme') === 'dark'; };
+
+  function paintThemeBtn() {
+    var dark = isDark();
+    themeIcon.textContent = dark ? 'light_mode' : 'dark_mode';
+    themeBtn.title = dark ? '라이트 모드로 전환' : '다크 모드로 전환';
+    themeBtn.setAttribute('aria-pressed', String(dark));
+  }
+  themeBtn.addEventListener('click', function () {
+    var next = isDark() ? 'light' : 'dark';
+    if (next === 'dark') document.documentElement.setAttribute('data-theme', 'dark');
+    else document.documentElement.removeAttribute('data-theme');
+    try { localStorage.setItem('fx-guide-theme', next); } catch (e) {}
+    paintThemeBtn();
+  });
+  paintThemeBtn();
+
+  /* ---------------- 글자 크기 ----------------
+     --fs-scale 하나만 바꾼다. style.css 의 .main / .side 가 이 배수로 --fs-* 를 다시 선언한다. */
+  var FS_STEPS = [0.85, 0.925, 1, 1.1, 1.2, 1.35];
+  var FS_KEY = 'fx-guide-fontscale';
+  var fsIdx = FS_STEPS.indexOf(1);
+  try {
+    var i0 = FS_STEPS.indexOf(parseFloat(localStorage.getItem(FS_KEY)));
+    if (i0 >= 0) fsIdx = i0;
+  } catch (e) {}
+
+  function applyFontScale() {
+    var s = FS_STEPS[fsIdx];
+    document.documentElement.style.setProperty('--fs-scale', s);
+    $('#fsVal').textContent = Math.round(s * 100) + '%';
+    $('#fsDown').disabled = fsIdx === 0;
+    $('#fsUp').disabled = fsIdx === FS_STEPS.length - 1;
+    try { localStorage.setItem(FS_KEY, String(s)); } catch (e) {}
+  }
+  function stepFontScale(d) {
+    var next = Math.min(FS_STEPS.length - 1, Math.max(0, fsIdx + d));
+    if (next === fsIdx) return;
+    fsIdx = next;
+    applyFontScale();
+  }
+  $('#fsDown').addEventListener('click', function () { stepFontScale(-1); });
+  $('#fsUp').addEventListener('click', function () { stepFontScale(1); });
+  $('#fsVal').addEventListener('click', function () { fsIdx = FS_STEPS.indexOf(1); applyFontScale(); });
+  applyFontScale();
+
+  /* ---------------- 사이드바 서랍 (≤900) ----------------
+     여는 것은 햄버거 하나, 닫는 것은 ①다시 누르기 ②어두운 바탕 ③Esc ④안쪽 링크 클릭. */
+  var navBtn = $('#navBtn'), navScrim = $('#navScrim');
+  var navMQ = matchMedia('(max-width:900px)');
+  var navOpen = function () { return document.body.classList.contains('nav-open'); };
+
+  function setNav(open) {
+    document.body.classList.toggle('nav-open', open);
+    navBtn.setAttribute('aria-expanded', String(open));
+    navBtn.setAttribute('aria-label', open ? '메뉴 닫기' : '메뉴 열기');
+    navBtn.querySelector('.material-icons').textContent = open ? 'close' : 'menu';
+  }
+  navBtn.addEventListener('click', function () { setNav(!navOpen()); });
+  navScrim.addEventListener('click', function () { setNav(false); });
+  side.addEventListener('click', function (e) { if (e.target.closest('a')) setNav(false); });
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' && navOpen()) setNav(false);
+  });
+  // 넓어지면 사이드바가 다시 붙박이가 된다 → 열림 표식(본문 스크롤 잠금)을 걷어낸다
+  var navSync = function () { if (!navMQ.matches && navOpen()) setNav(false); };
+  if (navMQ.addEventListener) navMQ.addEventListener('change', navSync);
+  else navMQ.addListener(navSync);            // 옛 사파리
+
+  /* ---------------- 맨 위로 ---------------- */
+  topBtn.addEventListener('click', function () {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  });
+
+  route();
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WebSquare 변환을 위한 Figma 디자인 가이드</title>
+<!-- 본문 서체 Inter 만 CDN 이며, 못 받아오면 Pretendard(동봉)로 대체된다. 한글은 언제나 Pretendard. -->
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<!-- Material Icons — 폰트 본체를 base64 로 내장했다(오프라인·file:// 대응) -->
+<link rel="stylesheet" href="assets/icons.css">
+<link rel="stylesheet" href="assets/style.css">
+<!-- 모바일판 모드 플래그 — app.js 는 두 페이지가 공유하므로 경로만 밖에서 정한다. -->
+<script>window.GUIDE_LIVE_DIR = 'live-m/';</script>
+<script id="theme-init">
+/* 첫 페인트 **전에** 테마를 정한다. body 스크립트에서 하면 흰 화면이 한 번 번쩍인다.
+   저장값이 없으면 OS 설정(prefers-color-scheme)을 따른다.
+   file:// 에서 localStorage 가 막힌 브라우저도 있어 try 로 감쌌다 — 막혀도 동작은 한다.
+   ※ data-guide 는 여기서 건다 — 조각 프레임 폭(375) 규칙이 첫 페인트부터 걸려야 한다. */
+(function () {
+  document.documentElement.setAttribute('data-guide', 'mobile');
+  try {
+    var saved = localStorage.getItem('fx-guide-theme');
+    var dark = saved ? saved === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches;
+    if (dark) document.documentElement.setAttribute('data-theme', 'dark');
+    // 본문 글자 크기도 여기서 미리 걸어 둔다 — 나중에 걸면 본문이 한 번 튄다
+    var fs = parseFloat(localStorage.getItem('fx-guide-fontscale'));
+    if (fs > 0) document.documentElement.style.setProperty('--fs-scale', fs);
+  } catch (e) {}
+})();
+</script>
+</head>
+<body>
+
+<!-- ============ TOP BAR ============ -->
+<header class="topbar">
+  <div class="tb-left">
+    <!-- 햄버거 — 좁은 화면(≤900)에서만 나온다. 그 위에서는 사이드바가 늘 보이므로 숨긴다 -->
+    <button class="icon-btn nav-toggle" id="navBtn" type="button"
+            title="메뉴" aria-label="메뉴 열기" aria-expanded="false" aria-controls="side">
+      <span class="material-icons">menu</span>
+    </button>
+    <!-- 가이드 전환 — 항목·해시 인계는 assets/guide-switch.js 가 채운다.
+         테마·글자 크기는 세 페이지가 localStorage 를 공유하므로 따로 넘길 것이 없다. -->
+    <div class="gsw" id="guideSwitch"></div>
+  </div>
+
+  <div class="tb-center">
+    <span class="doc-title">WebSquare 변환을 위한 Figma 디자인 가이드</span>
+    <span class="dot-sep">·</span>
+    <span class="branch">Mobile</span>
+  </div>
+
+  <div class="tb-right">
+    <!-- 본문 글자 크기 — 가운데 값을 누르면 100% 로 되돌아간다 -->
+    <div class="fs-ctl" role="group" aria-label="본문 글자 크기">
+      <span class="material-icons cap" aria-hidden="true">format_size</span>
+      <button class="icon-btn" id="fsDown" type="button" title="글자 작게" aria-label="글자 작게">
+        <span class="material-icons">remove</span>
+      </button>
+      <button class="fs-val" id="fsVal" type="button" title="기본 크기(100%)로">100%</button>
+      <button class="icon-btn" id="fsUp" type="button" title="글자 크게" aria-label="글자 크게">
+        <span class="material-icons">add</span>
+      </button>
+    </div>
+    <button class="icon-btn" id="themeBtn" type="button" aria-pressed="false">
+      <span class="material-icons">dark_mode</span>
+    </button>
+  </div>
+</header>
+
+<!-- 서랍이 열렸을 때 본문 위에 깔리는 어두운 바탕 — 눌러서 닫는다(≤900에서만 보인다) -->
+<div class="nav-scrim" id="navScrim"></div>
+
+<div class="layout">
+
+  <aside class="side" id="side">
+    <input id="q" type="search" placeholder="검색 (예: 버튼, w2tb_tr)" aria-label="검색">
+    <div class="hits" id="hits"></div>
+    <div id="nav"></div>
+  </aside>
+
+  <main class="main" id="main"></main>
+
+  <aside class="toc" id="toc"></aside>
+
+</div>
+
+<!-- 캡처 팝업 — 본문 안에서 늘리는 대신 화면 위에 원본 크기로 띄운다 -->
+<div class="lb" id="lb" hidden role="dialog" aria-modal="true" aria-label="캡처 원본 크기">
+  <div class="lb-cap" id="lb-cap"></div>
+  <button class="lb-x" id="lb-x" type="button"><span class="material-icons">close</span> 닫기</button>
+  <div class="lb-scroll"><img id="lb-img" alt=""></div>
+</div>
+
+<button class="fab" id="top" type="button" title="맨 위로" aria-label="맨 위로" hidden>
+  <span class="material-icons">arrow_upward</span>
+</button>
+
+<script src="data-m/nav.js"></script>
+<script src="data-m/home.js"></script>
+<script src="data-m/pages.js"></script>
+<script src="data-m/registry.js"></script>
+<script src="data/classes.js"></script>
+<script src="data-m/live.js"></script>
+<script src="assets/guide-switch.js"></script>
+<script src="assets/app.js"></script>
+</body>
+</html>

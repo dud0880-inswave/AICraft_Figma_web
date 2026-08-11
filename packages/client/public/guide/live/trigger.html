@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<!-- 테마는 바깥(가이드)이 정한다. 첫 페인트 **전에** 걸어야 흰 화면이 한 번 번쩍이지 않는다.
+     :root.dark 는 base.css 가 color-scheme:dark 로 바꾸는 스위치이고,
+     그러면 variable.css 의 light-dark() 토큰이 전부 다크 값으로 뒤집힌다. -->
+<script>if (location.hash === '#dark') document.documentElement.classList.add('dark');</script>
+<title>trigger — 변환 결과</title>
+<link rel="stylesheet" href="_ws/stylesheet.css">
+<link rel="stylesheet" href="_ws/stylesheet_ext.css">
+<link rel="stylesheet" href="_ws/fullcalendar.css">
+<link rel="stylesheet" href="_ws/variable.css">
+<link rel="stylesheet" href="_ws/base.css">
+<style>
+  /* 테마는 오로지 바깥(가이드)이 정한다 — 정본의 :root{color-scheme:light dark}는 **OS 설정**을 따르므로
+     그대로 두면 가이드를 라이트로 돌려도 OS가 다크인 사람에게는 다크로 남는다. 라이트를 못박아 둔다.
+     (다크는 head 스크립트가 거는 :root.dark 가 color-scheme:dark 로 덮는다 — 이 규칙은 그때 아예 안 걸린다) */
+  :root:not(.dark){color-scheme:light}
+  /* 가이드가 이 문서를 iframe으로 싣는다. 바깥 테두리는 가이드가 그리므로
+     문서 자체는 여백 없이 조각만 담는다. */
+  html,body{margin:0;padding:0}
+  .sub_contents{margin:0 !important;min-height:0 !important;background:transparent !important}   /* padding 은 base.css 의 20px 를 그대로 쓴다 — 「완성 모습」 안쪽 여백 */
+  /* base.css는 Pretendard를 굵기별 파일로 부르지만 번들에는 가변 폰트 한 벌만 둔다.
+     같은 패밀리로 뒤에 선언해 1.8MB를 더 싣지 않고도 글꼴이 맞는다. */
+  @font-face{
+    font-family:'Pretendard'; font-weight:45 920; font-style:normal; font-display:swap;
+    src:local('Pretendard Variable'), local('Pretendard'),
+        url(../assets/fonts/PretendardVariable.woff2) format('woff2-variations');
+  }
+</style>
+</head>
+<body>
+<!-- templatebox는 감싸지 않는다 — 디자인 템플릿 파일 자체의 섹션 래퍼라
+     회색 면과 빈 여백만 만든다(가이드에서도 제외한 클래스다). -->
+<div class="w2group sub_contents">
+<div id="wq_uuid_514" class="w2group titbox"><div id="wq_uuid_515" class="w2group lt"><h4 id="wq_uuid_516" class="w2textbox ">default</h4></div><div id="wq_uuid_517" class="w2group rt"><input type="button" id="wq_uuid_518" class="w2trigger btn_cm" value="기본버튼"><input type="button" id="wq_uuid_519" class="w2trigger btn_cm pt" value="기본버튼"><input type="button" id="wq_uuid_520" class="w2trigger btn_cm fill" value="기본버튼"><input type="button" id="wq_uuid_521" class="w2trigger btn_cm fill pt" value="기본버튼"><input type="button" id="wq_uuid_522" class="w2trigger btn_cm copy" value="행복사"><input type="button" id="wq_uuid_523" class="w2trigger btn_cm row_add" value="행추가"><input type="button" id="wq_uuid_524" class="w2trigger btn_cm row_del" value="행삭제"><input type="button" id="wq_uuid_525" class="w2trigger btn_cm upload" value="업로드"><input type="button" id="wq_uuid_526" class="w2trigger btn_cm download" value="다운로드"><input type="button" id="wq_uuid_527" class="w2trigger btn_cm search" value="검색"><input type="button" id="wq_uuid_528" class="w2trigger btn_cm left" value="이전"><input type="button" id="wq_uuid_529" class="w2trigger btn_cm right" value="다음"><input type="button" id="wq_uuid_530" class="w2trigger btn_cm up" value="위로"><input type="button" id="wq_uuid_531" class="w2trigger btn_cm down" value="아래로"><input type="button" id="wq_uuid_532" class="w2trigger btn_cm delete" value="삭제"><input type="button" id="wq_uuid_533" class="w2trigger btn_cm calendar" value="달력"><input type="button" id="wq_uuid_534" class="w2trigger btn_cm guide" value="도움말"><input type="button" id="wq_uuid_535" class="w2trigger btn_cm refresh" value="새로고침"><input type="button" id="wq_uuid_536" class="w2trigger btn_cm save" value="저장"></div></div>
+<div id="wq_uuid_537" class="w2group titbox"><div id="wq_uuid_538" class="w2group lt"><h4 id="wq_uuid_539" class="w2textbox ">disabled</h4></div><div id="wq_uuid_540" class="w2group rt"><input type="button" id="wq_uuid_541" class="w2trigger btn_cm w2trigger_disabled" value="기본버튼" disabled="disabled"><input type="button" id="wq_uuid_542" class="w2trigger btn_cm pt w2trigger_disabled" value="기본버튼" disabled="disabled"><input type="button" id="wq_uuid_543" class="w2trigger btn_cm fill pt w2trigger_disabled" value="기본버튼" disabled="disabled"><input type="button" id="wq_uuid_544" class="w2trigger btn_cm fill pt w2trigger_disabled" value="기본버튼" disabled="disabled"><input type="button" id="wq_uuid_545" class="w2trigger btn_cm copy w2trigger_disabled" value="행복사" disabled="disabled"><input type="button" id="wq_uuid_546" class="w2trigger btn_cm row_add w2trigger_disabled" value="행추가" disabled="disabled"><input type="button" id="wq_uuid_547" class="w2trigger btn_cm row_del w2trigger_disabled" value="행삭제" disabled="disabled"><input type="button" id="wq_uuid_548" class="w2trigger btn_cm upload w2trigger_disabled" value="업로드" disabled="disabled"><input type="button" id="wq_uuid_549" class="w2trigger btn_cm download w2trigger_disabled" value="다운로드" disabled="disabled"><input type="button" id="wq_uuid_550" class="w2trigger btn_cm search w2trigger_disabled" value="검색" disabled="disabled"><input type="button" id="wq_uuid_551" class="w2trigger btn_cm left w2trigger_disabled" value="이전" disabled="disabled"><input type="button" id="wq_uuid_552" class="w2trigger btn_cm right w2trigger_disabled" value="다음" disabled="disabled"><input type="button" id="wq_uuid_553" class="w2trigger btn_cm up w2trigger_disabled" value="위로" disabled="disabled"><input type="button" id="wq_uuid_554" class="w2trigger btn_cm down w2trigger_disabled" value="아래로" disabled="disabled"><input type="button" id="wq_uuid_555" class="w2trigger btn_cm delete w2trigger_disabled" value="삭제" disabled="disabled"><input type="button" id="wq_uuid_556" class="w2trigger btn_cm calendar w2trigger_disabled" value="달력" disabled="disabled"><input type="button" id="wq_uuid_557" class="w2trigger btn_cm guide w2trigger_disabled" value="도움말" disabled="disabled"><input type="button" id="wq_uuid_558" class="w2trigger btn_cm refresh w2trigger_disabled" value="새로고침" disabled="disabled"><input type="button" id="wq_uuid_559" class="w2trigger btn_cm save w2trigger_disabled" value="저장" disabled="disabled"></div></div>
+<div id="wq_uuid_560" class="w2group titbox"><div id="wq_uuid_561" class="w2group lt"><h4 id="wq_uuid_562" class="w2textbox ">icon</h4></div><div id="wq_uuid_563" class="w2group rt"><input type="button" id="wq_uuid_564" class="w2trigger btn_cm copy icon" value="행복사"><input type="button" id="wq_uuid_565" class="w2trigger btn_cm row_add icon" value="행추가"><input type="button" id="wq_uuid_566" class="w2trigger btn_cm row_del icon" value="행삭제"><input type="button" id="wq_uuid_567" class="w2trigger btn_cm upload icon" value="업로드"><input type="button" id="wq_uuid_568" class="w2trigger btn_cm download icon" value="다운로드"><input type="button" id="wq_uuid_569" class="w2trigger btn_cm search icon" value="검색"><input type="button" id="wq_uuid_570" class="w2trigger btn_cm left icon" value="이전버튼"><input type="button" id="wq_uuid_571" class="w2trigger btn_cm right icon" value="다음버튼"><input type="button" id="wq_uuid_572" class="w2trigger btn_cm up icon" value="위로"><input type="button" id="wq_uuid_573" class="w2trigger btn_cm down icon" value="아래로"><input type="button" id="wq_uuid_574" class="w2trigger btn_cm delete icon" value="삭제"><input type="button" id="wq_uuid_575" class="w2trigger btn_cm calendar icon" value="달력"><input type="button" id="wq_uuid_576" class="w2trigger btn_cm guide icon" value="도움말"><input type="button" id="wq_uuid_577" class="w2trigger btn_cm refresh icon" value="새로고침"><input type="button" id="wq_uuid_578" class="w2trigger btn_cm link icon" value="새로고침"><input type="button" id="wq_uuid_579" class="w2trigger btn_cm save icon" value="저장"></div></div>
+<div id="wq_uuid_580" class="w2group titbox"><div id="wq_uuid_581" class="w2group lt"><h4 id="wq_uuid_582" class="w2textbox ">icon_disabled</h4></div><div id="wq_uuid_583" class="w2group rt"><input type="button" id="wq_uuid_584" class="w2trigger btn_cm copy icon w2trigger_disabled" value="행복사" disabled="disabled"><input type="button" id="wq_uuid_585" class="w2trigger btn_cm row_add icon w2trigger_disabled" value="행추가" disabled="disabled"><input type="button" id="wq_uuid_586" class="w2trigger btn_cm row_del icon w2trigger_disabled" value="행삭제" disabled="disabled"><input type="button" id="wq_uuid_587" class="w2trigger btn_cm upload icon w2trigger_disabled" value="업로드" disabled="disabled"><input type="button" id="wq_uuid_588" class="w2trigger btn_cm download icon w2trigger_disabled" value="다운로드" disabled="disabled"><input type="button" id="wq_uuid_589" class="w2trigger btn_cm search icon w2trigger_disabled" value="검색" disabled="disabled"><input type="button" id="wq_uuid_590" class="w2trigger btn_cm left icon w2trigger_disabled" value="이전버튼" disabled="disabled"><input type="button" id="wq_uuid_591" class="w2trigger btn_cm right icon w2trigger_disabled" value="다음버튼" disabled="disabled"><input type="button" id="wq_uuid_592" class="w2trigger btn_cm up icon w2trigger_disabled" value="위로" disabled="disabled"><input type="button" id="wq_uuid_593" class="w2trigger btn_cm down icon w2trigger_disabled" value="아래로" disabled="disabled"><input type="button" id="wq_uuid_594" class="w2trigger btn_cm delete icon w2trigger_disabled" value="삭제" disabled="disabled"><input type="button" id="wq_uuid_595" class="w2trigger btn_cm calendar icon w2trigger_disabled" value="달력" disabled="disabled"><input type="button" id="wq_uuid_596" class="w2trigger btn_cm guide icon w2trigger_disabled" value="도움말" disabled="disabled"><input type="button" id="wq_uuid_597" class="w2trigger btn_cm refresh icon w2trigger_disabled" value="새로고침" disabled="disabled"><input type="button" id="wq_uuid_598" class="w2trigger btn_cm link icon w2trigger_disabled" value="새로고침" disabled="disabled"><input type="button" id="wq_uuid_599" class="w2trigger btn_cm save icon w2trigger_disabled" value="저장" disabled="disabled"></div></div>
+</div>
+
+<script>
+/* 이 조각의 실제 높이를 바깥(가이드)에 알린다.
+   file:// 에서는 부모가 iframe 안쪽을 잴 수 없다(교차 출처) — 그래서 안쪽이 스스로 재서 보낸다.
+   data/live.js 의 값은 이 신호가 닿기 전까지 쓰는 초기 추정치일 뿐이다.
+   덕분에 보는 이의 창 폭이 달라져 내용이 다시 접혀도 프레임이 따라 커진다(잘리지 않는다). */
+(function () {
+  var q = location.search.match(/[?&]id=([a-z0-9-]+)/);
+  var id = q ? q[1] : location.pathname.split('/').pop().replace(/\.html$/, '');
+  var last = 0, ro = null, t0 = Date.now(), timer;
+  function send() {
+    var el = document.querySelector('.sub_contents') || document.body;
+    if (!el) return;
+    var h = Math.ceil(el.getBoundingClientRect().height);
+    if (!h || h === last) return;
+    last = h;
+    try { parent.postMessage({ fxLiveHeight: h, id: id }, '*'); } catch (e) {}
+    if (window.ResizeObserver && !ro) { ro = new ResizeObserver(send); ro.observe(el); }
+  }
+
+  /* 가이드가 테마를 바꾸면 알려온다 — 다시 읽지 않고 클래스만 갈아 끼운다 */
+  addEventListener('message', function (e) {
+    var d = e.data;
+    if (!d || (d.fxTheme !== 'dark' && d.fxTheme !== 'light')) return;
+    document.documentElement.classList.toggle('dark', d.fxTheme === 'dark');
+  });
+  addEventListener('load', send);
+  addEventListener('resize', send);
+  if (document.fonts) document.fonts.ready.then(send);
+  /* 엔진판(_run.html)은 늦게 그려지고 그리드·표는 더 늦다 — 처음 8초만 훑고 그 뒤는 ResizeObserver 에 맡긴다 */
+  timer = setInterval(function () { send(); if (Date.now() - t0 > 8000) clearInterval(timer); }, 400);
+  send();
+})();
+</script>
+</body>
+</html>

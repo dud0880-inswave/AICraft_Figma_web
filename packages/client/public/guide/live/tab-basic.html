@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<!-- 테마는 바깥(가이드)이 정한다. 첫 페인트 **전에** 걸어야 흰 화면이 한 번 번쩍이지 않는다.
+     :root.dark 는 base.css 가 color-scheme:dark 로 바꾸는 스위치이고,
+     그러면 variable.css 의 light-dark() 토큰이 전부 다크 값으로 뒤집힌다. -->
+<script>if (location.hash === '#dark') document.documentElement.classList.add('dark');</script>
+<title>tab-basic — 변환 결과</title>
+<link rel="stylesheet" href="_ws/stylesheet.css">
+<link rel="stylesheet" href="_ws/stylesheet_ext.css">
+<link rel="stylesheet" href="_ws/fullcalendar.css">
+<link rel="stylesheet" href="_ws/variable.css">
+<link rel="stylesheet" href="_ws/base.css">
+<style>
+  /* 테마는 오로지 바깥(가이드)이 정한다 — 정본의 :root{color-scheme:light dark}는 **OS 설정**을 따르므로
+     그대로 두면 가이드를 라이트로 돌려도 OS가 다크인 사람에게는 다크로 남는다. 라이트를 못박아 둔다.
+     (다크는 head 스크립트가 거는 :root.dark 가 color-scheme:dark 로 덮는다 — 이 규칙은 그때 아예 안 걸린다) */
+  :root:not(.dark){color-scheme:light}
+  /* 가이드가 이 문서를 iframe으로 싣는다. 바깥 테두리는 가이드가 그리므로
+     문서 자체는 여백 없이 조각만 담는다. */
+  html,body{margin:0;padding:0}
+  .sub_contents{margin:0 !important;min-height:0 !important;background:transparent !important}   /* padding 은 base.css 의 20px 를 그대로 쓴다 — 「완성 모습」 안쪽 여백 */
+  /* base.css는 Pretendard를 굵기별 파일로 부르지만 번들에는 가변 폰트 한 벌만 둔다.
+     같은 패밀리로 뒤에 선언해 1.8MB를 더 싣지 않고도 글꼴이 맞는다. */
+  @font-face{
+    font-family:'Pretendard'; font-weight:45 920; font-style:normal; font-display:swap;
+    src:local('Pretendard Variable'), local('Pretendard'),
+        url(../assets/fonts/PretendardVariable.woff2) format('woff2-variations');
+  }
+</style>
+</head>
+<body>
+<!-- templatebox는 감싸지 않는다 — 디자인 템플릿 파일 자체의 섹션 래퍼라
+     회색 면과 빈 여백만 만든다(가이드에서도 제외한 클래스다). -->
+<div class="w2group sub_contents">
+<div id="wq_uuid_176" class="w2group tbcbox"><div id="wq_uuid_177" class="w2tabcontrol tbc"><ul id="wq_uuid_177_tabhost" class="w2tabcontrol_tabhost " role="tablist"><li id="wq_uuid_177_tab_tabs1" class="w2tabcontrol_li  w2tabcontrol_li_1 w2tabcontrol_active w2tabcontrol_selected" index="1"><div class="w2tabcontrol_tab_center"><a role="tab" id="wq_uuid_177_tab_tabs1_tabHTML" aria-controls="wq_uuid_177_contents_content1" aria-selected="true" href="javascript:void(null);" title="탭1">탭1</a></div><div class="w2tabcontrol_tab_left"></div><div class="w2tabcontrol_tab_right"><div id="wq_uuid_177_tab_tabs1_close" class="w2tabcontrol_tab_close"></div></div></li><li id="wq_uuid_177_tab_tabs2" class="w2tabcontrol_li  w2tabcontrol_li_2" index="2"><div class="w2tabcontrol_tab_center"><a role="tab" id="wq_uuid_177_tab_tabs2_tabHTML" aria-controls="wq_uuid_177_contents_content2" aria-selected="false" href="javascript:void(null);" title="탭2">탭2</a></div><div class="w2tabcontrol_tab_left"></div><div class="w2tabcontrol_tab_right"><div id="wq_uuid_177_tab_tabs2_close" class="w2tabcontrol_tab_close"></div></div></li><li id="wq_uuid_177_tab_tabs3" class="w2tabcontrol_li  w2tabcontrol_li_3" index="3"><div class="w2tabcontrol_tab_center"><a role="tab" id="wq_uuid_177_tab_tabs3_tabHTML" aria-controls="wq_uuid_177_contents_content3" aria-selected="false" href="javascript:void(null);" title="탭3">탭3</a></div><div class="w2tabcontrol_tab_left"></div><div class="w2tabcontrol_tab_right"><div id="wq_uuid_177_tab_tabs3_close" class="w2tabcontrol_tab_close"></div></div></li><li id="wq_uuid_177_tab_tabs4" class="w2tabcontrol_li  w2tabcontrol_li_4" index="4"><div class="w2tabcontrol_tab_center"><a role="tab" id="wq_uuid_177_tab_tabs4_tabHTML" aria-controls="wq_uuid_177_contents_content4" aria-selected="false" href="javascript:void(null);" title="탭4">탭4</a></div><div class="w2tabcontrol_tab_left"></div><div class="w2tabcontrol_tab_right"><div id="wq_uuid_177_tab_tabs4_close" class="w2tabcontrol_tab_close"></div></div></li><li id="wq_uuid_177_tab_tabs5" class="w2tabcontrol_li  w2tabcontrol_li_5" index="5"><div class="w2tabcontrol_tab_center"><a role="tab" id="wq_uuid_177_tab_tabs5_tabHTML" aria-controls="wq_uuid_177_contents_content5" aria-selected="false" href="javascript:void(null);" title="탭5">탭5</a></div><div class="w2tabcontrol_tab_left"></div><div class="w2tabcontrol_tab_right"><div id="wq_uuid_177_tab_tabs5_close" class="w2tabcontrol_tab_close"></div></div></li></ul><div id="wq_uuid_177_container" class="w2tabcontrol_container"><div id="wq_uuid_177_contents_content1" class="w2tabcontrol_contents" role="tabpanel" aria-labelledby="wq_uuid_177_tab_tabs1_tabHTML" tabindex="0" style="display: block; visibility: visible;"><h3 id="wq_uuid_177_contents_content1_bridge_helper" style="position:absolute;text-indent : -10000px;height:0px;" class="w2tabcontrol_contents_bridge_helper w2tabcontrol_contents_bridge_selected">탭1</h3><div id="wq_uuid_177_contents_content1_body" class="w2group w2tabcontrol_contents_wrapper w2tabcontrol_contents_wrapper_selected"><div id="wq_uuid_179" style="display: flex;align-items: center;    justify-content: center;height: 50px;" class="w2textbox ">탭 컨텐츠 영역</div></div></div><div id="wq_uuid_177_contents_content2" class="w2tabcontrol_contents" role="tabpanel" aria-labelledby="wq_uuid_177_tab_tabs2_tabHTML" tabindex="0" style="display: none; visibility: hidden;"><h3 id="wq_uuid_177_contents_content2_bridge_helper" style="position:absolute;text-indent : -10000px;height:0px;" class="w2tabcontrol_contents_bridge_helper">탭2</h3></div><div id="wq_uuid_177_contents_content3" class="w2tabcontrol_contents" role="tabpanel" aria-labelledby="wq_uuid_177_tab_tabs3_tabHTML" tabindex="0" style="display: none; visibility: hidden;"><h3 id="wq_uuid_177_contents_content3_bridge_helper" style="position:absolute;text-indent : -10000px;height:0px;" class="w2tabcontrol_contents_bridge_helper">탭3</h3></div><div id="wq_uuid_177_contents_content4" class="w2tabcontrol_contents" role="tabpanel" aria-labelledby="wq_uuid_177_tab_tabs4_tabHTML" tabindex="0" style="display: none; visibility: hidden;"><h3 id="wq_uuid_177_contents_content4_bridge_helper" style="position:absolute;text-indent : -10000px;height:0px;" class="w2tabcontrol_contents_bridge_helper">탭4</h3></div><div id="wq_uuid_177_contents_content5" class="w2tabcontrol_contents" role="tabpanel" aria-labelledby="wq_uuid_177_tab_tabs5_tabHTML" tabindex="0" style="display: none; visibility: hidden;"><h3 id="wq_uuid_177_contents_content5_bridge_helper" style="position:absolute;text-indent : -10000px;height:0px;" class="w2tabcontrol_contents_bridge_helper">탭5</h3></div></div></div></div>
+</div>
+
+<script>
+/* 이 조각의 실제 높이를 바깥(가이드)에 알린다.
+   file:// 에서는 부모가 iframe 안쪽을 잴 수 없다(교차 출처) — 그래서 안쪽이 스스로 재서 보낸다.
+   data/live.js 의 값은 이 신호가 닿기 전까지 쓰는 초기 추정치일 뿐이다.
+   덕분에 보는 이의 창 폭이 달라져 내용이 다시 접혀도 프레임이 따라 커진다(잘리지 않는다). */
+(function () {
+  var q = location.search.match(/[?&]id=([a-z0-9-]+)/);
+  var id = q ? q[1] : location.pathname.split('/').pop().replace(/\.html$/, '');
+  var last = 0, ro = null, t0 = Date.now(), timer;
+  function send() {
+    var el = document.querySelector('.sub_contents') || document.body;
+    if (!el) return;
+    var h = Math.ceil(el.getBoundingClientRect().height);
+    if (!h || h === last) return;
+    last = h;
+    try { parent.postMessage({ fxLiveHeight: h, id: id }, '*'); } catch (e) {}
+    if (window.ResizeObserver && !ro) { ro = new ResizeObserver(send); ro.observe(el); }
+  }
+
+  /* 가이드가 테마를 바꾸면 알려온다 — 다시 읽지 않고 클래스만 갈아 끼운다 */
+  addEventListener('message', function (e) {
+    var d = e.data;
+    if (!d || (d.fxTheme !== 'dark' && d.fxTheme !== 'light')) return;
+    document.documentElement.classList.toggle('dark', d.fxTheme === 'dark');
+  });
+  addEventListener('load', send);
+  addEventListener('resize', send);
+  if (document.fonts) document.fonts.ready.then(send);
+  /* 엔진판(_run.html)은 늦게 그려지고 그리드·표는 더 늦다 — 처음 8초만 훑고 그 뒤는 ResizeObserver 에 맡긴다 */
+  timer = setInterval(function () { send(); if (Date.now() - t0 > 8000) clearInterval(timer); }, 400);
+  send();
+})();
+</script>
+</body>
+</html>

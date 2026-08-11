@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    <title>loading</title>
+    <style type="text/css">
+    body {margin:0px; background:#fff;overflow: hidden}
+    body.new_style {background:transparent;width:100%;height:100%}
+    .ly_loading {padding:20px 0 0 13px; width:280px; height:81px; border:1px solid #b3b3b3; background:url("images/bg_ly.gif") left top repeat-x;position:relative;}
+    .pro_loading {width:100%;height:20px;font-size:13px;font-color:#3f3f67;font-weight:bold;}
+
+    /* type1 ~ type4 공통 */
+    .process_message {display:grid;place-items:center;position:fixed;top:0;right:0;bottom:0;left:0;z-index:1000;height:100vh;margin:0;padding:0;background:transparent}
+    .process_message .process_close {background:transparent;text-align:center}
+    .process_message .btn_process_close {height:23px;padding:0 7px;border:1px solid #DCE0E4;border-radius:4px;background:#fff;color:#212B36;font-size:12px;cursor:pointer}
+    .process_message .btn_process_close:hover {border-color:#A7B1BB}
+
+    /* type1: 프로그레스 바 + 텍스트 */
+    .process_message.type1 .process_message_wrap {width:auto;height:auto;padding:24px 20px 20px;border-radius:8px;background:#FFFFFF;box-sizing:border-box}
+    .process_message.type1 .process_message_wrap .txt {margin-bottom:6px;font-size:12px;font-weight:bold;text-align:center}
+    .process_message.type1 .ani {position:relative;width:180px;height:20px;border:2px solid #56A6F8;border-radius:40px;background:#FFFFFF;box-sizing:border-box}
+    .process_message.type1 .ani::before {content:"";position:absolute;top:0;bottom:0;left:0;width:25%;margin:2px;border-radius:inherit;background:transparent linear-gradient(90deg, #006FDF 0%, #56A6F8 100%) 0% 0% no-repeat padding-box;animation:process_type1_rotate 1s infinite linear}
+    .process_message.type1 .process_close {margin-top:12px}
+    @keyframes process_type1_rotate { 50% {left:100%;transform: translateX(calc(-100% - 4px))} }
+
+    /* type2: 3D 큐브 */
+    .process_message.type2 .process_message_wrap {width:auto;background:transparent;animation:process_type2_bouncing 1.6s infinite;transform-style:preserve-3d}
+    .process_message.type2 .scene {display:grid;place-items:center;position:relative;z-index:2;width:220px;height:220px;background:transparent}
+    .process_message.type2 .cube {background:transparent;animation:process_type2_rotation 1.6s infinite;transform-style:preserve-3d;transform:rotateX(45deg) rotateZ(45deg)}
+    .process_message.type2 .cube_faces {position:relative;width:35px;height:35px;transform:translateX(0) translateY(0) translateZ(-40px);transform-style:preserve-3d;transform-origin:0 0}
+    .process_message.type2 .cube_face {position:absolute;border:0;background:#52A4F7;inset:0}
+    .process_message.type2 .cube_face.shadow {animation:process_type2_bouncing_shadow 1.6s infinite;transform:translateZ(-35px)}
+    .process_message.type2 .cube_face.top {background:linear-gradient(#52A4F7, #0271E0) no-repeat;transform:translateZ(35px)}
+    .process_message.type2 .cube_face.front {background:linear-gradient(#52A4F7, #0271E0) no-repeat;transform-origin:0 50%;transform:rotateY(-90deg)}
+    .process_message.type2 .cube_face.back {background:linear-gradient(#52A4F7, #0271E0) no-repeat;transform-origin:0 50%;transform:rotateY(-90deg) translateZ(-35px)}
+    .process_message.type2 .cube_face.right {background:linear-gradient(#0271E0, #52A4F7) no-repeat;transform-origin:50% 0;transform:rotateX(-90deg) translateY(-35px)}
+    .process_message.type2 .cube_face.left {background:linear-gradient(#52A4F7, #0271E0) no-repeat;transform-origin:50% 0;transform:rotateX(-90deg) translateY(-35px) translateZ(35px)}
+    .process_message.type2 {position:relative}
+    .process_message.type2 > .process_close {position:absolute;bottom:33%;left:50%;transform:translateX(-50%)}
+    @keyframes process_type2_rotation {
+        0% {transform:rotateX(45deg) rotateY(0) rotateZ(45deg);animation-timing-function:cubic-bezier(0.17, 0.84, 0.44, 1)}
+        50% {transform:rotateX(45deg) rotateY(0) rotateZ(225deg);animation-timing-function:cubic-bezier(0.76, 0.05, 0.86, 0.06)}
+        100% {transform:rotateX(45deg) rotateY(0) rotateZ(405deg);animation-timing-function:cubic-bezier(0.17, 0.84, 0.44, 1)}
+    }
+    @keyframes process_type2_bouncing {
+        0% {transform:translateY(-40px);animation-timing-function:cubic-bezier(0.76, 0.05, 0.86, 0.06)}
+        45% {transform:translateY(40px);animation-timing-function:cubic-bezier(0.23, 1, 0.32, 1)}
+        100% {transform:translateY(-40px);animation-timing-function:cubic-bezier(0.76, 0.05, 0.86, 0.06)}
+    }
+    @keyframes process_type2_bouncing_shadow {
+        0% {transform:translateZ(-35px) scale(1.3);animation-timing-function:cubic-bezier(0.76, 0.05, 0.86, 0.06);opacity:0.1}
+        45% {transform:translateZ(0);animation-timing-function:cubic-bezier(0.23, 1, 0.32, 1);opacity:0.3}
+        100% {transform:translateZ(-35px) scale(1.3);animation-timing-function:cubic-bezier(0.76, 0.05, 0.86, 0.06);opacity:0.1}
+    }
+
+    /* type3: 스피너 */
+    .process_message.type3 .process_message_wrap {background:transparent}
+    .process_message.type3 .spin_round {width:56px;height:56px;border-radius:50%;background:radial-gradient(farthest-side,#006FDF 94%,#0000) top/9px 9px no-repeat, conic-gradient(#0000 30%,#006FDF);-webkit-mask: radial-gradient(farthest-side,#0000 calc(100% - 9px),#000 0);animation:process_type3_spin 1s infinite linear}
+    .process_message.type3 .process_close {margin-top:20px}
+    @keyframes process_type3_spin { 100% {transform: rotate(1turn)} }
+
+    /* type4: 점 3개 */
+    .process_message.type4 .process_message_wrap {background:transparent}
+    .process_message.type4 .process_message_wrap > .process_message_dot {display:inline-block;width:10px;height:10px;border-radius:50%;background:#006FDF;vertical-align:middle;animation:process_type4_dot 0.8s infinite alternate}
+    .process_message.type4 .process_message_wrap > .process_message_dot:nth-child(2) {animation-delay:0.3s}
+    .process_message.type4 .process_message_wrap > .process_message_dot:nth-child(3) {animation-delay:0.6s}
+    .process_message.type4 .process_message_wrap > .process_message_dot + .process_message_dot {margin-left:6px}
+    .process_message.type4 .process_close {margin-top:20px}
+    @keyframes process_type4_dot { 0% {opacity:1} 100% {opacity:.2} }
+    </style>
+    <script type="text/javascript" src="htmlCommon.js"></script>
+    <script type="text/javascript">
+        /* postMessage 기반 초기화: parent 직접 접근 대신 메시지 통신 사용 */
+        function init(data){
+            try {
+                var processMsgStyle = data.processMsgStyle || "";
+                var processMsg = data.processMsg || "";
+                var abortTrigger = data.abortTrigger || "";
+                var hideTrigger = data.hideTrigger || "";
+                var abortBtnMsg = data.abortBtnMsg || "Close";
+                var hideBtnMsg = data.hideBtnMsg || "Cancel";
+
+                var allTypes = ["type1", "type2", "type3", "type4"];
+                if (processMsgStyle === "type1" || processMsgStyle === "type2" || processMsgStyle === "type3" || processMsgStyle === "type4") {
+                    document.body.className = "new_style";
+                    document.getElementById("default_wrapper").style.display = "none";
+                    for (var t = 0; t < allTypes.length; t++) {
+                        var groupEl = document.getElementById("group_" + allTypes[t]);
+                        if (groupEl) {
+                            groupEl.style.display = (allTypes[t] === processMsgStyle) ? "" : "none";
+                        }
+                        var closeEl = document.getElementById("process_close_" + allTypes[t]);
+                        if (closeEl) {
+                            closeEl.style.display = "none";
+                        }
+                    }
+                    var textEl = document.getElementById("text_msg_" + processMsgStyle);
+                    if (textEl) {
+                        _safeInnerHTML(textEl, processMsg);
+                    }
+                    if (abortTrigger === "true") {
+                        var closeEl = document.getElementById("process_close_" + processMsgStyle);
+                        if (closeEl) {
+                            closeEl.style.display = "";
+                            var closeBtn = closeEl.querySelector(".btn_process_close");
+                            if (closeBtn) {
+                                closeBtn.onclick = function() {
+                                    window.parent.postMessage({ type: "processMsg_abort" }, "*");
+                                };
+                            }
+                        }
+                    }
+                    return;
+                }
+
+                document.body.className = "";
+                document.getElementById("default_wrapper").style.display = "";
+                for (var t = 0; t < allTypes.length; t++) {
+                    var groupEl = document.getElementById("group_" + allTypes[t]);
+                    if (groupEl) { groupEl.style.display = "none"; }
+                }
+                _safeInnerHTML(document.getElementById("processMsgLayer"), processMsg);
+                var abortBtn = document.getElementById("abortButton");
+                var hideBtn = document.getElementById("hideButton");
+                abortBtn.style.display = "none";
+                hideBtn.style.display = "none";
+
+                abortBtn.value = abortBtnMsg;
+                hideBtn.value = hideBtnMsg;
+
+                if( window.processKey ) {
+                    clearInterval( window.processKey );
+                }
+
+                window.processKey = setInterval( function(){ setColor() } , 500 );
+
+                if(hideTrigger === "true"){
+                    hideBtn.style.display = "block";
+                    hideBtn.onclick = function(){
+                        window.parent.postMessage({ type: "processMsg_hide" }, "*");
+                    }
+                }
+
+                // WEF-125
+                if(abortTrigger === "true"){
+                    abortBtn.style.display = "block";
+                    abortBtn.onclick = function(){
+                        window.parent.postMessage({ type: "processMsg_abort" }, "*");
+                    };
+                }
+
+            } catch(e) {
+                /* parent 접근 없이 콘솔에만 출력 */
+            }
+        }
+
+        /* 부모로부터 초기화 데이터를 postMessage로 수신 */
+        window.addEventListener("message", function(e) {
+            try {
+                if (e.data && e.data.type === "processMsg_init") {
+                    init(e.data);
+                }
+            } catch(ex) {
+                /* 메시지 처리 오류 무시 */
+            }
+        }, false);
+
+        /* iframe 로드 완료 시 부모에게 ready 신호 전송 */
+        window.onload = function() {
+            try {
+                window.parent.postMessage({ type: "processMsg_ready" }, "*");
+            } catch(e) {
+                /* ready 전송 실패 무시 */
+            }
+        };
+
+        var colorArr = [ "#3f3f67","#EEEEEE" ];
+        function setColor(){
+            var color = colorArr.shift();
+            colorArr.push(color);
+            document.getElementById("processMsgLayer").style.color = color;
+        }
+
+    </script>
+</head>
+<body>
+    <!-- default: 기존 프로세스 메세지 -->
+    <div id="default_wrapper" class="ly_loading">
+        <div id="processMsgLayer" class="pro_loading" style="overflow:hidden;white-space:nowrap;text-overflow:ellipsis;width:200px;"></div>
+        <img src="images/progressingbar.gif" width="267px" height="23px" class="loading_bar" alt="Loading">
+        <input id='hideButton' type='button' style="position:absolute;top:20px;right:14px;height:20px;text-align:center;word-wrap:break-word;display:none;" value="" />
+        <input id='abortButton' type='button' style="position:absolute;top:20px;right:14px;height:20px;text-align:center;word-wrap:break-word;display:none;" value="" />
+    </div>
+
+    <!-- type1: 프로그레스 바 + 텍스트 -->
+    <div id="group_type1" class="process_message type1" style="display:none;">
+        <div class="process_message_wrap">
+            <div id="text_msg_type1" class="txt">처리중입니다.</div>
+            <div class="ani"></div>
+            <div id="process_close_type1" class="process_close" style="display:none;">
+                <button class="btn_process_close" type="button">취소</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- type2: 3D 큐브 -->
+    <div id="group_type2" class="process_message type2" style="display:none;">
+        <div class="process_message_wrap">
+            <div class="scene">
+                <div class="cube">
+                    <div class="cube_faces">
+                        <div class="cube_face shadow"></div>
+                        <div class="cube_face bottom"></div>
+                        <div class="cube_face top"></div>
+                        <div class="cube_face front"></div>
+                        <div class="cube_face back"></div>
+                        <div class="cube_face right"></div>
+                        <div class="cube_face left"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div id="process_close_type2" class="process_close" style="display:none;">
+            <button class="btn_process_close" type="button">취소</button>
+        </div>
+    </div>
+
+    <!-- type3: 스피너 -->
+    <div id="group_type3" class="process_message type3" style="display:none;">
+        <div class="process_message_wrap">
+            <div class="spin_round"></div>
+            <div id="process_close_type3" class="process_close" style="display:none;">
+                <button class="btn_process_close" type="button">취소</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- type4: 점 3개 -->
+    <div id="group_type4" class="process_message type4" style="display:none;">
+        <div class="process_message_wrap">
+            <div class="process_message_dot"></div>
+            <div class="process_message_dot"></div>
+            <div class="process_message_dot"></div>
+            <div id="process_close_type4" class="process_close" style="display:none;">
+                <button class="btn_process_close" type="button">취소</button>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

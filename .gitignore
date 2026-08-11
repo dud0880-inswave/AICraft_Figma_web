@@ -6,7 +6,7 @@ dist/
 packages/*/dist/
 
 # Database
-data*/
+packages/server/data*/
 packages/*/data/
 
 # Environment & Config

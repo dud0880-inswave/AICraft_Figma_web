@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<!-- 테마는 바깥(가이드)이 정한다. 첫 페인트 **전에** 걸어야 흰 화면이 한 번 번쩍이지 않는다.
+     :root.dark 는 base.css 가 color-scheme:dark 로 바꾸는 스위치이고,
+     그러면 variable.css 의 light-dark() 토큰이 전부 다크 값으로 뒤집힌다. -->
+<script>if (location.hash === '#dark') document.documentElement.classList.add('dark');</script>
+<title>cal-native — 변환 결과</title>
+<link rel="stylesheet" href="_ws/stylesheet.css">
+<link rel="stylesheet" href="_ws/stylesheet_ext.css">
+<link rel="stylesheet" href="_ws/fullcalendar.css">
+<link rel="stylesheet" href="_ws/variable.css">
+<link rel="stylesheet" href="_ws/base.css">
+<style>
+  /* 테마는 오로지 바깥(가이드)이 정한다 — 정본의 :root{color-scheme:light dark}는 **OS 설정**을 따르므로
+     그대로 두면 가이드를 라이트로 돌려도 OS가 다크인 사람에게는 다크로 남는다. 라이트를 못박아 둔다.
+     (다크는 head 스크립트가 거는 :root.dark 가 color-scheme:dark 로 덮는다 — 이 규칙은 그때 아예 안 걸린다) */
+  :root:not(.dark){color-scheme:light}
+  /* 가이드가 이 문서를 iframe으로 싣는다. 바깥 테두리는 가이드가 그리므로
+     문서 자체는 여백 없이 조각만 담는다. */
+  html,body{margin:0;padding:0}
+  .sub_contents{margin:0 !important;min-height:0 !important;background:transparent !important}   /* padding 은 base.css 의 20px 를 그대로 쓴다 — 「완성 모습」 안쪽 여백 */
+  /* base.css는 Pretendard를 굵기별 파일로 부르지만 번들에는 가변 폰트 한 벌만 둔다.
+     같은 패밀리로 뒤에 선언해 1.8MB를 더 싣지 않고도 글꼴이 맞는다. */
+  @font-face{
+    font-family:'Pretendard'; font-weight:45 920; font-style:normal; font-display:swap;
+    src:local('Pretendard Variable'), local('Pretendard'),
+        url(../assets/fonts/PretendardVariable.woff2) format('woff2-variations');
+  }
+</style>
+</head>
+<body>
+<!-- templatebox는 감싸지 않는다 — 디자인 템플릿 파일 자체의 섹션 래퍼라
+     회색 면과 빈 여백만 만든다(가이드에서도 제외한 클래스다). -->
+<div class="w2group sub_contents">
+<div id="wq_uuid_1040" name="wq_uuid_1040" class="w2calendar w2calendar_class1 " role="calendar"><div class="w2calendar_wrap"><div class="w2calendar_header"><button id="wq_uuid_1040_last_year" class="w2calendar_header_last_year" title="Previous Year">Previous Year</button><button class="w2calendar_header_last_month" title="Previous Month">Previous Month</button><select id="wq_uuid_1040_selectbox_year" class="w2calendar_selectbox_year_native" title="Select year">	<option value="1978 ">1978</option>	<option value="1979 ">1979</option>	<option value="1980 ">1980</option>	<option value="1981 ">1981</option>	<option value="1982 ">1982</option>	<option value="1983 ">1983</option>	<option value="1984 ">1984</option>	<option value="1985 ">1985</option>	<option value="1986 ">1986</option>	<option value="1987 ">1987</option>	<option value="1988 ">1988</option>	<option value="1989 ">1989</option>	<option value="1990 ">1990</option>	<option value="1991 ">1991</option>	<option value="1992 ">1992</option>	<option value="1993 ">1993</option>	<option value="1994 ">1994</option>	<option value="1995 ">1995</option>	<option value="1996 ">1996</option>	<option value="1997 ">1997</option>	<option value="1998 ">1998</option>	<option value="1999 ">1999</option>	<option value="2000 ">2000</option>	<option value="2001 ">2001</option>	<option value="2002 ">2002</option>	<option value="2003 ">2003</option>	<option value="2004 ">2004</option>	<option value="2005 ">2005</option>	<option value="2006 ">2006</option>	<option value="2007 ">2007</option>	<option value="2008 ">2008</option>	<option value="2009 ">2009</option>	<option value="2010 ">2010</option>	<option value="2011 ">2011</option>	<option value="2012 ">2012</option>	<option value="2013 ">2013</option>	<option value="2014 ">2014</option>	<option value="2015 ">2015</option>	<option value="2016 ">2016</option>	<option value="2017 ">2017</option>	<option value="2018 ">2018</option>	<option value="2019 ">2019</option>	<option value="2020 ">2020</option>	<option value="2021 ">2021</option>	<option value="2022 ">2022</option>	<option value="2023 ">2023</option>	<option value="2024 ">2024</option>	<option value="2025 ">2025</option>	<option value="2026 ">2026</option>	<option value="2027 ">2027</option>	<option value="2028 ">2028</option>	<option value="2029 ">2029</option>	<option value="2030 ">2030</option>	<option value="9999 ">9999</option></select><select id="wq_uuid_1040_selectbox_month" class="w2calendar_selectbox_month_native" title="Select month">   <option value="1 ">Jan</option>   <option value="2 ">Feb</option>   <option value="3 ">Mar</option>   <option value="4 ">Apr</option>   <option value="5 ">May</option>   <option value="6 ">Jun</option>   <option value="7 ">Jul</option>   <option value="8 ">Aug</option>   <option value="9 ">Sep</option>   <option value="10 ">Oct</option>   <option value="11 ">Nov</option>   <option value="12 ">Dec</option></select><button class="w2calendar_header_next_month" title="Next Month">Next Month</button><button class="w2calendar_header_next_year" title="Next Year">Next Year</button></div><div id="wq_uuid_1040_content" class="w2calendar_content"><table class="w2calendar_content_table"><caption class="w2blind">Calendar</caption><thead><tr><th class="w2calendar_col_day w2calendar_day0" title="Sunday" scope="col">Sunday</th><th class="w2calendar_col_day w2calendar_day1" title="Monday" scope="col">Monday</th><th class="w2calendar_col_day w2calendar_day2" title="Tuesday" scope="col">Tuesday</th><th class="w2calendar_col_day w2calendar_day3" title="Wednesday" scope="col">Wednesday</th><th class="w2calendar_col_day w2calendar_day4" title="Thursday" scope="col">Thursday</th><th class="w2calendar_col_day w2calendar_day5" title="Friday" scope="col">Friday</th><th class="w2calendar_col_day w2calendar_day6" title="Saturday" scope="col">Saturday</th></tr></thead><tbody><tr><td id="wq_uuid_1040_cell_0_0" class="w2calendar_col_date w2calendar_date w2calendar_date_off w2calendar_date_lastmonth" index="28">28</td><td id="wq_uuid_1040_cell_0_1" class="w2calendar_col_date w2calendar_date w2calendar_date_off w2calendar_date_lastmonth" index="29">29</td><td id="wq_uuid_1040_cell_0_2" class="w2calendar_col_date w2calendar_date w2calendar_date_off w2calendar_date_lastmonth" index="30">30</td><td id="wq_uuid_1040_cell_0_3" class="w2calendar_col_date w2calendar_date_on w2calendar_date_1 w2calendar_day_3 " title="" index="1"><button>1</button></td><td id="wq_uuid_1040_cell_0_4" class="w2calendar_col_date w2calendar_date_on w2calendar_date_2 w2calendar_day_4 " title="" index="2"><button>2</button></td><td id="wq_uuid_1040_cell_0_5" class="w2calendar_col_date w2calendar_date_on w2calendar_date_3 w2calendar_day_5 " title="" index="3"><button>3</button></td><td id="wq_uuid_1040_cell_0_6" class="w2calendar_col_date w2calendar_date_on w2calendar_date_4 w2calendar_day_6 " title="" index="4"><button>4</button></td></tr><tr><td id="wq_uuid_1040_cell_1_0" class="w2calendar_col_date w2calendar_date_on w2calendar_date_5 w2calendar_day_0 " title="" index="5"><button>5</button></td><td id="wq_uuid_1040_cell_1_1" class="w2calendar_col_date w2calendar_date_on w2calendar_date_6 w2calendar_day_1 " title="" index="6"><button>6</button></td><td id="wq_uuid_1040_cell_1_2" class="w2calendar_col_date w2calendar_date_on w2calendar_date_7 w2calendar_day_2 " title="" index="7"><button>7</button></td><td id="wq_uuid_1040_cell_1_3" class="w2calendar_col_date w2calendar_date_on w2calendar_date_8 w2calendar_day_3 " title="" index="8"><button>8</button></td><td id="wq_uuid_1040_cell_1_4" class="w2calendar_col_date w2calendar_date_on w2calendar_date_9 w2calendar_day_4 " title="" index="9"><button>9</button></td><td id="wq_uuid_1040_cell_1_5" class="w2calendar_col_date w2calendar_date_on w2calendar_date_10 w2calendar_day_5 " title="" index="10"><button>10</button></td><td id="wq_uuid_1040_cell_1_6" class="w2calendar_col_date w2calendar_date_on w2calendar_date_11 w2calendar_day_6 " title="" index="11"><button>11</button></td></tr><tr><td id="wq_uuid_1040_cell_2_0" class="w2calendar_col_date w2calendar_date_on w2calendar_date_12 w2calendar_day_0 " title="" index="12"><button>12</button></td><td id="wq_uuid_1040_cell_2_1" class="w2calendar_col_date w2calendar_date_on w2calendar_date_13 w2calendar_day_1 " title="" index="13"><button>13</button></td><td id="wq_uuid_1040_cell_2_2" class="w2calendar_col_date w2calendar_date_on w2calendar_date_14 w2calendar_day_2 " title="" index="14"><button>14</button></td><td id="wq_uuid_1040_cell_2_3" class="w2calendar_col_date w2calendar_date_on w2calendar_date_15 w2calendar_day_3 " title="" index="15"><button>15</button></td><td id="wq_uuid_1040_cell_2_4" class="w2calendar_col_date w2calendar_date_on w2calendar_date_16 w2calendar_day_4 " title="" index="16"><button>16</button></td><td id="wq_uuid_1040_cell_2_5" class="w2calendar_col_date w2calendar_date_on w2calendar_date_17 w2calendar_day_5 " title="" index="17"><button>17</button></td><td id="wq_uuid_1040_cell_2_6" class="w2calendar_col_date w2calendar_date_on w2calendar_date_18 w2calendar_day_6 " title="" index="18"><button>18</button></td></tr><tr><td id="wq_uuid_1040_cell_3_0" class="w2calendar_col_date w2calendar_date_on w2calendar_date_19 w2calendar_day_0 " title="" index="19"><button>19</button></td><td id="wq_uuid_1040_cell_3_1" class="w2calendar_col_date w2calendar_date_on w2calendar_date_20 w2calendar_day_1 " title="" index="20"><button>20</button></td><td id="wq_uuid_1040_cell_3_2" class="w2calendar_col_date w2calendar_date_on w2calendar_date_21 w2calendar_day_2 " title="" index="21"><button>21</button></td><td id="wq_uuid_1040_cell_3_3" class="w2calendar_col_date w2calendar_date_on w2calendar_date_22 w2calendar_day_3 " title="" index="22"><button>22</button></td><td id="wq_uuid_1040_cell_3_4" class="w2calendar_col_date w2calendar_date_on w2calendar_date_23 w2calendar_day_4 " title="" index="23"><button>23</button></td><td id="wq_uuid_1040_cell_3_5" class="w2calendar_col_date w2calendar_date_on w2calendar_date_24 w2calendar_day_5 " title="" index="24"><button>24</button></td><td id="wq_uuid_1040_cell_3_6" class="w2calendar_col_date w2calendar_date_on w2calendar_date_25 w2calendar_day_6 " title="" index="25"><button>25</button></td></tr><tr><td id="wq_uuid_1040_cell_4_0" class="w2calendar_col_date w2calendar_date_on w2calendar_date_26 w2calendar_day_0 " title="" index="26"><button>26</button></td><td id="wq_uuid_1040_cell_4_1" class="w2calendar_col_date w2calendar_date_on w2calendar_date_27 w2calendar_day_1 " title="" index="27"><button>27</button></td><td id="wq_uuid_1040_cell_4_2" class="w2calendar_col_date w2calendar_date_on w2calendar_date_28 w2calendar_day_2 " title="" index="28"><button>28</button></td><td id="wq_uuid_1040_cell_4_3" class="w2calendar_col_date w2calendar_date_on w2calendar_date_29 w2calendar_day_3 " title="" index="29"><button>29</button></td><td id="wq_uuid_1040_cell_4_4" class="w2calendar_col_date w2calendar_date_on w2calendar_date_30 w2calendar_day_4 " title="" index="30"><button>30</button></td><td id="wq_uuid_1040_cell_4_5" class="w2calendar_col_date w2calendar_date_on w2calendar_date_31 w2calendar_day_5 w2calendar_selected  w2calendar_today" tabindex="0" title="" index="31"><button title="selected date">31</button></td><td id="wq_uuid_1040_cell_4_6" class="w2calendar_col_date w2calendar_date w2calendar_date_off w2calendar_date_nextmonth" index="1">1</td></tr><tr><td id="wq_uuid_1040_cell_5_0" class="w2calendar_col_date w2calendar_date w2calendar_date_off w2calendar_date_nextmonth" index="2">2</td><td id="wq_uuid_1040_cell_5_1" class="w2calendar_col_date w2calendar_date w2calendar_date_off w2calendar_date_nextmonth" index="3">3</td><td id="wq_uuid_1040_cell_5_2" class="w2calendar_col_date w2calendar_date w2calendar_date_off w2calendar_date_nextmonth" index="4">4</td><td id="wq_uuid_1040_cell_5_3" class="w2calendar_col_date w2calendar_date w2calendar_date_off w2calendar_date_nextmonth" index="5">5</td><td id="wq_uuid_1040_cell_5_4" class="w2calendar_col_date w2calendar_date w2calendar_date_off w2calendar_date_nextmonth" index="6">6</td><td id="wq_uuid_1040_cell_5_5" class="w2calendar_col_date w2calendar_date w2calendar_date_off w2calendar_date_nextmonth" index="7">7</td><td id="wq_uuid_1040_cell_5_6" class="w2calendar_col_date w2calendar_date w2calendar_date_off w2calendar_date_nextmonth" index="8">8</td></tr></tbody></table></div><table class="w2calendar_footer"><tbody><tr><td><button class="w2calendar_go_today" title="Today">Today</button></td><td><div id="wq_uuid_1040_currentDate" class="w2calendar_footer_date">2026/07/31</div></td></tr></tbody></table></div></div>
+</div>
+
+<script>
+/* 이 조각의 실제 높이를 바깥(가이드)에 알린다.
+   file:// 에서는 부모가 iframe 안쪽을 잴 수 없다(교차 출처) — 그래서 안쪽이 스스로 재서 보낸다.
+   data/live.js 의 값은 이 신호가 닿기 전까지 쓰는 초기 추정치일 뿐이다.
+   덕분에 보는 이의 창 폭이 달라져 내용이 다시 접혀도 프레임이 따라 커진다(잘리지 않는다). */
+(function () {
+  var q = location.search.match(/[?&]id=([a-z0-9-]+)/);
+  var id = q ? q[1] : location.pathname.split('/').pop().replace(/\.html$/, '');
+  var last = 0, ro = null, t0 = Date.now(), timer;
+  function send() {
+    var el = document.querySelector('.sub_contents') || document.body;
+    if (!el) return;
+    var h = Math.ceil(el.getBoundingClientRect().height);
+    if (!h || h === last) return;
+    last = h;
+    try { parent.postMessage({ fxLiveHeight: h, id: id }, '*'); } catch (e) {}
+    if (window.ResizeObserver && !ro) { ro = new ResizeObserver(send); ro.observe(el); }
+  }
+
+  /* 가이드가 테마를 바꾸면 알려온다 — 다시 읽지 않고 클래스만 갈아 끼운다 */
+  addEventListener('message', function (e) {
+    var d = e.data;
+    if (!d || (d.fxTheme !== 'dark' && d.fxTheme !== 'light')) return;
+    document.documentElement.classList.toggle('dark', d.fxTheme === 'dark');
+  });
+  addEventListener('load', send);
+  addEventListener('resize', send);
+  if (document.fonts) document.fonts.ready.then(send);
+  /* 엔진판(_run.html)은 늦게 그려지고 그리드·표는 더 늦다 — 처음 8초만 훑고 그 뒤는 ResizeObserver 에 맡긴다 */
+  timer = setInterval(function () { send(); if (Date.now() - t0 > 8000) clearInterval(timer); }, 400);
+  send();
+})();
+</script>
+</body>
+</html>

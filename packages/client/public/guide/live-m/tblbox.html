@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<!-- 뷰어가 다크 테마여도 라이트로 푼다(정본 CSS의 light-dark() 대응) -->
+<meta name="color-scheme" content="light">
+<title>tblbox — 변환 결과</title>
+<link rel="stylesheet" href="_ws/stylesheet.css">
+<link rel="stylesheet" href="_ws/stylesheet_ext.css">
+<link rel="stylesheet" href="_ws/fullcalendar.css">
+<link rel="stylesheet" href="_ws/variable.css">
+<link rel="stylesheet" href="_ws/base.css">
+<link rel="stylesheet" href="_ws/base_mobile.css">
+<style>
+  :root{color-scheme:light !important}
+  /* 가이드가 이 문서를 iframe으로 싣는다. 바깥 테두리는 가이드가 그리므로
+     문서 자체는 여백 없이 조각만 담는다.
+     단, 모바일은 base_mobile.css가 .sub_contents의 사방 20 패딩을 전제로 음수 마진
+     full-bleed를 쓰므로 패딩을 죽이지 않는다(죽이면 카드가 415px로 삐져나가 잘린다). */
+  html,body{margin:0;padding:0;background:#fff}
+  .sub_contents{margin:0 !important;min-height:0 !important;background:#ffffff !important}
+  /* base.css는 Pretendard를 굵기별 파일로 부르지만 번들에는 가변 폰트 한 벌만 둔다.
+     같은 패밀리로 뒤에 선언해 1.8MB를 더 싣지 않고도 글꼴이 맞는다. */
+  @font-face{
+    font-family:'Pretendard'; font-weight:45 920; font-style:normal; font-display:swap;
+    src:local('Pretendard Variable'), local('Pretendard'),
+        url(../assets/fonts/PretendardVariable.woff2) format('woff2-variations');
+  }
+</style>
+</head>
+<body>
+<!-- templatebox는 감싸지 않는다 — 디자인 템플릿 파일 자체의 섹션 래퍼라
+     회색 면과 빈 여백만 만든다(가이드에서도 제외한 클래스다). -->
+<div class="w2group sub_contents">
+<div id="wq_uuid_247" class="w2group tblbox"><table id="wq_uuid_248" class="w2group w2tb tbl w2tb_adaptive_layout"><colgroup id="wq_uuid_249" class="w2group "><col id="wq_uuid_250" style="width:150px;" class="w2group "><col id="wq_uuid_251" class="w2group "><col id="wq_uuid_252" style="width:150px;" class="w2group "><col id="wq_uuid_253" class="w2group "></colgroup><tbody><tr id="wq_uuid_254" class="w2group  w2tb_tr"><th id="wq_uuid_255" class="w2group w2tb_th"><div id="wq_uuid_256" class="w2textbox ">테이블헤더</div></th><td id="wq_uuid_257" class="w2group w2tb_td" data-title="테이블헤더"><input id="wq_uuid_258" style="width:120px;" class="w2input req" type="text"><div id="wq_uuid_259" role="combobox" aria-expanded="false" aria-autocomplete="none" style="width: 148px;" class="w2selectbox req" tabindex="0"><table class="w2selectbox_table_main"><tbody id="wq_uuid_259_main_tbody"><tr class="w2selectbox_row w2selectbox_row_main"><td class="w2selectbox_col_label"><div id="wq_uuid_259_label" role="document" aria-live="assertive" class="w2selectbox_label"></div></td><td class="w2selectbox_col_button" id="wq_uuid_259_button"></td></tr></tbody></table></div></td><th id="wq_uuid_260" class="w2group w2tb_th "><div id="wq_uuid_261" class="w2textbox ">테이블헤더</div></th><td id="wq_uuid_262" class="w2group w2tb_td" data-title="테이블헤더"><a id="wq_uuid_263" class="w2anchor2 " href="javascript:void(null);">Insert Text</a></td></tr><tr id="wq_uuid_264" class="w2group  w2tb_tr"><th id="wq_uuid_265" class="w2group w2tb_th " scope="row"><div id="wq_uuid_266" class="w2textbox ">테이블헤더</div></th><td id="wq_uuid_267" class="w2group w2tb_td" colspan="1" rowspan="1" data-title="테이블헤더"><div id="wq_uuid_268" style="width: 120px;" class="w2inputCalendar_div req w2inputCalendar_type_yearMonthDate"><div id="wq_uuid_268_div_input" class="w2inputCalendar_div_input" style="width: 304px; height: 48px;"><input id="wq_uuid_268_input" name="wq_uuid_268_input" class="w2inputCalendar_divInput " tabindex="0" style="width: 260px; height: 46px;"></div><div id="wq_uuid_268_div_img" class="w2inputCalendar_div_img"><button type="button" id="wq_uuid_268_img" class="w2inputCalendar_button" tabindex="0">Calendar</button></div></div></td><th id="wq_uuid_269" class="w2group w2tb_th "><div id="wq_uuid_270" class="w2textbox ">테이블헤더</div></th><td id="wq_uuid_271" class="w2group w2tb_td" data-title="테이블헤더"><a id="wq_uuid_272" class="w2anchor2 " href="javascript:void(null);">Insert Text</a></td></tr></tbody></table></div>
+</div>
+</body>
+</html>

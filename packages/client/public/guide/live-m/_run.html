@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="color-scheme" content="light">
+<title>변환 결과 — 직접 조작</title>
+<link rel="stylesheet" href="_ws/engine/_websquare_/skin/stylesheet.css">
+<link rel="stylesheet" href="_ws/engine/_websquare_/skin/stylesheet_ext.css">
+<link rel="stylesheet" href="_ws/engine/_websquare_/externalJS/fullcalendar3.6.2/fullcalendar.css">
+<link rel="stylesheet" href="_ws/variable.css">
+<link rel="stylesheet" href="_ws/base.css">
+<link rel="stylesheet" href="_ws/base_mobile.css">
+<style>
+  :root{color-scheme:light !important}
+  html,body{margin:0;padding:0;background:#fff;
+    font-family:'Pretendard','Malgun Gothic','Apple SD Gothic Neo',sans-serif}
+  .sub_contents{margin:0 !important;min-height:0 !important;background:#ffffff !important}
+  @font-face{font-family:'Pretendard';font-weight:45 920;font-style:normal;font-display:swap;
+    src:local('Pretendard Variable'), local('Pretendard'),
+        url(../assets/fonts/PretendardVariable.woff2) format('woff2-variations')}
+  #boot{padding:14px;color:#5b636d;font-size:13px}
+</style>
+<script>window.WebSquareExternal = { baseServletURI: "./", baseURI: "./_ws/engine/" };</script>
+<script src="_ws/engine/config-global.js"></script>
+</head>
+<body>
+<div id="boot">엔진을 띄우는 중…</div>
+<div id="mf"></div>
+<script src="_ws/engine/_websquare_/wbd_B1548_babel_main.js"></script>
+<script>
+(async () => {
+  const id = new URLSearchParams(location.search).get('id') || '';
+  if (!/^[a-z0-9-]+$/.test(id)) { document.getElementById('boot').textContent = '항목을 찾을 수 없습니다.'; return; }
+  try {
+    WebSquare.configPath = './_ws/engine/config-global.js';
+    WebSquare._innerWidthDiff = window.outerWidth - window.innerWidth;
+    addEventListener('resize', () => { WebSquare._innerWidthDiff = window.outerWidth - window.innerWidth; });
+    await WebSquare.startApplication();
+    await new Promise((ok, no) => {
+      const s = document.createElement('script');
+      s.src = '_xml/' + id + '.js'; s.onload = ok; s.onerror = no;
+      document.head.appendChild(s);
+    });
+    const js = await WebSquare.xmljs.xml2json(window.__XML);
+    await WebSquare.jsLoader.start(js, { spa: undefined });
+    document.getElementById('boot').remove();
+    window.__ready = true;
+  } catch (e) {
+    document.getElementById('boot').textContent = '띄우지 못했습니다: ' + (e && e.message || e);
+    window.__ready = 'error';
+  }
+})();
+</script>
+</body>
+</html>

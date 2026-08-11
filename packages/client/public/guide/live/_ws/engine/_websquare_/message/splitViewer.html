@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>Split Viewer</title>
+<style>
+  html, body { margin: 0; overflow-x: hidden !important; overflow-y: auto; width: 100% !important; height: auto !important; }
+  /* W-Sharing 컨테이너 + 미러링된 parking inner 를 투명 래퍼로 — 스크롤은 브라우저만 담당 */
+  #viewer-container, .wsharing_outer, .wsharing_wrapper, .wsharing_container,
+  [id*="tabsplit_parking"][id$="_inner"] {
+    width: 100% !important; height: auto !important;
+    overflow: visible !important; position: static !important;
+    display: block !important; transform: none !important;
+    box-shadow: none !important; text-align: left !important;
+  }
+  .sv-toolbar {
+    position: fixed; top: 0; right: 0; z-index: 999999;
+    display: flex; align-items: center; gap: 2px;
+    padding: 6px 8px;
+  }
+  .sv-icon-btn {
+    width: 32px; height: 32px;
+    border: none; border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    background: rgba(255,255,255,0.75);
+    backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+    box-shadow: 0 1px 4px rgba(0,0,0,0.10), 0 0 0 1px rgba(0,0,0,0.04);
+  }
+  .sv-icon-btn:hover {
+    background: rgba(255,255,255,0.95);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.14), 0 0 0 1px rgba(0,0,0,0.06);
+    transform: translateY(-1px);
+  }
+  .sv-icon-btn:active {
+    background: rgba(240,240,240,0.95);
+    transform: scale(0.93);
+    box-shadow: 0 1px 2px rgba(0,0,0,0.10);
+  }
+  .sv-icon-btn svg { pointer-events: none; }
+  .sv-icon-btn-return { color: #2563eb; }
+  .sv-icon-btn-close  { color: #6b7280; }
+  .sv-icon-btn-close:hover { color: #ef4444; }
+
+</style>
+</head>
+<body>
+<div class="sv-toolbar">
+  <button id="btn-attach" class="sv-icon-btn sv-icon-btn-return" title="원래 탭으로 복귀">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14L4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg>
+  </button>
+  <button id="btn-close" class="sv-icon-btn sv-icon-btn-close" title="닫기">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+  </button>
+</div>
+<div id="viewer-container"></div>
+
+<script src="../externalJS/dom-mirror.js"></script>
+<script>
+(async function() {
+  var sessionKey = new URLSearchParams(location.search).get('sessionKey');
+  if (!sessionKey) { return; }
+
+  var cs = wSharing.connectLocal({ serviceName: 'w2-tabsplit' });
+  var session = await wSharing.getViewerSession(cs, {
+    sessionKey: sessionKey,
+    viewerTarget: document.getElementById('viewer-container'),
+    renderMode: 'direct',
+    shareType: 'screen',
+    offScale: true
+  });
+
+  var _closing = false;
+
+  function sendAction(action, data) {
+    var channel = new BroadcastChannel('w2-tabsplit-control-' + sessionKey);
+    channel.postMessage({ action: action, sessionKey: sessionKey, data: data });
+    channel.close();
+  }
+
+  // Viewer 창 리사이즈 시 Host parking inner 크기 동기화
+  var resizeTimer;
+  window.addEventListener('resize', function() {
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(function() {
+      sendAction('resize', { width: window.innerWidth, height: window.innerHeight });
+    }, 100);
+  });
+
+  // 복귀 버튼 — Host가 _attachTabAuto에서 세션 종료 + popup 닫기를 처리
+  // Viewer에서 stopSharingSession()을 호출하면 destroyed가 먼저 도착하여 close로 레이스될 수 있음
+  document.getElementById('btn-attach').onclick = function() {
+    _closing = true;
+    sendAction('attach');
+  };
+
+  // 닫기 버튼
+  document.getElementById('btn-close').onclick = function() {
+    _closing = true;
+    sendAction('close');
+    session.stopSharingSession();
+    window.close();
+  };
+
+  // 브라우저 X 버튼 — 닫기 버튼과 동일 (이미 처리된 경우 중복 방지)
+  window.addEventListener('beforeunload', function() {
+    if (_closing) { return; }
+    sendAction('close');
+    try { session.stopSharingSession(); } catch(e) {}
+  });
+})();
+</script>
+</body>
+</html>

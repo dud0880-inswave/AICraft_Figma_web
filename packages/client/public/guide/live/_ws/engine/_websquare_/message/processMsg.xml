@@ -1,0 +1,289 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<html xmlns="http://www.w3.org/1999/xhtml" xmlns:ev="http://www.w3.org/2001/xml-events" xmlns:w2="http://www.inswave.com/websquare" xmlns:xf="http://www.w3.org/2002/xforms">
+    <head>
+        <w2:type>DEFAULT</w2:type>
+        <w2:buildDate />
+        <xf:model>
+            <xf:instance>
+                <data xmlns="" />
+            </xf:instance>
+            <w2:dataCollection baseNode="map"></w2:dataCollection>
+            <w2:workflowCollection></w2:workflowCollection>
+        </xf:model>
+        <style>
+            .w2_proc {
+                position : absolute;
+                z-index : 10001;
+            }
+            .w2_proc_group_wrapper {
+                position : relative;
+                padding : 20px 0 0 13px;
+                width : 280px;
+                height : 81px;
+                border : 1px solid #b3b3b3;
+                background : url("../websquare/_websquare_/message/images/bg_ly.gif") left top repeat-x;
+            }
+            .w2_proc_text_msg {
+                width : 200px;
+                height : 20px;
+                font-size : 13px;
+                color : #3f3f67;
+                font-weight : bold;
+                overflow : hidden;
+                white-space:nowrap;
+                text-overflow:ellipsis;
+            }
+            .w2_proc_image_bar {
+                width : 267px;
+                height : 23px;
+            }
+            .w2_proc_btn_hide {
+                position:absolute;
+                top:20px;
+                right:14px;
+                height:20px;
+                text-align:center;
+                word-wrap:break-word;
+                padding:3px;
+                display:none;
+            }
+            .w2_proc_btn_cancel {
+                position:absolute;
+                top:20px;
+                right:14px;
+                height:20px;
+                text-align:center;
+                word-wrap:break-word;
+                padding:3px;
+                display:none;
+            }
+            .w2_proc_modal {
+                position : absolute;
+                left : 0;
+                top : 0;
+                width : 100%;
+                height : 100%;
+                background-color : #cccccc;
+                filter : alpha(opacity=30);
+                opacity : 0.3;
+                z-index: 10000;
+            }
+
+            /* ============================================================ */
+            /* type1 ~ type4 공통 */
+            /* ============================================================ */
+            .process_message {display:grid;place-items:center;position:fixed;top:0;right:0;bottom:0;left:0;z-index:1000;height:100vh;margin:0;padding:0}
+            .process_message .process_close {background:transparent;text-align:center}
+            .process_message .btn_process_close {height:23px;padding:0 7px;border:1px solid #DCE0E4;border-radius:4px;background:#fff;color:#212B36;font-size:12px;cursor:pointer}
+            .process_message .btn_process_close:hover {border-color:#A7B1BB}
+
+            /* ============================================================ */
+            /* type1: 프로그레스 바 + 텍스트 */
+            /* ============================================================ */
+            .process_message.type1 .process_message_wrap {width:auto;height:auto;padding:24px 20px 20px;border-radius:8px;background:#FFFFFF;box-sizing:border-box}
+            .process_message.type1 .process_message_wrap .txt {margin-bottom:6px;font-size:12px;font-weight:bold;text-align:center}
+            .process_message.type1 .ani {position:relative;width:180px;height:20px;border:2px solid #56A6F8;border-radius:40px;background:#FFFFFF;box-sizing:border-box}
+            .process_message.type1 .ani::before {content:"";position:absolute;top:0;bottom:0;left:0;width:25%;margin:2px;border-radius:inherit;background:transparent linear-gradient(90deg, #006FDF 0%, #56A6F8 100%) 0% 0% no-repeat padding-box;animation:process_type1_rotate 1s infinite linear}
+            .process_message.type1 .process_close {margin-top:12px}
+
+            @keyframes process_type1_rotate {
+                50% {left:100%;transform: translateX(calc(-100% - 4px))}
+            }
+
+            /* ============================================================ */
+            /* type2: 3D 큐브 */
+            /* ============================================================ */
+            .process_message.type2 .process_message_wrap {width:auto;background:transparent;animation:process_type2_bouncing 1.6s infinite;transform-style:preserve-3d}
+            .process_message.type2 .scene {display:grid;place-items:center;position:relative;z-index:2;width:220px;height:220px;background:transparent}
+            .process_message.type2 .cube {background:transparent;animation:process_type2_rotation 1.6s infinite;transform-style:preserve-3d;transform:rotateX(45deg) rotateZ(45deg)}
+            .process_message.type2 .cube_faces {position:relative;width:35px;height:35px;transform:translateX(0) translateY(0) translateZ(-40px);transform-style:preserve-3d;transform-origin:0 0}
+            .process_message.type2 .cube_face {position:absolute;border:0;background:#52A4F7;inset:0}
+            .process_message.type2 .cube_face.shadow {animation:process_type2_bouncing_shadow 1.6s infinite;transform:translateZ(-35px)}
+            .process_message.type2 .cube_face.top {background:linear-gradient(#52A4F7, #0271E0) no-repeat;transform:translateZ(35px)}
+            .process_message.type2 .cube_face.front {background:linear-gradient(#52A4F7, #0271E0) no-repeat;transform-origin:0 50%;transform:rotateY(-90deg)}
+            .process_message.type2 .cube_face.back {background:linear-gradient(#52A4F7, #0271E0) no-repeat;transform-origin:0 50%;transform:rotateY(-90deg) translateZ(-35px)}
+            .process_message.type2 .cube_face.right {background:linear-gradient(#0271E0, #52A4F7) no-repeat;transform-origin:50% 0;transform:rotateX(-90deg) translateY(-35px)}
+            .process_message.type2 .cube_face.left {background:linear-gradient(#52A4F7, #0271E0) no-repeat;transform-origin:50% 0;transform:rotateX(-90deg) translateY(-35px) translateZ(35px)}
+            .process_message.type2 {position:relative}
+            .process_message.type2 > .process_close {position:absolute;bottom:33%;left:50%;transform:translateX(-50%)}
+
+            @keyframes process_type2_rotation {
+                0% {transform:rotateX(45deg) rotateY(0) rotateZ(45deg);animation-timing-function:cubic-bezier(0.17, 0.84, 0.44, 1)}
+                50% {transform:rotateX(45deg) rotateY(0) rotateZ(225deg);animation-timing-function:cubic-bezier(0.76, 0.05, 0.86, 0.06)}
+                100% {transform:rotateX(45deg) rotateY(0) rotateZ(405deg);animation-timing-function:cubic-bezier(0.17, 0.84, 0.44, 1)}
+            }
+            @keyframes process_type2_bouncing {
+                0% {transform:translateY(-40px);animation-timing-function:cubic-bezier(0.76, 0.05, 0.86, 0.06)}
+                45% {transform:translateY(40px);animation-timing-function:cubic-bezier(0.23, 1, 0.32, 1)}
+                100% {transform:translateY(-40px);animation-timing-function:cubic-bezier(0.76, 0.05, 0.86, 0.06)}
+            }
+            @keyframes process_type2_bouncing_shadow {
+                0% {transform:translateZ(-35px) scale(1.3);animation-timing-function:cubic-bezier(0.76, 0.05, 0.86, 0.06);opacity:0.1}
+                45% {transform:translateZ(0);animation-timing-function:cubic-bezier(0.23, 1, 0.32, 1);opacity:0.3}
+                100% {transform:translateZ(-35px) scale(1.3);animation-timing-function:cubic-bezier(0.76, 0.05, 0.86, 0.06);opacity:0.1}
+            }
+
+            /* ============================================================ */
+            /* type3: 스피너 */
+            /* ============================================================ */
+            .process_message.type3 .process_message_wrap {background:transparent}
+            .process_message.type3 .spin_round {width:56px;height:56px;border-radius:50%;background:radial-gradient(farthest-side,#006FDF 94%,#0000) top/9px 9px no-repeat, conic-gradient(#0000 30%,#006FDF);-webkit-mask: radial-gradient(farthest-side,#0000 calc(100% - 9px),#000 0);animation:process_type3_spin 1s infinite linear}
+            .process_message.type3 .process_close {margin-top:20px}
+
+            @keyframes process_type3_spin {
+                100% {transform: rotate(1turn)}
+            }
+
+            /* ============================================================ */
+            /* type4: 점 3개 */
+            /* ============================================================ */
+            .process_message.type4 .process_message_wrap {background:transparent}
+            .process_message.type4 .process_message_wrap > .process_message_dot {display:inline-block;width:10px;height:10px;border-radius:50%;background:#006FDF;vertical-align:middle;animation:process_type4_dot 0.8s infinite alternate}
+            .process_message.type4 .process_message_wrap > .process_message_dot:nth-child(2) {animation-delay:0.3s}
+            .process_message.type4 .process_message_wrap > .process_message_dot:nth-child(3) {animation-delay:0.6s}
+            .process_message.type4 .process_message_wrap > .process_message_dot + .process_message_dot {margin-left:6px}
+            .process_message.type4 .process_close {margin-top:20px}
+
+            @keyframes process_type4_dot {
+                0% {opacity:1}
+                100% {opacity:.2}
+            }
+        </style>
+        <script type="text/javascript" lazy="false"><![CDATA[
+
+    scwin.onpageload = function() {
+        try {
+            var style = WebSquare.processMsg_style || "";
+            if (style === "type1" || style === "type2" || style === "type3" || style === "type4") {
+                group_wrapper.hide();
+                $p.getComponentById("group_" + style).show();
+                var textMsgComp = $p.getComponentById("text_msg_" + style);
+                if (textMsgComp && WebSquare.layer.processMsg) {
+                    textMsgComp.setValue(WebSquare.layer.processMsg);
+                }
+                if (WebSquare.layer.abortTrigger === "true") {
+                    var closeGroup = $p.getComponentById("process_close_" + style);
+                    if (closeGroup) {
+                        closeGroup.show();
+                    }
+                }
+            } else {
+                image_bar.setSrc(WebSquare.baseURI + "_websquare_/message/images/progressingbar.gif");
+                btn_hide.dom.input.value = WebSquare.language.getMessage("Window_close");
+                btn_cancel.dom.input.value = WebSquare.language.getMessage("Window_cancel");
+            }
+        } catch (e) {
+            WebSquare.exception.printStackTrace(e);
+        }
+    };
+
+    scwin.onpageunload = function() {
+
+    };
+
+    scwin.btn_hide_onclick = function() {
+        try {
+            $p._getProcessMsgTargetFrame().hideProcessMessage();
+        } catch (e) {
+            WebSquare.exception.printStackTrace(e);
+        }
+    };
+
+    scwin.btn_cancel_onclick = function() {
+        try {
+            var submissionList = $p._getProcessMsgTargetFrame()._processMsgQueue;
+            for(var i = 0; i < submissionList.length; i++){
+                WebSquare.ModelUtil.abort(submissionList[i].org_id, submissionList[i].scope_id);
+            }
+        } catch (e) {
+            WebSquare.exception.printStackTrace(e);
+        }
+    };
+
+    scwin.btn_process_close_onclick = function() {
+        try {
+            var submissionList = $p._getProcessMsgTargetFrame()._processMsgQueue;
+            for(var i = 0; i < submissionList.length; i++){
+                WebSquare.ModelUtil.abort(submissionList[i].org_id, submissionList[i].scope_id);
+            }
+        } catch (e) {
+            WebSquare.exception.printStackTrace(e);
+        }
+    };
+    ]]></script>
+    </head>
+    <body ev:onpageload="scwin.onpageload" ev:onpageunload="scwin.onpageunload">
+        <!-- default: 기존 프로세스 메세지 -->
+        <xf:group class="w2_proc_group_wrapper" id="group_wrapper" style="">
+            <w2:textbox class="w2_proc_text_msg" label="" id="text_msg" style=""></w2:textbox>
+            <xf:image class="w2_proc_image_bar" id="image_bar" style="" src="" alt="Loading"></xf:image>
+            <xf:trigger type="button" class="w2_proc_btn_hide" id="btn_hide" style="" ev:onclick="scwin.btn_hide_onclick">
+            </xf:trigger>
+            <xf:trigger type="button" class="w2_proc_btn_cancel" id="btn_cancel" style="" ev:onclick="scwin.btn_cancel_onclick">
+            </xf:trigger>
+        </xf:group>
+
+        <!-- type1: 프로그레스 바 + 텍스트 -->
+        <xf:group id="group_type1" class="process_message type1" style="display:none;">
+            <xf:group id="wrap_type1" class="process_message_wrap">
+                <w2:textbox style="" id="text_msg_type1" label="처리중입니다." class="txt"></w2:textbox>
+                <xf:group style="" id="ani_type1" class="ani"></xf:group>
+                <xf:group class="process_close" id="process_close_type1" style="display:none;">
+                    <xf:trigger class="btn_process_close" id="btn_close_type1" style="" type="button" ev:onclick="scwin.btn_process_close_onclick">
+                        <xf:label><![CDATA[취소]]></xf:label>
+                    </xf:trigger>
+                </xf:group>
+            </xf:group>
+        </xf:group>
+
+        <!-- type2: 3D 큐브 -->
+        <xf:group id="group_type2" class="process_message type2" style="display:none;">
+            <xf:group id="wrap_type2" class="process_message_wrap">
+                <xf:group id="scene_type2" class="scene">
+                    <xf:group id="cube_type2" class="cube">
+                        <xf:group id="cube_faces_type2" class="cube_faces">
+                            <xf:group id="cube_shadow_type2" class="cube_face shadow"></xf:group>
+                            <xf:group id="cube_bottom_type2" class="cube_face bottom"></xf:group>
+                            <xf:group id="cube_top_type2" class="cube_face top"></xf:group>
+                            <xf:group id="cube_front_type2" class="cube_face front"></xf:group>
+                            <xf:group id="cube_back_type2" class="cube_face back"></xf:group>
+                            <xf:group id="cube_right_type2" class="cube_face right"></xf:group>
+                            <xf:group id="cube_left_type2" class="cube_face left"></xf:group>
+                        </xf:group>
+                    </xf:group>
+                </xf:group>
+            </xf:group>
+            <xf:group class="process_close" id="process_close_type2" style="display:none;">
+                <xf:trigger class="btn_process_close" id="btn_close_type2" style="" type="button" ev:onclick="scwin.btn_process_close_onclick">
+                    <xf:label><![CDATA[취소]]></xf:label>
+                </xf:trigger>
+            </xf:group>
+        </xf:group>
+
+        <!-- type3: 스피너 -->
+        <xf:group class="process_message type3" id="group_type3" style="display:none;">
+            <xf:group style="" id="wrap_type3" class="process_message_wrap">
+                <xf:group style="" id="spin_type3" class="spin_round"></xf:group>
+                <xf:group class="process_close" id="process_close_type3" style="display:none;">
+                    <xf:trigger class="btn_process_close" id="btn_close_type3" style="" type="button" ev:onclick="scwin.btn_process_close_onclick">
+                        <xf:label><![CDATA[취소]]></xf:label>
+                    </xf:trigger>
+                </xf:group>
+            </xf:group>
+        </xf:group>
+
+        <!-- type4: 점 3개 -->
+        <xf:group class="process_message type4" id="group_type4" style="display:none;">
+            <xf:group class="process_message_wrap" id="wrap_type4" style="">
+                <xf:group class="process_message_dot" id="dot1_type4" style=""></xf:group>
+                <xf:group class="process_message_dot" id="dot2_type4" style=""></xf:group>
+                <xf:group style="" id="dot3_type4" class="process_message_dot"></xf:group>
+                <xf:group class="process_close" id="process_close_type4" style="display:none;">
+                    <xf:trigger class="btn_process_close" id="btn_close_type4" style="" type="button" ev:onclick="scwin.btn_process_close_onclick">
+                        <xf:label><![CDATA[취소]]></xf:label>
+                    </xf:trigger>
+                </xf:group>
+            </xf:group>
+        </xf:group>
+    </body>
+</html>
