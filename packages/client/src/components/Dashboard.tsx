@@ -16,6 +16,9 @@ interface DashboardProps {
 
 type ViewMode = 'projects' | 'files'
 
+// 웹 버전: 스펙문서 기능 비활성화 (버튼 숨김). 재활성화 시 true로 변경
+const ENABLE_SPEC_DOCS = false
+
 export default function Dashboard({ onSelectFile, onAddNewFile, onOpenSettings, onRefreshFile, onOpenSpec, initialProjectId }: DashboardProps) {
   const { showAlert, showConfirm } = useDialog()
   const [viewMode, setViewMode] = useState<ViewMode>('projects')
@@ -199,6 +202,16 @@ export default function Dashboard({ onSelectFile, onAddNewFile, onOpenSettings, 
             <img src="/websquareAI.png" width="32" height="32" alt="WebSquare AI" className="rounded" />
             <h1 className="text-xl font-bold theme-text-primary">WebSquare AI</h1>
           </div>
+          <button
+            onClick={() => window.open('/user-guide.html', '_blank', 'noopener')}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-sm theme-text-secondary theme-text-hover theme-bg-hover rounded"
+            title="사용자 가이드 열기 (새 창)"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+            </svg>
+            사용자 가이드
+          </button>
         </div>
       </header>
 
@@ -419,7 +432,8 @@ export default function Dashboard({ onSelectFile, onAddNewFile, onOpenSettings, 
                           </svg>
                         )}
                       </button>
-                      {/* 스펙문서 버튼 */}
+                      {/* 스펙문서 버튼 (웹 버전 비활성화) */}
+                      {ENABLE_SPEC_DOCS && (
                       <button
                         onClick={(e) => {
                           e.stopPropagation()
@@ -444,6 +458,7 @@ export default function Dashboard({ onSelectFile, onAddNewFile, onOpenSettings, 
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                         </svg>
                       </button>
+                      )}
                       {/* 삭제 버튼 */}
                       <button
                         onClick={(e) => handleDeleteFile(file.fileKey, file.nodeId, e)}

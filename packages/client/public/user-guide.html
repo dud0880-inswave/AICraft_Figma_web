@@ -1,0 +1,409 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AICraft-Figma 사용자 가이드</title>
+<style>
+  :root {
+    --bg: #ffffff;
+    --bg-soft: #f6f8fa;
+    --bg-code: #f0f2f5;
+    --text: #1f2328;
+    --text-soft: #57606a;
+    --border: #d8dee4;
+    --accent: #2563eb;
+    --accent-soft: #dbeafe;
+    --green: #16a34a;
+    --green-soft: #dcfce7;
+    --yellow-soft: #fef9c3;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0f1115;
+      --bg-soft: #161b22;
+      --bg-code: #1c2128;
+      --text: #e6edf3;
+      --text-soft: #9198a1;
+      --border: #30363d;
+      --accent: #58a6ff;
+      --accent-soft: #12233d;
+      --green: #4ade80;
+      --green-soft: #12301d;
+      --yellow-soft: #2e2a12;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: "Segoe UI", "Malgun Gothic", "Apple SD Gothic Neo", sans-serif, "Segoe UI Emoji", "Segoe UI Symbol", "Apple Color Emoji";
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.7;
+  }
+  .layout { display: flex; max-width: 1200px; margin: 0 auto; }
+  nav.toc {
+    width: 240px;
+    flex-shrink: 0;
+    position: sticky;
+    top: 0;
+    align-self: flex-start;
+    height: 100vh;
+    overflow-y: auto;
+    padding: 24px 8px 24px 16px;
+    border-right: 1px solid var(--border);
+    font-size: 13px;
+  }
+  nav.toc .toc-title { font-weight: 700; margin-bottom: 10px; font-size: 12px; color: var(--text-soft); letter-spacing: .05em; }
+  nav.toc a {
+    display: block;
+    color: var(--text-soft);
+    text-decoration: none;
+    padding: 4px 8px;
+    border-radius: 6px;
+    margin-bottom: 1px;
+  }
+  nav.toc a:hover { background: var(--bg-soft); color: var(--text); }
+  main {
+    flex: 1;
+    min-width: 0;
+    padding: 32px 40px 80px;
+  }
+  h1 { font-size: 26px; border-bottom: 2px solid var(--border); padding-bottom: 12px; }
+  h1 .sub { display: block; font-size: 14px; font-weight: 400; color: var(--text-soft); margin-top: 6px; }
+  h2 {
+    font-size: 20px;
+    margin-top: 48px;
+    padding: 6px 12px;
+    background: var(--accent-soft);
+    border-left: 4px solid var(--accent);
+    border-radius: 4px;
+  }
+  h3 { font-size: 16px; margin-top: 28px; }
+  table { border-collapse: collapse; width: 100%; margin: 12px 0; font-size: 14px; }
+  th, td { border: 1px solid var(--border); padding: 7px 12px; text-align: left; vertical-align: top; }
+  th { background: var(--bg-soft); }
+  code {
+    background: var(--bg-code);
+    padding: 1px 6px;
+    border-radius: 4px;
+    font-family: Consolas, "D2Coding", monospace;
+    font-size: 13px;
+  }
+  pre {
+    background: var(--bg-code);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 14px 16px;
+    overflow-x: auto;
+    font-family: Consolas, "D2Coding", monospace, "Segoe UI Symbol";
+    font-size: 13px;
+    line-height: 1.5;
+  }
+  pre code { background: none; padding: 0; }
+  .flow {
+    background: var(--bg-soft);
+    border: 1px dashed var(--border);
+    border-radius: 8px;
+    padding: 10px 16px;
+    text-align: center;
+    font-size: 14px;
+    font-weight: 600;
+    letter-spacing: .02em;
+  }
+  .tip {
+    background: var(--yellow-soft);
+    border-left: 4px solid #eab308;
+    border-radius: 4px;
+    padding: 10px 14px;
+    font-size: 14px;
+    margin: 14px 0;
+  }
+  .badge {
+    display: inline-block;
+    padding: 1px 8px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 600;
+  }
+  .badge.green { background: var(--green-soft); color: var(--green); border: 1px solid var(--green); }
+  .badge.blue { background: var(--accent-soft); color: var(--accent); border: 1px solid var(--accent); }
+  .tag-badge {
+    background: var(--green-soft);
+    color: var(--green);
+    border: 1px solid var(--green);
+    border-radius: 4px;
+    padding: 0 6px;
+    font-family: Consolas, monospace;
+    font-size: 12px;
+  }
+  .faq dt { font-weight: 700; margin-top: 18px; }
+  .faq dd { margin: 4px 0 0 0; color: var(--text-soft); padding-left: 16px; border-left: 3px solid var(--border); }
+  @media (max-width: 860px) {
+    nav.toc { display: none; }
+    main { padding: 20px 16px 60px; }
+  }
+</style>
+</head>
+<body>
+<div class="layout">
+
+<nav class="toc">
+  <div class="toc-title">목차</div>
+  <a href="#start">1. 시작하기</a>
+  <a href="#project">2. 프로젝트 관리</a>
+  <a href="#addfile">3. Figma 파일 추가</a>
+  <a href="#editor">4. 에디터 화면 구성</a>
+  <a href="#tree">5. 노드 트리</a>
+  <a href="#mapping">6. 매핑 작업</a>
+  <a href="#result">7. 변환 결과</a>
+  <a href="#automap">8. 자동 매핑</a>
+  <a href="#settings">9. 설정</a>
+  <a href="#faq">10. FAQ / 문제 해결</a>
+</nav>
+
+<main>
+
+<h1>AICraft-Figma 사용자 가이드
+  <span class="sub">Figma 디자인을 WebSquare 컴포넌트로 매핑하고 XML 코드를 자동 생성하는 도구</span>
+</h1>
+
+<div class="flow">Figma 디자인 → 노드 매핑 → WebSquare XML 생성 → 미리보기 확인 → XML 다운로드</div>
+
+<h2 id="start">1. 시작하기</h2>
+
+<h3>1-1. 접속</h3>
+<p>브라우저에서 서비스 주소로 접속합니다. (예: <code>http://&lt;서버주소&gt;:5180</code>)</p>
+
+<h3>1-2. Figma Access Token 준비 (최초 1회)</h3>
+<p>Figma 파일을 불러오려면 개인 액세스 토큰이 필요합니다.</p>
+<ol>
+  <li><a href="https://www.figma.com" target="_blank">Figma</a> 로그인 → 좌측 상단 프로필 → <b>Settings</b></li>
+  <li><b>Account</b> 탭 → <b>Personal access tokens</b> 섹션에서 토큰 생성</li>
+  <li>생성된 토큰(<code>figd_...</code>)을 복사해 둡니다</li>
+</ol>
+<div class="tip">💡 토큰은 프로젝트 설정(⚙ → 기본 탭)에 저장하며, 파일을 처음 추가할 때 입력할 수도 있습니다.</div>
+
+<h2 id="project">2. 프로젝트 관리 (대시보드)</h2>
+<p>접속하면 <b>프로젝트 목록</b>이 표시됩니다.</p>
+<table>
+  <tr><th style="width:180px">작업</th><th>방법</th></tr>
+  <tr><td>프로젝트 생성</td><td>우측 상단 <b>새 프로젝트</b> → 이름 입력</td></tr>
+  <tr><td>프로젝트 이름 수정</td><td>프로젝트 카드에 마우스 오버 → ✏ 아이콘</td></tr>
+  <tr><td>프로젝트 삭제</td><td>카드에 마우스 오버 → 🗑 아이콘 (하위 파일도 모두 삭제됨)</td></tr>
+  <tr><td>파일 목록 이동</td><td>프로젝트 카드 클릭</td></tr>
+  <tr><td>프로젝트 목록으로 복귀</td><td>파일 목록 좌측 상단 <b>← 프로젝트 목록</b></td></tr>
+</table>
+<p>매핑에 사용할 컴포넌트 목록·CSS·매핑룰은 <b>프로젝트 단위</b>로 관리됩니다.</p>
+
+<h2 id="addfile">3. Figma 파일 추가</h2>
+<p>파일 목록 화면에서 <b>새 파일 추가</b> 버튼을 클릭합니다.</p>
+<ol>
+  <li><b>Figma Access Token</b> — 프로젝트에 토큰이 없으면 입력란이 표시됩니다</li>
+  <li><b>Figma File URL</b> — Figma에서 복사한 URL 입력
+    <ul>
+      <li>파일 전체: <code>https://www.figma.com/design/xxxxx/...</code></li>
+      <li>특정 노드(프레임)만: Figma에서 프레임 선택 후 우클릭 → <b>Copy link to selection</b>으로 얻은 URL (<code>?node-id=</code> 포함)</li>
+    </ul>
+  </li>
+</ol>
+
+<h3>파일 카드 기능 (마우스 오버 시 아이콘 표시)</h3>
+<table>
+  <tr><th style="width:140px">아이콘</th><th>기능</th></tr>
+  <tr><td>🔄 새로고침</td><td>Figma 최신 내용 다시 불러오기. 노드가 바뀌면 사라진 노드의 매핑은 자동 삭제되고, 변경 시 버전 올리기 확인</td></tr>
+  <tr><td>🗑 삭제</td><td>파일과 관련 매핑·이미지 삭제</td></tr>
+</table>
+<ul>
+  <li><span class="badge green">완료</span> 뱃지: 매핑 작업을 완료 처리한 파일 (자동 매핑 클러스터 생성 대상)</li>
+  <li><span class="badge blue">노드</span> 뱃지: 특정 노드만 등록한 파일</li>
+</ul>
+
+<h2 id="editor">4. 에디터 화면 구성</h2>
+<p>파일 카드를 클릭하면 매핑 에디터가 열립니다.</p>
+<pre>
+┌────────────────────────────────────────────────────────────────┐
+│ 헤더: 프로젝트명 · 파일명(버전)    [▉|·|·][·|▉|·][·|·|▉] ↻ 자동매핑 프로젝트이동 ⚙ │
+├──────────┬───────────────────┬──────────────┬─────────────────┤
+│          │                   │              │                 │
+│ 노드 트리 │    Figma 뷰어      │  매핑 편집기  │   변환 결과      │
+│          │  (디자인 이미지)    │              │ (미리보기/코드)  │
+│          │                   │              │                 │
+└──────────┴───────────────────┴──────────────┴─────────────────┘
+</pre>
+
+<h3>헤더 버튼</h3>
+<table>
+  <tr><th style="width:160px">버튼</th><th>기능</th></tr>
+  <tr><td>패널 토글 3개</td><td>노드 트리 / 매핑 편집기 / 변환 결과 패널을 각각 접기·펼치기 (칸이 채워진 아이콘 = 열림)</td></tr>
+  <tr><td>↻ 새로고침</td><td>현재 파일을 Figma에서 다시 불러오기</td></tr>
+  <tr><td>자동 매핑</td><td>클러스터·매핑룰 기반 자동 매핑 제안 실행 (→ <a href="#automap">8장</a>)</td></tr>
+  <tr><td>프로젝트 이동</td><td>파일 목록으로 돌아가기</td></tr>
+  <tr><td>⚙ 설정</td><td>프로젝트 설정 열기 (→ <a href="#settings">9장</a>)</td></tr>
+</table>
+<ul>
+  <li>각 패널 사이 경계선을 드래그하면 <b>패널 폭 조절</b>이 가능합니다.</li>
+  <li>파일 전체를 등록한 경우 상단에 <b>페이지 탭</b>이 표시되어 페이지를 전환할 수 있습니다.</li>
+</ul>
+
+<h2 id="tree">5. 노드 트리</h2>
+<p>Figma 디자인의 레이어 구조가 트리로 표시됩니다.</p>
+
+<h3>기본 조작</h3>
+<table>
+  <tr><th style="width:140px">조작</th><th>방법</th></tr>
+  <tr><td>노드 선택</td><td>클릭 (뷰어에 파란 박스로 강조)</td></tr>
+  <tr><td>다중 선택</td><td><code>Ctrl(⌘)+클릭</code> 추가 선택 / <code>Shift+클릭</code> 범위 선택</td></tr>
+  <tr><td>키보드 이동</td><td><code>↑</code> <code>↓</code> 이동, <code>→</code> 펼치기, <code>←</code> 접기 (<code>Shift+↑↓</code> 범위 선택)</td></tr>
+  <tr><td>펼치기/접기</td><td>노드 앞 ▸ 클릭, 헤더의 ⊞(모두 펼치기) ⊟(모두 접기)</td></tr>
+  <tr><td>검색</td><td>검색창에 노드 이름 입력. <b>상위항목</b> 체크로 부모 표시 여부 선택, <b>전체 선택</b>으로 검색 결과 일괄 선택</td></tr>
+  <tr><td>순서 변경</td><td>드래그 핸들(≡)로 같은 부모 안에서 드래그 앤 드롭</td></tr>
+</table>
+
+<h3>매핑 상태 표시</h3>
+<ul>
+  <li><b>뱃지</b> <span class="tag-badge">xf:group</span> — 매핑된 노드는 이름 앞에 매핑된 컴포넌트 태그가 초록 뱃지로 표시됩니다. 마우스 오버 시 컴포넌트 이름 툴팁</li>
+  <li>뱃지를 끄면(⚙ 설정 → 매핑 컴포넌트 뱃지 표시 해제) 초록 <b>점</b>으로만 표시됩니다</li>
+</ul>
+
+<h3>그룹화</h3>
+<ul>
+  <li>노드 1개 이상 선택 → <b>그룹화</b> 버튼: 선택 노드를 새 그룹으로 묶음 (레이아웃 구성용 가상 그룹)</li>
+  <li>GROUP/FRAME 노드 선택 → <b>그룹해제</b> 버튼: 그룹을 풀고 자식을 상위로 이동</li>
+</ul>
+
+<h2 id="mapping">6. 매핑 작업</h2>
+<p>노드를 선택하면 <b>매핑 편집기</b>에서 WebSquare 컴포넌트를 지정할 수 있습니다.</p>
+
+<h3>6-1. 컴포넌트 매핑</h3>
+<ol>
+  <li>노드 선택 (여러 개 선택하면 <b>일괄 적용 모드</b>)</li>
+  <li>컴포넌트 검색창에서 컴포넌트 선택 (예: group, button, input, gridView …)</li>
+  <li>선택 즉시 저장되며 변환 결과가 자동 갱신됩니다</li>
+</ol>
+<ul>
+  <li><b>매핑 해제</b>: 매핑된 노드에서 해제 버튼 클릭 (다중 선택 지원)</li>
+  <li><b>매핑 초기화</b>: 현재 파일의 모든 매핑 삭제 (되돌릴 수 없음)</li>
+</ul>
+
+<h3>6-2. CSS 클래스 지정</h3>
+<p>매핑된 노드 하단에 프로젝트에 등록된 CSS 파일별 클래스 목록이 표시됩니다.</p>
+<ul>
+  <li>CSS 파일 탭으로 파일 전환 (검색어는 탭을 옮겨도 유지)</li>
+  <li>클래스 버튼 클릭으로 적용/해제 (파란색 = 적용됨)</li>
+  <li>표시 구분:
+    <ul>
+      <li><b>바인딩 클래스</b>: 해당 컴포넌트에 연결 설정된 클래스</li>
+      <li>⭐ <b>추천 클래스</b>: 다른 파일에서 같은 구조의 노드에 자주 쓰인 클래스 (빈도 표시)</li>
+    </ul>
+  </li>
+  <li><b>클래스 검색</b>: <code>.클래스명</code> 또는 일부 문자열로 필터</li>
+</ul>
+
+<h3>6-3. 커스텀 속성</h3>
+<p><code>key=value</code> 형태의 속성을 추가하면 생성되는 XML 태그에 그대로 반영됩니다. (예: <code>id</code>, <code>label</code> 등)</p>
+
+<h2 id="result">7. 변환 결과 (미리보기 / 코드)</h2>
+<p>우측 패널에서 매핑 결과로 생성된 WebSquare XML을 확인합니다.</p>
+
+<h3>미리보기 탭 (기본)</h3>
+<p>실제 WebSquare 엔진으로 렌더링된 화면을 보여줍니다.</p>
+<table>
+  <tr><th style="width:180px">컨트롤</th><th>기능</th></tr>
+  <tr><td>디바이스 프리셋</td><td>데스크탑 / 태블릿 / 모바일 등 뷰포트 크기 전환</td></tr>
+  <tr><td>− / + / 100%</td><td>미리보기 배율 조절</td></tr>
+  <tr><td>새로고침</td><td>미리보기 다시 렌더링</td></tr>
+</table>
+<ul>
+  <li>프로젝트에 등록한 CSS가 함께 적용됩니다</li>
+  <li>탭 옆 <code>*</code> 표시는 엔진 로딩 중이라는 뜻입니다</li>
+</ul>
+
+<h3>코드 탭</h3>
+<p>생성된 XML 소스를 하이라이팅과 함께 표시합니다.</p>
+
+<h3>다운로드 / 완료</h3>
+<ul>
+  <li><b>다운로드</b>: 파일명을 확인·변경 후 XML 파일로 저장 (브라우저 다운로드)</li>
+  <li><b>완료</b>: 현재 파일의 매핑 작업 완료 처리 → <b>자동 매핑 클러스터가 생성</b>되고 대시보드로 이동. 파일 카드에 완료 뱃지가 붙습니다</li>
+</ul>
+
+<h2 id="automap">8. 자동 매핑</h2>
+<p>한 파일에서 매핑을 완료하면, 같은 구조의 노드를 다른 파일에서 자동으로 인식해 매핑을 제안합니다.</p>
+
+<h3>동작 원리</h3>
+<ol>
+  <li>파일 매핑 후 <b>완료</b> 클릭 → 매핑 패턴이 <b>클러스터</b>로 저장됨</li>
+  <li>이후 새 파일을 추가하거나 헤더의 <b>자동 매핑</b> 버튼을 누르면</li>
+  <li>클러스터·매핑룰과 일치하는 노드들이 <b>자동 매핑 제안 모달</b>에 표시됨</li>
+  <li>제안 항목을 검토하고 적용/건너뛰기 선택</li>
+</ol>
+
+<h3>매칭 방식 (2단계)</h3>
+<ul>
+  <li><b>Base 모드</b>: 노드의 구조(componentProperties 키 + 부모 정보)로 매칭 — 일반적인 패턴</li>
+  <li><b>Full 모드</b>: variant 값까지 포함해 매칭 — 동일 variant 노드에 더 정확한 클래스 제안</li>
+</ul>
+
+<h3>매핑룰 (이름 기반 기본 매핑)</h3>
+<p>노드 이름 키워드로 기본 컴포넌트를 지정하는 규칙입니다. (예: 이름에 <code>btn</code> 포함 → button)<br>
+⚙ 설정 → <b>매핑룰</b> 탭에서 키워드 추가/삭제/기본값 복원이 가능합니다.</p>
+<div class="tip">💡 매핑을 변경하면 "같은 구조의 다른 노드에도 전체 적용할까요?" 팝업이 뜰 수 있습니다. 프로젝트 전체에 일괄 반영하려면 적용을 선택하세요.</div>
+
+<h2 id="settings">9. 설정 (⚙)</h2>
+
+<h3>기본 탭</h3>
+<table>
+  <tr><th style="width:210px">항목</th><th>설명</th></tr>
+  <tr><td>Figma Access Token</td><td>Figma API 호출용 토큰</td></tr>
+  <tr><td>테마</td><td>라이트 / 다크</td></tr>
+  <tr><td>인라인 스타일</td><td>XML 생성 시 Figma 스타일을 인라인 style로 포함할지 여부</td></tr>
+  <tr><td>자동 매핑 클러스터 설정</td><td><b>노드 이름 포함</b> 체크 시 이름까지 일치해야 같은 클러스터로 인식 (정확도↑ 적중률↓). 변경 시 클러스터 재생성</td></tr>
+  <tr><td>노드 트리 표시 설정</td><td><b>매핑 컴포넌트 뱃지 표시</b> 체크 해제 시 트리에 점만 표시</td></tr>
+  <tr><td>XML 내보내기 경로</td><td>다운로드 기본 파일 경로 설정</td></tr>
+</table>
+
+<h3>컴포넌트 탭</h3>
+<p>매핑에 사용할 WebSquare 컴포넌트 목록(레지스트리)을 관리합니다.</p>
+<ul>
+  <li>컴포넌트 추가: 이름 + 태그명(예: <code>xf:group</code>) + 기본 속성</li>
+  <li>수정/삭제 가능. 프로젝트 생성 시 기본 컴포넌트가 자동 등록됩니다</li>
+</ul>
+
+<h3>CSS 탭</h3>
+<p>프로젝트에서 사용할 CSS 파일을 관리합니다.</p>
+<ul>
+  <li><b>파일 업로드</b>: <code>.css</code> 파일 선택 → 클래스가 자동 추출되고 컴포넌트에 자동 바인딩됨</li>
+  <li><b>직접 작성</b>: 새 CSS 추가로 내용 입력</li>
+  <li><b>클래스 매핑</b>: CSS 클래스를 어떤 컴포넌트의 후보로 보여줄지 연결 관리 (자동 매핑 재실행 / 매핑 초기화 지원)</li>
+  <li>업로드한 CSS는 <b>미리보기 렌더링에도 적용</b>됩니다</li>
+</ul>
+
+<h3>매핑룰 탭</h3>
+<p>노드 이름 키워드 → 컴포넌트 기본 매핑 규칙 관리 (<a href="#automap">8장</a> 참고)</p>
+
+<h2 id="faq">10. 자주 묻는 질문 / 문제 해결</h2>
+<dl class="faq">
+  <dt>Q. 파일 추가 시 "권한 오류"가 발생해요.</dt>
+  <dd>Figma 토큰이 유효한지, 해당 파일에 접근 권한이 있는 계정의 토큰인지 확인하세요.</dd>
+
+  <dt>Q. Figma에서 디자인을 수정했는데 반영이 안 돼요.</dt>
+  <dd>파일 카드 또는 헤더의 🔄 새로고침을 실행하세요. 삭제된 노드의 매핑은 자동 정리됩니다.</dd>
+
+  <dt>Q. 미리보기가 "엔진 로딩 중"에서 멈춰요.</dt>
+  <dd>잠시 기다린 후 미리보기 탭의 새로고침을 누르세요. 계속되면 브라우저 새로고침(F5) 후 재시도하세요.</dd>
+
+  <dt>Q. 자동 매핑 제안이 나오지 않아요.</dt>
+  <dd>자동 매핑은 <b>완료 처리된 파일</b>의 매핑을 기반으로 합니다. 최소 1개 파일을 완료했는지, 노드 구조가 실제로 같은지 확인하세요. 이름이 달라 매칭이 안 되면 설정에서 "노드 이름 포함"을 해제해 보세요.</dd>
+
+  <dt>Q. 업로드한 CSS 클래스가 매핑 패널에 안 보여요.</dt>
+  <dd>매핑된 노드를 선택해야 CSS 클래스 영역이 표시됩니다. CSS 탭에서 해당 파일의 클래스가 추출되었는지(개수 표시) 확인하세요.</dd>
+
+  <dt>Q. 작업 내용은 어디에 저장되나요?</dt>
+  <dd>모든 매핑·설정은 서버 DB에 프로젝트 단위로 저장됩니다. 브라우저를 닫아도 유지됩니다.</dd>
+</dl>
+
+</main>
+</div>
+</body>
+</html>

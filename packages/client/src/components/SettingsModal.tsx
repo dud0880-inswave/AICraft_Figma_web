@@ -54,10 +54,16 @@ export interface ComponentClassMapping {
 
 // CSS에서 클래스명 추출
 export function extractClassNames(cssContent: string): string[] {
-  const classRegex = /\.([a-zA-Z_-][a-zA-Z0-9_-]*)(?=[\s\t\r\n,{:[>+~])/g
+  // 주석·문자열·url() 제거 → 셀렉터가 아닌 곳에서의 오탐 차단
+  const cleaned = cssContent
+    .replace(/\/\*[\s\S]*?\*\//g, ' ')
+    .replace(/"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'/g, ' ')
+    .replace(/url\([^)]*\)/gi, ' ')
+  // 식별자 끝까지 매칭 (복합 셀렉터 .a.b, :not(.x), 파일 끝 모두 대응)
+  const classRegex = /\.([a-zA-Z_-][a-zA-Z0-9_-]*)/g
   const classes = new Set<string>()
   let match
-  while ((match = classRegex.exec(cssContent)) !== null) {
+  while ((match = classRegex.exec(cleaned)) !== null) {
     classes.add(match[1])
   }
   return Array.from(classes).sort()
