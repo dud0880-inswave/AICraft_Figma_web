@@ -446,6 +446,8 @@ export default function ConvertedCodeEditor({
       // tabControl의 w2:tabs / w2:content ID 채번 (문서 전체에서 유일하도록 누적)
       let tabIdSeq = 0
       let contentIdSeq = 0
+      // accordion의 w2:panels ID 채번
+      let accordionPanelSeq = 0
 
       // 트리 순회하며 계층 구조로 코드 생성
       const traverse = (n: FigmaNode, depth: number, parent?: FigmaNode): string => {
@@ -784,6 +786,50 @@ ${indentStr}</${tagName}>`
               return `${indentStr}<${tagName}${tabPropsStr ? ' ' + tabPropsStr : ''}>\n${tabsCode}\n${contentsCode}\n${indentStr}</${tagName}>`
             }
             // *_tabs 노드를 못 찾으면 일반 변환으로 진행
+          }
+
+          // accordion 특수 처리 - *_panels → w2:panels(w2:panelTitle + w2:panelContent) 조립
+          // 타이틀: 패널 내 *_paneltitle의 첫 텍스트, 콘텐츠: *_panelcontent의 자식 변환 (닫힌 패널은 빈 content)
+          if (regItemNameLower === 'accordion') {
+            const panelNodes: FigmaNode[] = []
+            const collectPanels = (node: FigmaNode) => {
+              for (const c of node.children ?? []) {
+                if (/_panels$/i.test(c.name.trim())) panelNodes.push(c)
+                else collectPanels(c)
+              }
+            }
+            collectPanels(n)
+
+            if (panelNodes.length > 0) {
+              const findByName = (node: FigmaNode, re: RegExp): FigmaNode | null => {
+                for (const c of node.children ?? []) {
+                  if (re.test(c.name.trim())) return c
+                  const f = findByName(c, re)
+                  if (f) return f
+                }
+                return null
+              }
+
+              const panelsCode = panelNodes.map(p => {
+                accordionPanelSeq += 1
+                const seq = accordionPanelSeq
+                const titleNode = findByName(p, /_paneltitle$/i)
+                const contentNode = findByName(p, /_panelcontent$/i)
+                const label = ((titleNode && (titleNode.characters || findTextInChildren(titleNode))) || `Accordion${seq}`).trim()
+                const inner = contentNode
+                  ? (contentNode.children ?? []).map(c => traverse(c, depth + 3, contentNode)).filter(Boolean).join('\n')
+                  : ''
+                const contentInner = inner ? `\n${inner}\n${indentStr}        ` : ''
+                return `${indentStr}    <w2:panels style="" id="panels${seq}" class="">
+${indentStr}        <w2:panelTitle style="" id="panelTitle${seq}" label="${label}"></w2:panelTitle>
+${indentStr}        <w2:panelContent style="" id="panelContent${seq}">${contentInner}</w2:panelContent>
+${indentStr}    </w2:panels>`
+              }).join('\n')
+
+              const accPropsStr = Object.entries(mergedProps).map(([k, v]) => `${k}="${v}"`).join(' ')
+              return `${indentStr}<${tagName}${accPropsStr ? ' ' + accPropsStr : ''}>\n${panelsCode}\n${indentStr}</${tagName}>`
+            }
+            // *_panels 노드를 못 찾으면 일반 변환으로 진행
           }
 
           // table 특수 처리

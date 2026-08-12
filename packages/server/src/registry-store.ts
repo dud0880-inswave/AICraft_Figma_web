@@ -32,6 +32,7 @@ const INITIAL_COMPONENTS: ComponentData[] = [
   { name: "pageFrame", tagName: "w2:pageFrame", properties: {} },
   { name: "pagelist", tagName: "w2:pageList", properties: { displayButtonType: "display", adaptive: "none" } },
   { name: "textarea", tagName: "xf:textarea", properties: {} },
+  { name: "accordion", tagName: "w2:accordion", properties: {} },
   { name: "tabcontrol", tagName: "w2:tabControl", properties: {} },
   { name: "textbox", tagName: "w2:textbox", properties: {} },
   { name: "table", tagName: "xf:group", properties: { tagname: "table", class: "w2tb", style: "width:100%;" } },
