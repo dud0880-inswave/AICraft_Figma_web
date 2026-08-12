@@ -47,7 +47,15 @@
   <div class="tb-center">
     <span class="doc-title">WebSquare 변환을 위한 Figma 디자인 가이드</span>
     <span class="dot-sep">·</span>
-    <span class="branch">Mobile</span>
+    <!-- 좌측 메뉴 「피그마 가이드」 안에서 PC/모바일을 여기서 고른다. -->
+    <span class="branch-tog" role="group" aria-label="화면 종류">
+      <a href="index.html" data-variant="pc">
+        <span class="material-icons" aria-hidden="true">desktop_windows</span>PC
+      </a>
+      <a class="on" href="index-mobile.html" data-variant="mobile" aria-current="page">
+        <span class="material-icons" aria-hidden="true">phone_iphone</span>모바일
+      </a>
+    </span>
   </div>
 
   <div class="tb-right">
@@ -103,6 +111,7 @@
 <script src="data/classes.js"></script>
 <script src="data-m/live.js"></script>
 <script src="assets/guide-switch.js"></script>
+<script src="assets/branch-toggle.js"></script>
 <script src="assets/app.js"></script>
 </body>
 </html>

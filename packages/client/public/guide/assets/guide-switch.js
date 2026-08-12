@@ -21,20 +21,25 @@
   /* mirror:true 끼리는 챕터(해시)를 그대로 들고 넘어간다 — 두 제작 가이드가 21장 미러라서다.
      사용자 가이드는 목차가 달라 해시를 넘기면 엉뚱한 자리로 떨어진다 → mirror:false.
      테마·글자 크기는 세 페이지가 localStorage 를 공유하므로 따로 넘길 것이 없다. */
+  /* 사용자 가이드가 맨 위다(사용자 지시, 2026-08-11) — 도구 쓰는 법이 먼저고, 제작 규칙이 그 뒤에 붙는다.
+     PC·모바일은 「피그마 가이드」 한 묶음이다(2026-08-12 사용자 지시). 그 안에서 어느 변형인지는 타이틀 옆
+     PC/모바일 토글이 정한다 — 여기서는 두 파일을 같은 항목으로 묶고, 클릭 시엔 마지막에 본 변형으로 돌아간다. */
+  var FIGMA_VARIANTS = ['index.html', 'index-mobile.html'];
+  var VARIANT_KEY = 'fx-guide-variant';   /* 'index.html' | 'index-mobile.html' 저장 */
+  var lastVariant;
+  try { lastVariant = localStorage.getItem(VARIANT_KEY); } catch (e) {}
+  if (FIGMA_VARIANTS.indexOf(lastVariant) < 0) lastVariant = 'index.html';
+
   var PAGES = [
-    /* 사용자 가이드가 맨 위다(사용자 지시, 2026-08-11) — 도구 쓰는 법이 먼저고,
-       제작 규칙 두 벌이 그 뒤에 붙는다. 목록 순서가 곧 메뉴 순서다. */
     {
       file: 'user-guide.html', icon: 'menu_book', mirror: false,
       title: 'AICraft-Figma 사용자 가이드', sub: '도구 사용법 · FAQ', short: '사용자 가이드'
     },
     {
-      file: 'index.html', icon: 'desktop_windows', mirror: true,
-      title: 'WebSquare 변환을 위한 Figma 디자인 가이드', sub: 'PC 화면 제작 규칙', short: 'PC 가이드'
-    },
-    {
-      file: 'index-mobile.html', icon: 'phone_iphone', mirror: true,
-      title: 'WebSquare 변환을 위한 Figma 디자인 가이드 — 모바일', sub: '모바일 화면 제작 규칙', short: '모바일 가이드'
+      /* file 은 「이 항목을 눌렀을 때 어디로 갈지」. 마지막 변형을 기억해 돌려준다 */
+      file: lastVariant, icon: 'description', mirror: true,
+      title: 'WebSquare 변환을 위한 Figma 디자인 가이드', sub: 'PC · 모바일 화면 제작 규칙', short: '피그마 가이드',
+      isFigma: true
     }
   ];
 
@@ -45,10 +50,13 @@
      디렉터리로 열면(끝이 /) 서버가 index.html 을 준 것이므로 그렇게 본다.
      file:// 에서 한글 폴더명이 %EA.. 로 오지만 파일명만 보므로 상관없다. */
   var here = location.pathname.split('/').pop() || 'index.html';
-  var find = function (f) { return PAGES.filter(function (p) { return p.file === f; })[0]; };
-  /* 못 알아본 파일명이면 PC 가이드로 본다 — PAGES[0] 로 두면 목록 순서를 바꿀 때마다
-     기본값이 따라 움직인다(실제로 사용자 가이드를 맨 위로 올리면서 그럴 뻔했다). */
-  var cur = find(here) || find('index.html');
+  /* 두 index 는 「피그마 가이드」 한 항목에 묶였다 → 파일명이 아니라 「사용자 가이드인지 여부」로 가른다 */
+  var cur = here === 'user-guide.html' ? PAGES[0] : PAGES[1];
+  /* 지금 피그마 가이드에 있으면 그 변형을 다음 방문 때 기본으로 돌려준다 */
+  if (cur.isFigma && FIGMA_VARIANTS.indexOf(here) >= 0) {
+    try { localStorage.setItem(VARIANT_KEY, here); } catch (e) {}
+    cur.file = here;   /* 「자기 자신」으로 처리 — 아래 on 매칭이 정확해진다 */
+  }
 
   function esc(s) {
     return s.replace(/[&<>"]/g, function (m) {
@@ -72,7 +80,6 @@
       (on ? ' aria-current="page"' : '') + ' data-mirror="' + (p.mirror ? '1' : '') + '">' +
         '<span class="material-icons gsw-ic" aria-hidden="true">' + p.icon + '</span>' +
         '<span class="gsw-tx"><b>' + esc(p.title) + '</b><i>' + esc(p.sub) + '</i></span>' +
-        '<span class="material-icons gsw-chk" aria-hidden="true">check</span>' +
       '</a>';
   });
   html += '</div>';
