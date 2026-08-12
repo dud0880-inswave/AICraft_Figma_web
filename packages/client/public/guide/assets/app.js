@@ -413,7 +413,6 @@ function renderChapter(c) {
   $('#main').innerHTML = `
     <div class="crumb">${renderCrumb(c)}</div>
     <h1>${c.no}. ${c.title}</h1>
-    <div class="meta">${narrative ? '읽는 문서' : items.length ? `컴포넌트 ${items.length}개` : '작성 예정'} · 정본 기준 2026-07-30</div>
     ${body}`;
   document.title = `${c.no}. ${c.title} — WebSquare 변환을 위한 Figma 디자인 가이드`;
   document.body.classList.remove('home');

@@ -801,7 +801,7 @@ window.PAGES = {
         <tbody>
           <tr><td><code>node tools/css-verify/verify.mjs</code></td>
           <td><b>모바일 CSS 잠금 검사</b> — 스크린샷 대신 이것을 씁니다. 통과 개수는 잠금이 늘어날수록
-          함께 늘어납니다(정본 기준 135, 2026-08-06 기준 158)</td></tr>
+          함께 늘어납니다</td></tr>
           <tr><td><code>node_modules/.bin/tsx css/xml-verify/namecheck.ts "이름1" "이름2"</code></td>
           <td>레이어 이름 하나가 어떤 컴포넌트·클래스로 매핑되는지</td></tr>
           <tr><td><code>node_modules/.bin/tsx css/xml-verify/namecheck-bulk.ts &lt;json&gt;</code></td>
