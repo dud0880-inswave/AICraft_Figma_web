@@ -443,6 +443,10 @@ export default function ConvertedCodeEditor({
         }
       }
 
+      // tabControl의 w2:tabs / w2:content ID 채번 (문서 전체에서 유일하도록 누적)
+      let tabIdSeq = 0
+      let contentIdSeq = 0
+
       // 트리 순회하며 계층 구조로 코드 생성
       const traverse = (n: FigmaNode, depth: number, parent?: FigmaNode): string => {
         // hidden 요소는 XML에서 제외
@@ -735,6 +739,51 @@ ${indentStr}    <xf:choices>
 ${itemsCode}
 ${indentStr}    </xf:choices>
 ${indentStr}</${tagName}>`
+          }
+
+          // tabControl 특수 처리 - 템플릿 구조를 w2:tabs + w2:content 쌍으로 조립
+          // 탭 버튼: 이름이 *_tabs 인 자손 (tabhost 하위), 콘텐츠: 이름에 content가 포함된 직계 자식
+          if (regItemNameLower === 'tabcontrol') {
+            const tabNodes: FigmaNode[] = []
+            const collectTabs = (node: FigmaNode) => {
+              for (const c of node.children ?? []) {
+                if (/_tabs$/i.test(c.name.trim())) tabNodes.push(c)
+                else collectTabs(c)
+              }
+            }
+            collectTabs(n)
+
+            if (tabNodes.length > 0) {
+              const contentNode = (n.children ?? []).find(c => /content/i.test(c.name)) || null
+
+              // 높이: 탭 버튼은 첫 탭 노드, 콘텐츠는 콘텐츠 영역(없으면 전체-탭 높이)
+              const tabH = Math.round(tabNodes[0].absoluteBoundingBox?.height ?? 40)
+              const rootH = n.absoluteBoundingBox?.height
+              const contentH = Math.round(
+                contentNode?.absoluteBoundingBox?.height ?? (rootH ? rootH - tabH : 0)
+              )
+              const contentStyle = contentH > 0 ? ` style="height:${contentH}px;"` : ''
+
+              const tabsCode = tabNodes.map(t => {
+                tabIdSeq += 1
+                const label = (t.characters || findTextInChildren(t) || `탭${tabIdSeq}`).trim()
+                return `${indentStr}    <w2:tabs disabled="false" style="height:${tabH}px;" id="tabs${tabIdSeq}" label="${label}"></w2:tabs>`
+              }).join('\n')
+
+              // 콘텐츠 영역의 매핑된 자식은 첫 번째 content에 넣고, 나머지는 빈 content
+              const firstInner = contentNode
+                ? (contentNode.children ?? []).map(c => traverse(c, depth + 2, contentNode)).filter(Boolean).join('\n')
+                : ''
+              const contentsCode = tabNodes.map((_, i) => {
+                contentIdSeq += 1
+                const inner = i === 0 && firstInner ? `\n${firstInner}\n${indentStr}    ` : ''
+                return `${indentStr}    <w2:content${contentStyle} id="content${contentIdSeq}">${inner}</w2:content>`
+              }).join('\n')
+
+              const tabPropsStr = Object.entries(mergedProps).map(([k, v]) => `${k}="${v}"`).join(' ')
+              return `${indentStr}<${tagName}${tabPropsStr ? ' ' + tabPropsStr : ''}>\n${tabsCode}\n${contentsCode}\n${indentStr}</${tagName}>`
+            }
+            // *_tabs 노드를 못 찾으면 일반 변환으로 진행
           }
 
           // table 특수 처리
