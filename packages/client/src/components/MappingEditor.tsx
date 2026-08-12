@@ -287,7 +287,7 @@ export default function MappingEditor({ node, nodes, tree, fileKey, rootNodeId, 
           figmaNodeType: n.type,
           registryId: item.id,
           registryName: item.name,
-          registryTag: '',
+          registryTag: item.tagName,
           customAttrs: autoAttrs,
           status: 'mapped',
         })

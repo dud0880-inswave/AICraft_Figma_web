@@ -332,7 +332,9 @@ export default function App() {
         const infoMap = new Map<string, MappedNodeInfo>()
         for (const m of mappings) {
           if (m.status === 'mapped' && (m.registryTag || m.registryName)) {
-            infoMap.set(m.figmaNodeId, { tagName: m.registryTag, registryName: m.registryName })
+            // 과거 저장분은 registryTag가 비어있을 수 있어 레지스트리에서 태그 보완
+            const tagName = m.registryTag || registry.find(r => r.id === m.registryId)?.tagName
+            infoMap.set(m.figmaNodeId, { tagName, registryName: m.registryName })
           }
         }
         setMappedInfo(infoMap)
@@ -342,7 +344,7 @@ export default function App() {
     }
 
     loadMappings()
-  }, [state.fileKey, state.projectId, convertTrigger])
+  }, [state.fileKey, state.projectId, convertTrigger, registry])
 
   // 매핑 뱃지 표시 설정 로드 (프로젝트 변경 시 + 설정 저장 후 재적용)
   const reloadBadgeSetting = useCallback(async () => {
