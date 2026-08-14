@@ -34,6 +34,8 @@ const INITIAL_COMPONENTS: ComponentData[] = [
   { name: "textarea", tagName: "xf:textarea", properties: {} },
   { name: "accordion", tagName: "w2:accordion", properties: {} },
   { name: "tabcontrol", tagName: "w2:tabControl", properties: {} },
+  { name: "tabs", tagName: "w2:tabs", properties: {} },
+  { name: "tabcontent", tagName: "w2:content", properties: {} },
   { name: "textbox", tagName: "w2:textbox", properties: {} },
   { name: "table", tagName: "xf:group", properties: { tagname: "table", class: "w2tb", style: "width:100%;" } },
   { name: "tr", tagName: "xf:group", properties: { tagname: "tr" } },

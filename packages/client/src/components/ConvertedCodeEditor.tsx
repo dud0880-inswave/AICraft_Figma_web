@@ -743,26 +743,31 @@ ${indentStr}    </xf:choices>
 ${indentStr}</${tagName}>`
           }
 
-          // tabControl 특수 처리 - 템플릿 구조를 w2:tabs + w2:content 쌍으로 조립
-          // 탭 버튼: 이름이 *_tabs 인 자손 (tabhost 하위), 콘텐츠: 이름에 content가 포함된 직계 자식
+          // tabControl 특수 처리 - 매핑 기반 조립 (위젯 방식)
+          // 자손 중 'tabs'로 매핑된 노드 → w2:tabs, 'tabcontent'로 매핑된 노드 → w2:content
+          // w2:content는 항상 탭 수만큼 생성: 매핑된 tabcontent는 자식 변환 삽입, 부족분은 빈 태그
           if (regItemNameLower === 'tabcontrol') {
-            const tabNodes: FigmaNode[] = []
-            const collectTabs = (node: FigmaNode) => {
+            // 자손 중 특정 컴포넌트로 매핑된 노드 수집 (찾으면 그 하위로는 더 안 들어감)
+            const collectMapped = (node: FigmaNode, name: string, acc: FigmaNode[]) => {
               for (const c of node.children ?? []) {
-                if (/_tabs$/i.test(c.name.trim())) tabNodes.push(c)
-                else collectTabs(c)
+                const m = mappingMap.get(c.id)
+                const reg = m?.registryId ? registry.find(r => r.id === m.registryId) : null
+                if (reg?.name.toLowerCase() === name) acc.push(c)
+                else collectMapped(c, name, acc)
               }
             }
-            collectTabs(n)
+            const tabNodes: FigmaNode[] = []
+            collectMapped(n, 'tabs', tabNodes)
 
             if (tabNodes.length > 0) {
-              const contentNode = (n.children ?? []).find(c => /content/i.test(c.name)) || null
+              const contentNodes: FigmaNode[] = []
+              collectMapped(n, 'tabcontent', contentNodes)
 
-              // 높이: 탭 버튼은 첫 탭 노드, 콘텐츠는 콘텐츠 영역(없으면 전체-탭 높이)
+              // 높이: 탭은 첫 tabs 노드, 콘텐츠는 첫 tabcontent 노드(없으면 전체-탭)
               const tabH = Math.round(tabNodes[0].absoluteBoundingBox?.height ?? 40)
               const rootH = n.absoluteBoundingBox?.height
               const contentH = Math.round(
-                contentNode?.absoluteBoundingBox?.height ?? (rootH ? rootH - tabH : 0)
+                contentNodes[0]?.absoluteBoundingBox?.height ?? (rootH ? rootH - tabH : 0)
               )
               const contentStyle = contentH > 0 ? ` style="height:${contentH}px;"` : ''
 
@@ -772,20 +777,20 @@ ${indentStr}</${tagName}>`
                 return `${indentStr}    <w2:tabs disabled="false" style="height:${tabH}px;" id="tabs${tabIdSeq}" label="${label}"></w2:tabs>`
               }).join('\n')
 
-              // 콘텐츠 영역의 매핑된 자식은 첫 번째 content에 넣고, 나머지는 빈 content
-              const firstInner = contentNode
-                ? (contentNode.children ?? []).map(c => traverse(c, depth + 2, contentNode)).filter(Boolean).join('\n')
-                : ''
               const contentsCode = tabNodes.map((_, i) => {
                 contentIdSeq += 1
-                const inner = i === 0 && firstInner ? `\n${firstInner}\n${indentStr}    ` : ''
-                return `${indentStr}    <w2:content${contentStyle} id="content${contentIdSeq}">${inner}</w2:content>`
+                const src = contentNodes[i]
+                const inner = src
+                  ? (src.children ?? []).map(c => traverse(c, depth + 2, src)).filter(Boolean).join('\n')
+                  : ''
+                const innerWrapped = inner ? `\n${inner}\n${indentStr}    ` : ''
+                return `${indentStr}    <w2:content${contentStyle} id="content${contentIdSeq}">${innerWrapped}</w2:content>`
               }).join('\n')
 
               const tabPropsStr = Object.entries(mergedProps).map(([k, v]) => `${k}="${v}"`).join(' ')
               return `${indentStr}<${tagName}${tabPropsStr ? ' ' + tabPropsStr : ''}>\n${tabsCode}\n${contentsCode}\n${indentStr}</${tagName}>`
             }
-            // *_tabs 노드를 못 찾으면 일반 변환으로 진행
+            // tabs로 매핑된 자손이 없으면 일반 변환으로 진행
           }
 
           // accordion 특수 처리 - *_panels → w2:panels(w2:panelTitle + w2:panelContent) 조립
@@ -1028,6 +1033,11 @@ ${defsJson}
 
           // widgetItem / widgetTitle / widgetContent: 가상 컴포넌트 — XML 출력 안 함
           if (['widgetitem', 'widgettitle', 'widgetcontent'].includes(regItemNameLower)) {
+            return ''
+          }
+
+          // tabs/tabcontent는 tabControl 조립에서 소비되므로 단독 출력하지 않음
+          if (['tabs', 'tabcontent'].includes(regItemNameLower)) {
             return ''
           }
 
