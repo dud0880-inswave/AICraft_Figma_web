@@ -101,6 +101,11 @@
                 WebSquare.strictModeFrame.removeFrame();
             }
 
+            // 잔재 DOM 정리 — 렌더마다 동일한 고정 id(panelContent1 등)를 쓰는 요소가
+            // 이전 렌더 잔재와 겹치면 엔진이 id 중복 경고를 내므로 컨테이너를 비운다
+            const mfEl = document.getElementById('mf');
+            if (mfEl) mfEl.innerHTML = '';
+
             await WebSquare.jsLoader.start(xmlToJS, { spa: undefined });
             return true;
         } catch (e) {

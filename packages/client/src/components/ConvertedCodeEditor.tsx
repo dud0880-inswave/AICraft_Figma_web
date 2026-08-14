@@ -388,26 +388,17 @@ export default function ConvertedCodeEditor({
     }
   }, [convertedCode, activeTab])
 
-  // WebSquare 미리보기 렌더링 (iframe postMessage 방식)
+  // 미리보기 하드 리셋 - iframe(엔진)까지 완전히 다시 로드
+  // 로드 완료 후 previewFrame.ready 수신 → iframeReady=true → 렌더링 effect가 XML을 자동 재전송
   const renderPreview = useCallback(() => {
-    if (!convertedCode || !iframeRef.current?.contentWindow) {
+    if (!iframeRef.current?.contentWindow) {
       setPreviewError('미리보기를 사용할 수 없습니다')
       return
     }
-
-    if (!iframeReady) {
-      setPreviewError('WebSquare 엔진 로딩 중...')
-      return
-    }
-
-    setPreviewLoading(true)
+    setIframeReady(false)
     setPreviewError(null)
-
-    iframeRef.current.contentWindow.postMessage(
-      { event: 'previewFrame.sendXML', xml: convertedCode, css: cssContents, cssPaths: cssPaths, initScript: currentInitScript, widgetStyle: currentWidgetStyle },
-      '*'
-    )
-  }, [convertedCode, iframeReady, cssContents])
+    iframeRef.current.contentWindow.location.reload()
+  }, [])
 
   // 변환 실행
   const handleConvert = async () => {
