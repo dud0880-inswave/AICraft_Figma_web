@@ -746,16 +746,18 @@ ${indentStr}</${tagName}>`
           // tabControl 특수 처리 - 매핑 기반 조립 (위젯 방식)
           // 자손 중 'tabs'로 매핑된 노드 → w2:tabs, 'tabcontent'로 매핑된 노드 → w2:content
           // w2:content는 항상 탭 수만큼 생성: 매핑된 tabcontent는 자식 변환 삽입, 부족분은 빈 태그
-          if (regItemNameLower === 'tabcontrol') {
-            // 자손 중 특정 컴포넌트로 매핑된 노드 수집 (찾으면 그 하위로는 더 안 들어감)
-            const collectMapped = (node: FigmaNode, name: string, acc: FigmaNode[]) => {
-              for (const c of node.children ?? []) {
-                const m = mappingMap.get(c.id)
-                const reg = m?.registryId ? registry.find(r => r.id === m.registryId) : null
-                if (reg?.name.toLowerCase() === name) acc.push(c)
-                else collectMapped(c, name, acc)
-              }
+          // 자손 중 특정 컴포넌트로 매핑된 노드 수집 (찾으면 그 하위로는 더 안 들어감)
+          // tabControl/accordion 등 복합 컴포넌트 조립용
+          const collectMapped = (node: FigmaNode, name: string, acc: FigmaNode[]) => {
+            for (const c of node.children ?? []) {
+              const m = mappingMap.get(c.id)
+              const reg = m?.registryId ? registry.find(r => r.id === m.registryId) : null
+              if (reg?.name.toLowerCase() === name) acc.push(c)
+              else collectMapped(c, name, acc)
             }
+          }
+
+          if (regItemNameLower === 'tabcontrol') {
             const tabNodes: FigmaNode[] = []
             collectMapped(n, 'tabs', tabNodes)
 
@@ -793,34 +795,28 @@ ${indentStr}</${tagName}>`
             // tabs로 매핑된 자손이 없으면 일반 변환으로 진행
           }
 
-          // accordion 특수 처리 - *_panels → w2:panels(w2:panelTitle + w2:panelContent) 조립
-          // 타이틀: 패널 내 *_paneltitle의 첫 텍스트, 콘텐츠: *_panelcontent의 자식 변환 (닫힌 패널은 빈 content)
+          // accordion 특수 처리 - 매핑 기반 조립 (위젯 방식)
+          // 자손 중 'panels' 매핑 노드 → w2:panels, 각 패널 내 'paneltitle' 매핑 → 타이틀 라벨,
+          // 'panelcontent' 매핑 → 자식 변환 삽입 (없으면 빈 panelContent)
           if (regItemNameLower === 'accordion') {
             const panelNodes: FigmaNode[] = []
-            const collectPanels = (node: FigmaNode) => {
-              for (const c of node.children ?? []) {
-                if (/_panels$/i.test(c.name.trim())) panelNodes.push(c)
-                else collectPanels(c)
-              }
-            }
-            collectPanels(n)
+            collectMapped(n, 'panels', panelNodes)
 
             if (panelNodes.length > 0) {
-              const findByName = (node: FigmaNode, re: RegExp): FigmaNode | null => {
-                for (const c of node.children ?? []) {
-                  if (re.test(c.name.trim())) return c
-                  const f = findByName(c, re)
-                  if (f) return f
-                }
-                return null
-              }
-
               const panelsCode = panelNodes.map(p => {
                 accordionPanelSeq += 1
                 const seq = accordionPanelSeq
-                const titleNode = findByName(p, /_paneltitle$/i)
-                const contentNode = findByName(p, /_panelcontent$/i)
-                const label = ((titleNode && (titleNode.characters || findTextInChildren(titleNode))) || `Accordion${seq}`).trim()
+
+                const titleNodes: FigmaNode[] = []
+                collectMapped(p, 'paneltitle', titleNodes)
+                const contentNodes: FigmaNode[] = []
+                collectMapped(p, 'panelcontent', contentNodes)
+
+                const titleNode = titleNodes[0]
+                const contentNode = contentNodes[0]
+                // 라벨: paneltitle 매핑의 텍스트 → 없으면 패널 내 첫 텍스트 → 최후엔 AccordionN
+                const label = ((titleNode && (titleNode.characters || findTextInChildren(titleNode)))
+                  || findTextInChildren(p) || `Accordion${seq}`).trim()
                 const inner = contentNode
                   ? (contentNode.children ?? []).map(c => traverse(c, depth + 3, contentNode)).filter(Boolean).join('\n')
                   : ''
@@ -834,7 +830,7 @@ ${indentStr}    </w2:panels>`
               const accPropsStr = Object.entries(mergedProps).map(([k, v]) => `${k}="${v}"`).join(' ')
               return `${indentStr}<${tagName}${accPropsStr ? ' ' + accPropsStr : ''}>\n${panelsCode}\n${indentStr}</${tagName}>`
             }
-            // *_panels 노드를 못 찾으면 일반 변환으로 진행
+            // panels로 매핑된 자손이 없으면 일반 변환으로 진행
           }
 
           // table 특수 처리
@@ -1036,8 +1032,9 @@ ${defsJson}
             return ''
           }
 
-          // tabs/tabcontent는 tabControl 조립에서 소비되므로 단독 출력하지 않음
-          if (['tabs', 'tabcontent'].includes(regItemNameLower)) {
+          // tabs/tabcontent는 tabControl, panels/paneltitle/panelcontent는 accordion 조립에서
+          // 소비되므로 단독 출력하지 않음
+          if (['tabs', 'tabcontent', 'panels', 'paneltitle', 'panelcontent'].includes(regItemNameLower)) {
             return ''
           }
 
