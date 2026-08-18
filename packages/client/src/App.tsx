@@ -154,7 +154,7 @@ export default function App() {
 
   // 코드 에디터 리사이즈
   const handleCodeEditorResize = useCallback((delta: number) => {
-    setCodeEditorWidth(prev => Math.max(200, Math.min(800, prev - delta)))
+    setCodeEditorWidth(prev => Math.max(200, Math.min(1400, prev - delta)))
   }, [])
 
   // 파일 추가 (대시보드에 추가 + 자동 매핑 제안)
