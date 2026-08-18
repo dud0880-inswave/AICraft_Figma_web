@@ -22,6 +22,7 @@ interface MappingEditorProps {
   projectId: string | null  // 프로젝트 ID (CSS 설정 로드용)
   cssRefreshKey?: number  // CSS 새로고침 트리거
   registryRefreshKey?: number  // Registry 새로고침 트리거
+  mappingRefreshKey?: number  // 외부 매핑 변경(자동매핑/전체 적용 등) 트리거 — 선택 노드 유지한 채 매핑 정보 재조회
   token?: string  // Figma API 토큰 (SVG 내보내기용)
   onRegistryLoad?: (registry: RegistryItem[]) => void
   onMappingChange?: () => void
@@ -40,7 +41,7 @@ function convertNodeForSignature(node: FigmaNode): FigmaNodeForSignature {
   }
 }
 
-export default function MappingEditor({ node, nodes, tree, fileKey, rootNodeId, projectId, cssRefreshKey, registryRefreshKey, token: _token, onRegistryLoad, onMappingChange }: MappingEditorProps) {
+export default function MappingEditor({ node, nodes, tree, fileKey, rootNodeId, projectId, cssRefreshKey, registryRefreshKey, mappingRefreshKey, token: _token, onRegistryLoad, onMappingChange }: MappingEditorProps) {
   const { showAlert, showConfirm } = useDialog()
   const [registry, setRegistry] = useState<RegistryItem[]>([])
   const [mapping, setMapping] = useState<NodeMapping | null>(null)
@@ -194,7 +195,21 @@ export default function MappingEditor({ node, nodes, tree, fileKey, rootNodeId, 
       .then(ms => { if (!cancelled) setAllMappingsMap(new Map(ms.map(m => [m.figmaNodeId, m]))) })
       .catch(() => { if (!cancelled) setAllMappingsMap(new Map()) })
     return () => { cancelled = true }
-  }, [projectId, fileKey, rootNodeId, mapping])
+  }, [projectId, fileKey, rootNodeId, mapping, mappingRefreshKey])
+
+  // 외부 매핑 변경(자동매핑/전체 적용 등) 시 선택 노드의 매핑 재조회
+  // 노드 변경 로드와 분리: undo 스택을 초기화하지 않고 매핑 정보만 갱신
+  useEffect(() => {
+    if (mappingRefreshKey === undefined) return
+    const targetNode = node || nodes[0] || null
+    if (!targetNode || !fileKey || !projectId) return
+    let cancelled = false
+    fetchMapping(projectId, fileKey, targetNode.id, rootNodeId)
+      .then(m => { if (!cancelled) setMapping(m) })
+      .catch(() => { /* ignore */ })
+    return () => { cancelled = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mappingRefreshKey])
 
   // 추천 클래스 조회 (매핑된 노드만)
   useEffect(() => {

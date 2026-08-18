@@ -80,6 +80,16 @@ function countMaxColumnsInTable(
   return maxCols
 }
 
+// XML 속성값 이스케이프 — Figma 텍스트를 label 등에 넣을 때 사용
+// (> 는 속성값에서 필수는 아니지만, 코드조각의 태그 추출 정규식이 깨지지 않도록 함께 처리)
+function escapeXmlAttr(s: string): string {
+  return s
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+}
+
 export function createXmlGenerator(opts: XmlGeneratorOptions): XmlGenerator {
   const { mappingMap, registry, enableInlineStyle } = opts
   const imageSvgMap = opts.imageSvgMap ?? new Map<string, string>()
@@ -421,7 +431,7 @@ ${indentStr}</${tagName}>`
 
           const tabsCode = tabNodes.map(t => {
             tabIdSeq += 1
-            const label = (t.characters || findTextInChildren(t) || `탭${tabIdSeq}`).trim()
+            const label = escapeXmlAttr((t.characters || findTextInChildren(t) || `탭${tabIdSeq}`).trim())
             const attrs = roleAttrs({ disabled: 'false', style: `height:${tabH}px;`, id: `tabs${tabIdSeq}`, label }, t)
             return `${indentStr}    <w2:tabs ${attrs}></w2:tabs>`
           }).join('\n')
@@ -463,8 +473,8 @@ ${indentStr}</${tagName}>`
             const titleNode = titleNodes[0]
             const contentNode = contentNodes[0]
             // 라벨: paneltitle 매핑의 텍스트 → 없으면 패널 내 첫 텍스트 → 최후엔 AccordionN
-            const label = ((titleNode && (titleNode.characters || findTextInChildren(titleNode)))
-              || findTextInChildren(p) || `Accordion${seq}`).trim()
+            const label = escapeXmlAttr(((titleNode && (titleNode.characters || findTextInChildren(titleNode)))
+              || findTextInChildren(p) || `Accordion${seq}`).trim())
             const inner = includeChildren && contentNode
               ? (contentNode.children ?? []).map(c => traverse(c, depth + 3, contentNode)).filter(Boolean).join('\n')
               : ''

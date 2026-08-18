@@ -1307,6 +1307,7 @@ export default function App() {
               projectId={state.projectId}
               cssRefreshKey={cssRefreshKey}
               registryRefreshKey={registryRefreshKey}
+              mappingRefreshKey={convertTrigger}
               token={state.token}
               onRegistryLoad={setRegistry}
               onMappingChange={() => {
