@@ -3,9 +3,9 @@ import type { FigmaNode } from '../types/figma'
 import type { RegistryItem, NodeMapping, FigmaNodeForSignature } from '../utils/api'
 import { fetchRegistry, fetchMapping, fetchMappings, saveMapping, deleteMapping, clearAllMappings, fetchProjectSettings, getRecommendedClasses, checkUniqueCluster, applyMappingBySignature, type RecommendedClass, type UniqueClusterCheck } from '../utils/api'
 import { type CssItem, type ComponentClassMapping } from './SettingsModal'
-import { findTextInChildren, collectAllTexts, collectTopLevelTexts } from '../utils/text-utils'
+import { collectTopLevelTexts } from '../utils/text-utils'
 import { findParentNode } from '../utils/tree-utils'
-import { extractInlineStyle } from '../utils/figma-style'
+import { createXmlGenerator } from '../utils/xml-generator'
 import { useDialog } from '../contexts/DialogContext'
 import hljs from 'highlight.js/lib/core'
 import xml from 'highlight.js/lib/languages/xml'
@@ -44,6 +44,7 @@ export default function MappingEditor({ node, nodes, tree, fileKey, rootNodeId, 
   const { showAlert, showConfirm } = useDialog()
   const [registry, setRegistry] = useState<RegistryItem[]>([])
   const [mapping, setMapping] = useState<NodeMapping | null>(null)
+  const [allMappingsMap, setAllMappingsMap] = useState<Map<string, NodeMapping>>(new Map())  // 코드조각 조립용 전체 매핑
   const [searchQuery, setSearchQuery] = useState('')
   const [dropdownOpen, setDropdownOpen] = useState(false)
   const [highlightedIndex, setHighlightedIndex] = useState(-1)
@@ -181,6 +182,19 @@ export default function MappingEditor({ node, nodes, tree, fileKey, rootNodeId, 
     }
     load()
   }, [node?.id, nodes[0]?.id, fileKey, rootNodeId, projectId])
+
+  // 코드조각 조립용 전체 매핑 로드 (탭/아코디언 등 복합 컴포넌트는 자손 매핑 정보가 필요)
+  useEffect(() => {
+    if (!projectId || !fileKey) {
+      setAllMappingsMap(new Map())
+      return
+    }
+    let cancelled = false
+    fetchMappings(projectId, fileKey, rootNodeId)
+      .then(ms => { if (!cancelled) setAllMappingsMap(new Map(ms.map(m => [m.figmaNodeId, m]))) })
+      .catch(() => { if (!cancelled) setAllMappingsMap(new Map()) })
+    return () => { cancelled = true }
+  }, [projectId, fileKey, rootNodeId, mapping])
 
   // 추천 클래스 조회 (매핑된 노드만)
   useEffect(() => {
@@ -949,244 +963,46 @@ export default function MappingEditor({ node, nodes, tree, fileKey, rootNodeId, 
               )
             })()}
 
-            {/* 선택된 컴포넌트의 소스코드 */}
+            {/* 선택된 컴포넌트의 소스코드 — 변환기와 동일한 공용 생성기 사용 (utils/xml-generator.ts) */}
             {mapping?.registryId && (() => {
               const selectedItem = registry.find((r) => r.id === mapping.registryId)
-              if (!selectedItem) return null
+              if (!selectedItem || !displayNode) return null
 
-              const { tagName, properties } = selectedItem
-              const mergedProps: Record<string, string> = { ...properties, 'data-nodeid': displayNode?.id || '' }
-              const selectedItemNameLower = selectedItem.name.toLowerCase()
+              // 전체 매핑 + 현재 노드의 최신 매핑을 합쳐 변환기와 동일 조건으로 생성
+              const snippetMap = new Map(allMappingsMap)
+              snippetMap.set(displayNode.id, mapping)
+              const gen = createXmlGenerator({ mappingMap: snippetMap, registry, enableInlineStyle, includeChildren: false })
+              const parentOfDisplay = tree ? findParentNode(tree, displayNode.id) : undefined
+              const code = gen.traverse(displayNode, 0, parentOfDisplay ?? undefined)
+                || `<${selectedItem.tagName}/>`
 
-              // 커스텀 속성 병합 (class는 default 뒤에 추가)
-              if (mapping.customAttrs) {
-                Object.entries(mapping.customAttrs).forEach(([key, value]) => {
-                  if (key === 'class' && mergedProps.class) {
-                    const defaultClasses = mergedProps.class.split(' ').filter(Boolean)
-                    const customClasses = value.split(' ').filter((c: string) => c && !defaultClasses.includes(c))
-                    mergedProps.class = [...defaultClasses, ...customClasses].join(' ')
-                  } else {
-                    mergedProps[key] = value
-                  }
-                })
-              }
-
-              if (selectedItemNameLower === 'textbox' && displayNode?.characters) {
-                const textContent = displayNode.characters
-                  .split('\n')
-                  .map(line => line.trim())
-                  .filter(Boolean)
-                  .join('<br/>')
-                mergedProps.label = textContent
-              }
-
-              if (selectedItemNameLower === 'button') {
-                const text = displayNode?.characters || findTextInChildren(displayNode)
-                if (text) mergedProps.label = text
-              }
-
-              if (selectedItemNameLower === 'input') {
-                const text = displayNode?.characters || findTextInChildren(displayNode)
-                if (text) mergedProps.placeholder = text
-              }
-
-
-              // class 없으면 컴포넌트별 인라인 스타일 적용
-              // customAttrs에 style 키가 있으면 (빈 값 포함) 인라인 스타일 생성 skip
-              // 설정에서 인라인 스타일이 꺼져 있으면 skip
-              const hasCustomStyleKey = mapping?.customAttrs && 'style' in mapping.customAttrs
-              if (enableInlineStyle && !hasCustomStyleKey && !mergedProps.class && displayNode) {
-                const parentOfDisplay = tree ? findParentNode(tree, displayNode.id) : undefined
-                const inlineStyle = extractInlineStyle(displayNode, selectedItemNameLower, parentOfDisplay ?? undefined)
-                if (inlineStyle) {
-                  const existingStyle = mergedProps.style ? `${mergedProps.style};` : ''
-                  mergedProps.style = `${existingStyle}${inlineStyle}`
-                }
-              }
-
-
-              // widget: cols 속성 추가
-              if (selectedItemNameLower === 'widget' && displayNode?.absoluteBoundingBox) {
-                mergedProps.cols = String(Math.round(displayNode.absoluteBoundingBox.width))
-              }
-
-              if (selectedItemNameLower === 'checkbox') {
-                const texts = collectAllTexts(displayNode)
-                const propsStr = Object.entries(mergedProps).map(([k, v]) => `${k}="${v}"`).join(' ')
-                const items = texts.length > 0 ? texts : ['옵션1']
-                const itemsCode = items.map(t =>
-`      <xf:item>
-        <xf:label><![CDATA[${t}]]></xf:label>
-        <xf:value><![CDATA[${t}]]></xf:value>
-      </xf:item>`
-                ).join('\n')
-
-                const code = `<${tagName} ${propsStr}>
-  <xf:choices>
-${itemsCode}
-  </xf:choices>
-</${tagName}>`
-
-                return (
-                  <pre className="mt-3 p-3 theme-bg-primary border theme-border rounded text-sm font-mono theme-text-code-green overflow-x-auto whitespace-pre">
-                    {code}
-                  </pre>
-                )
-              }
-
-              // 속성 문자열 생성 헬퍼
-              const buildPropsStr = (props: Record<string, string>) => {
-                return Object.entries(props).map(([k, v]) => `${k}="${v}"`).join(' ')
-              }
-
-              // table 특수 처리
-              if (selectedItemNameLower === 'table') {
-                const tablePropsStr = buildPropsStr(mergedProps)
-                const code = `<xf:group ${tablePropsStr}>
-    <w2:attributes>
-        <w2:summary></w2:summary>
-    </w2:attributes>
-    <xf:group tagname="colgroup">
-    </xf:group>
-</xf:group>`
-
-                return (
-                  <pre className="mt-3 p-3 theme-bg-primary border theme-border rounded text-sm font-mono theme-text-code-green overflow-x-auto whitespace-pre">
-                    {code}
-                  </pre>
-                )
-              }
-
-              // tr 특수 처리
-              if (selectedItemNameLower === 'tr') {
-                const trPropsStr = buildPropsStr(mergedProps)
-                const code = `<xf:group ${trPropsStr}>
-    <!-- children -->
-</xf:group>`
-
-                return (
-                  <pre className="mt-3 p-3 theme-bg-primary border theme-border rounded text-sm font-mono theme-text-code-green overflow-x-auto whitespace-pre">
-                    {code}
-                  </pre>
-                )
-              }
-
-              // th 특수 처리
-              if (selectedItemNameLower === 'th') {
-                const { colspan, rowspan, ...thProps } = mergedProps
-                const thPropsStr = buildPropsStr(thProps)
-                const hasSpan = (colspan && colspan !== '1') || (rowspan && rowspan !== '1')
-                const spanAttrs = hasSpan
-                  ? [
-                      '<w2:scope>row</w2:scope>',
-                      `<w2:colspan>${colspan || '1'}</w2:colspan>`,
-                      `<w2:rowspan>${rowspan || '1'}</w2:rowspan>`
-                    ]
-                  : ['<w2:scope>row</w2:scope>']
-                const attrsContent = spanAttrs.map(a => `        ${a}`).join('\n')
-                const code = `<xf:group ${thPropsStr}>
-    <w2:attributes>
-${attrsContent}
-    </w2:attributes>
-    <!-- children -->
-</xf:group>`
-
-                return (
-                  <pre className="mt-3 p-3 theme-bg-primary border theme-border rounded text-sm font-mono theme-text-code-green overflow-x-auto whitespace-pre">
-                    {code}
-                  </pre>
-                )
-              }
-
-              // td 특수 처리
-              if (selectedItemNameLower === 'td') {
-                const { colspan, rowspan, ...tdProps } = mergedProps
-                const tdPropsStr = buildPropsStr(tdProps)
-                const hasSpan = (colspan && colspan !== '1') || (rowspan && rowspan !== '1')
-
-                const attrsBlock = hasSpan
-                  ? `\n    <w2:attributes>
-        <w2:scope>row</w2:scope>
-        <w2:colspan>${colspan || '1'}</w2:colspan>
-        <w2:rowspan>${rowspan || '1'}</w2:rowspan>
-    </w2:attributes>`
-                  : ''
-                const code = `<xf:group ${tdPropsStr}>${attrsBlock}
-    <!-- children -->
-</xf:group>`
-
-                return (
-                  <pre className="mt-3 p-3 theme-bg-primary border theme-border rounded text-sm font-mono theme-text-code-green overflow-x-auto whitespace-pre">
-                    {code}
-                  </pre>
-                )
-              }
-
-              // gridView 특수 처리
-              if (selectedItemNameLower === 'gridview') {
-                const topTexts = collectTopLevelTexts(displayNode)
-                const gridPropsStr = buildPropsStr(mergedProps)
-
-                // header columns 생성
-                const headerCols = topTexts.length > 0
-                  ? topTexts.map((text, idx) => `            <w2:column id="column${idx}" width="70" displayMode="label" value="${text}"></w2:column>`).join('\n')
-                  : `            <w2:column id="column0" width="70" displayMode="label" value="컬럼1"></w2:column>
-            <w2:column id="column1" width="70" displayMode="label" value="컬럼2"></w2:column>
-            <w2:column id="column2" width="70" displayMode="label" value="컬럼3"></w2:column>`
-
-                // gBody columns 생성
-                const bodyCols = topTexts.length > 0
-                  ? topTexts.map((_, idx) => `            <w2:column id="gBodyColumn${idx}" width="70" inputType="text"></w2:column>`).join('\n')
-                  : `            <w2:column id="gBodyColumn0" width="70" inputType="text"></w2:column>
-            <w2:column id="gBodyColumn1" width="70" inputType="text"></w2:column>
-            <w2:column id="gBodyColumn2" width="70" inputType="text"></w2:column>`
-
-                const code = `<w2:gridView ${gridPropsStr}>
-    <w2:caption id="caption1" style="" value="this is a grid caption."></w2:caption>
-    <w2:header id="" style="">
-        <w2:row>
-${headerCols}
-        </w2:row>
-    </w2:header>
-    <w2:gBody id="" style="">
-        <w2:row>
-${bodyCols}
-        </w2:row>
-    </w2:gBody>
-</w2:gridView>`
-
-                return (
-                  <div className="mt-3">
-                    <div className="text-xs theme-text-secondary mb-2">헤더 텍스트 ({topTexts.length}개):</div>
-                    <div className="p-2 theme-bg-tertiary border theme-border rounded mb-2">
-                      {topTexts.length > 0 ? (
-                        <div className="flex flex-wrap gap-1">
-                          {topTexts.map((text, idx) => (
-                            <span key={idx} className="px-2 py-1 bg-blue-500/20 text-blue-600 dark:bg-blue-900/50 dark:text-blue-300 text-xs rounded">
-                              {text}
-                            </span>
-                          ))}
-                        </div>
-                      ) : (
-                        <span className="theme-text-secondary text-sm">텍스트 없음 (기본 3컬럼)</span>
-                      )}
-                    </div>
-                    <pre className="p-3 theme-bg-primary border theme-border rounded text-sm font-mono theme-text-code-green overflow-x-auto whitespace-pre">
-                      {code}
-                    </pre>
-                  </div>
-                )
-              }
-
-              const propsStr = Object.entries(mergedProps).map(([k, v]) => `${k}="${v}"`).join(' ')
-              const code = Object.keys(mergedProps).length > 0
-                ? `<${tagName} ${propsStr}></${tagName}>`
-                : `<${tagName}/>`
+              // gridview: 헤더 텍스트 미리보기 칩 (기존 UI 유지)
+              const topTexts = selectedItem.name.toLowerCase() === 'gridview' ? collectTopLevelTexts(displayNode) : null
 
               return (
-                <pre className="mt-3 p-3 theme-bg-primary border theme-border rounded text-sm font-mono overflow-x-auto">
-                  <code className="language-xml" ref={(el) => { if (el) { el.removeAttribute('data-highlighted'); el.textContent = code; hljs.highlightElement(el) } }} />
-                </pre>
+                <div className="mt-3">
+                  {topTexts && (
+                    <>
+                      <div className="text-xs theme-text-secondary mb-2">헤더 텍스트 ({topTexts.length}개):</div>
+                      <div className="p-2 theme-bg-tertiary border theme-border rounded mb-2">
+                        {topTexts.length > 0 ? (
+                          <div className="flex flex-wrap gap-1">
+                            {topTexts.map((text, idx) => (
+                              <span key={idx} className="px-2 py-1 bg-blue-500/20 text-blue-600 dark:bg-blue-900/50 dark:text-blue-300 text-xs rounded">
+                                {text}
+                              </span>
+                            ))}
+                          </div>
+                        ) : (
+                          <span className="theme-text-secondary text-sm">텍스트 없음 (기본 3컬럼)</span>
+                        )}
+                      </div>
+                    </>
+                  )}
+                  <pre className="p-3 theme-bg-primary border theme-border rounded text-sm font-mono overflow-x-auto">
+                    <code className="language-xml" ref={(el) => { if (el) { el.removeAttribute('data-highlighted'); el.textContent = code; hljs.highlightElement(el) } }} />
+                  </pre>
+                </div>
               )
             })()}
           </div>
