@@ -398,9 +398,11 @@ ${indentStr}</${tagName}>`
       }
 
       // 역할 컴포넌트 속성 문자열: 기본값 위에 해당 노드 매핑의 customAttrs를 덮어씀
+      // 노드가 있으면(직접 매핑된 요소) data-nodeid 포함 — 자동 생성 요소는 노드가 없어 제외됨
       const roleAttrs = (base: Record<string, string>, node?: FigmaNode | null): string => {
         const custom = node ? (mappingMap.get(node.id)?.customAttrs ?? {}) : {}
-        return Object.entries({ ...base, ...custom }).map(([k, v]) => `${k}="${v}"`).join(' ')
+        const withId: Record<string, string> = node ? { 'data-nodeid': node.id, ...base } : base
+        return Object.entries({ ...withId, ...custom }).map(([k, v]) => `${k}="${v}"`).join(' ')
       }
 
       // tabControl 특수 처리 - 매핑 기반 조립 (위젯 방식)
