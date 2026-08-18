@@ -971,10 +971,23 @@ export default function MappingEditor({ node, nodes, tree, fileKey, rootNodeId, 
               // 전체 매핑 + 현재 노드의 최신 매핑을 합쳐 변환기와 동일 조건으로 생성
               const snippetMap = new Map(allMappingsMap)
               snippetMap.set(displayNode.id, mapping)
-              const gen = createXmlGenerator({ mappingMap: snippetMap, registry, enableInlineStyle, includeChildren: false })
-              const parentOfDisplay = tree ? findParentNode(tree, displayNode.id) : undefined
-              const code = gen.traverse(displayNode, 0, parentOfDisplay ?? undefined)
-                || `<${selectedItem.tagName}/>`
+
+              // 역할 컴포넌트(부모 조립에서만 출력됨)는 전체 트리 변환 결과에서 해당 요소를 추출
+              // → ID 채번·속성이 미리보기와 완전히 동일 (하위요소만 제외)
+              const ROLE_COMPONENTS = ['tabs', 'tabcontent', 'panels', 'paneltitle', 'panelcontent']
+              let code: string
+              if (ROLE_COMPONENTS.includes(selectedItem.name.toLowerCase()) && tree) {
+                const gen = createXmlGenerator({ mappingMap: snippetMap, registry, enableInlineStyle })
+                const full = gen.traverse(tree, 0) || ''
+                const escapedId = displayNode.id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+                const m = full.match(new RegExp(`<([\\w:]+)([^>]*data-nodeid="${escapedId}"[^>]*)>`))
+                code = m ? `<${m[1]}${m[2]}></${m[1]}>` : `<${selectedItem.tagName}/>`
+              } else {
+                const gen = createXmlGenerator({ mappingMap: snippetMap, registry, enableInlineStyle, includeChildren: false })
+                const parentOfDisplay = tree ? findParentNode(tree, displayNode.id) : undefined
+                code = gen.traverse(displayNode, 0, parentOfDisplay ?? undefined)
+                  || `<${selectedItem.tagName}/>`
+              }
 
               // gridview: 헤더 텍스트 미리보기 칩 (기존 UI 유지)
               const topTexts = selectedItem.name.toLowerCase() === 'gridview' ? collectTopLevelTexts(displayNode) : null
