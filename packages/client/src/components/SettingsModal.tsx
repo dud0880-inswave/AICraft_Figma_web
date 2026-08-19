@@ -1375,7 +1375,8 @@ function CssTab({ projectId, onCssChange }: { projectId?: string | null; onCssCh
           >
             <div className="text-center">
               <svg className="w-6 h-6 mx-auto theme-text-secondary mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 21H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 17v-6m0 0l-2.5 2.5M12 11l2.5 2.5" />
               </svg>
               <span className="text-sm theme-text-secondary">클릭하여 CSS 파일 선택</span>
             </div>
@@ -1391,7 +1392,8 @@ function CssTab({ projectId, onCssChange }: { projectId?: string | null; onCssCh
             />
             <div className="text-center">
               <svg className="w-6 h-6 mx-auto theme-text-secondary mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 21H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 17v-6m0 0l-2.5 2.5M12 11l2.5 2.5" />
               </svg>
               <span className="text-sm theme-text-secondary">클릭하여 CSS 파일 선택</span>
             </div>

@@ -69,7 +69,7 @@ export default function App() {
   const [refreshing, setRefreshing] = useState(false)
 
   // 패널 너비 상태
-  const [leftPanelWidth, setLeftPanelWidth] = useState(288)  // 기본 w-72 (18rem = 288px)
+  const [leftPanelWidth, setLeftPanelWidth] = useState(360)  // 기본 360px
   const [leftCollapsed, setLeftCollapsed] = useState(false)  // 노드 트리 패널 접힘 여부
   const [rightPanelWidth, setRightPanelWidth] = useState(600)  // 기본 maxWidth
   const [rightCollapsed, setRightCollapsed] = useState(false)  // 매핑 편집기 패널 접힘 여부
@@ -144,7 +144,7 @@ export default function App() {
 
   // 왼쪽 패널 리사이즈
   const handleLeftResize = useCallback((delta: number) => {
-    setLeftPanelWidth(prev => Math.max(320, Math.min(600, prev + delta)))
+    setLeftPanelWidth(prev => Math.max(360, Math.min(600, prev + delta)))
   }, [])
 
   // 오른쪽 패널 리사이즈
@@ -156,6 +156,7 @@ export default function App() {
   const handleCodeEditorResize = useCallback((delta: number) => {
     setCodeEditorWidth(prev => Math.max(200, Math.min(1400, prev - delta)))
   }, [])
+
 
   // 파일 추가 (대시보드에 추가 + 자동 매핑 제안)
   const handleAddFile = useCallback(async (token: string, fileUrl: string, projectId: string) => {
@@ -1152,28 +1153,29 @@ export default function App() {
           )}
         </div>
         <div className="flex items-center gap-2">
-          {/* 패널 접기/펼치기 토글 (노드트리 / 매핑 / 코드) */}
+          {/* 패널 접기/펼치기 토글 — 4분할 아이콘의 칸 위치가 실제 화면 배치와 대응
+              (0=노드트리, 1=피그마 뷰어(항상 표시, 버튼 없음), 2=매핑, 3=변환 결과) */}
           <div className="flex items-center gap-0.5 mr-1">
             <button
               onClick={() => setLeftCollapsed(v => !v)}
               className="p-1.5 theme-text-secondary hover:text-blue-500 theme-bg-hover rounded"
               title={leftCollapsed ? '노드 트리 펼치기' : '노드 트리 접기'}
             >
-              <PanelToggleIcon section="left" open={!leftCollapsed} className="w-5 h-5" />
+              <PanelToggleIcon section={0} open={!leftCollapsed} className="w-5 h-5" />
             </button>
             <button
               onClick={() => setRightCollapsed(v => !v)}
               className="p-1.5 theme-text-secondary hover:text-blue-500 theme-bg-hover rounded"
               title={rightCollapsed ? '매핑 편집기 펼치기' : '매핑 편집기 접기'}
             >
-              <PanelToggleIcon section="middle" open={!rightCollapsed} className="w-5 h-5" />
+              <PanelToggleIcon section={2} open={!rightCollapsed} className="w-5 h-5" />
             </button>
             <button
               onClick={() => setCodeEditorVisible(v => !v)}
               className="p-1.5 theme-text-secondary hover:text-blue-500 theme-bg-hover rounded"
               title={codeEditorVisible ? '변환 결과 접기' : '변환 결과 펼치기'}
             >
-              <PanelToggleIcon section="right" open={codeEditorVisible} className="w-5 h-5" />
+              <PanelToggleIcon section={3} open={codeEditorVisible} className="w-5 h-5" />
             </button>
           </div>
           <button

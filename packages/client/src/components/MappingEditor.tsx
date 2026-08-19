@@ -47,6 +47,7 @@ export default function MappingEditor({ node, nodes, tree, fileKey, rootNodeId, 
   const [mapping, setMapping] = useState<NodeMapping | null>(null)
   const [allMappingsMap, setAllMappingsMap] = useState<Map<string, NodeMapping>>(new Map())  // 코드조각 조립용 전체 매핑
   const [searchQuery, setSearchQuery] = useState('')
+  const [searchFocused, setSearchFocused] = useState(false)  // 입력 중엔 searchQuery 그대로 표시 (빈 값이어도 매핑명으로 폴백하지 않음)
   const [dropdownOpen, setDropdownOpen] = useState(false)
   const [highlightedIndex, setHighlightedIndex] = useState(-1)
   const [loading, setLoading] = useState(false)
@@ -751,15 +752,21 @@ export default function MappingEditor({ node, nodes, tree, fileKey, rootNodeId, 
               <input
                 type="text"
                 placeholder="컴포넌트 검색..."
-                value={searchQuery || (mapping?.registryId ? registry.find(r => r.id === mapping.registryId)?.name || '' : '')}
+                value={searchFocused ? searchQuery : (mapping?.registryId ? registry.find(r => r.id === mapping.registryId)?.name || '' : '')}
                 onChange={(e) => {
                   setSearchQuery(e.target.value)
                   setDropdownOpen(true)
                   setHighlightedIndex(-1)
                 }}
                 onFocus={() => {
+                  setSearchFocused(true)
                   setSearchQuery('')
                   setDropdownOpen(true)
+                }}
+                onBlur={() => {
+                  // 드롭다운 항목 클릭은 blur 이후에도 정상 동작 (닫기는 외부 클릭 핸들러가 담당)
+                  setSearchFocused(false)
+                  setSearchQuery('')
                 }}
                 onKeyDown={(e) => {
                   if (!dropdownOpen || filteredRegistry.length === 0) return

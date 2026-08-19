@@ -528,9 +528,9 @@ export default function NodeTree({
             <button
               onClick={onGroupNodes}
               className="px-2 py-1 text-xs bg-blue-600 hover:bg-blue-500 text-white rounded whitespace-nowrap"
-              title="선택한 노드 그룹화"
+              title="선택한 노드를 그룹으로 감싸기"
             >
-              그룹화
+              그룹으로 감싸기
             </button>
           )}
           {selectedNodeIds.length === 1 && onUngroupNodes && (() => {
