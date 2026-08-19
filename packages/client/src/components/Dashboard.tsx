@@ -413,7 +413,7 @@ export default function Dashboard({ onSelectFile, onAddNewFile, onOpenSettings, 
                             await loadProjectFiles(selectedProject)
                           } catch (err) {
                             console.error('Failed to refresh file:', err)
-                            showAlert('파일을 새로고침하는데 실패했습니다.')
+                            showAlert(err instanceof Error ? err.message : '파일을 새로고침하는데 실패했습니다.')
                           } finally {
                             setRefreshingFileKey(null)
                           }

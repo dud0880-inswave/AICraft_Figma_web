@@ -450,7 +450,7 @@ export default function App() {
       } else {
         displayRoot = pages[0] || null
       }
-      if (!displayRoot) throw new Error('디스플레이 루트 노드를 찾을 수 없습니다.')
+      if (!displayRoot) throw new Error('등록된 노드를 Figma에서 찾을 수 없습니다.\n노드가 삭제되었거나 이동되었을 수 있습니다.')
 
       // 3. 서버에 전달 → 변경 감지 + (변경 있으면) 저장 + 매핑 정리 + 신규 노드 반환
       const result = await refreshFigmaFile(projectId, fileKey, nodeId, displayRoot)
@@ -1185,7 +1185,8 @@ export default function App() {
                 setRefreshing(true)
                 await handleRefreshFile(state.fileKey, state.targetNodeId, state.projectId)
               } catch (err) {
-                setState(s => ({ ...s, error: '파일을 새로고침하는데 실패했습니다.' }))
+                // 에디터 뷰에는 state.error 토스트가 없으므로 알림창으로 표시
+                await showAlert(err instanceof Error ? err.message : '파일을 새로고침하는데 실패했습니다.')
               } finally {
                 setRefreshing(false)
               }
